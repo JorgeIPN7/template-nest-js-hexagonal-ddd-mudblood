@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Cadena de suministro (backlog #6): todas las actions de este archivo se referencian por
+# SHA de commit, nunca por tag. Un tag es mutable —puede re-apuntarse a otro commit sin
+# aviso, la superficie del ataque conocido como "tag-retargeting"— un SHA no. El tag legible
+# viaja como comentario (`# v5`) solo para que un humano sepa qué versión es sin tener que
+# resolver el SHA a mano. Al bumpear una action: verificar el SHA nuevo contra la API de
+# GitHub o la página de releases del repo upstream, nunca copiarlo de un README de terceros.
+
+jobs:
+  quality:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    # La suite E2E se ejecuta contra PostgreSQL real (el skill prohíbe mockear el ORM
+    # en los tests de persistencia), así que el job necesita una base de verdad.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nest_base_template
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d nest_base_template"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE: nest_base_template
+      DB_SCHEMA: public
+      DB_SSL: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Gate de cadena de suministro (backlog #6): CVEs high+ en dependencias de
+      # PRODUCCIÓN rompen la CI. Las de dev no llegan a la imagen (--prod).
+      # Va justo tras el install: falla rápido, antes de gastar minutos en tests.
+      - name: Audit de dependencias de producción
+        run: pnpm audit --prod --audit-level=high
+
+      # El override `swagger-ui-dist: '-'` de pnpm-workspace.yaml retira 12 MB de assets que
+      # Scalar hace innecesarios. Que aplicó no puede darse por hecho: hasta pnpm 11 el mismo
+      # ajuste vivía en el key `pnpm` de package.json, que ahora se ignora EN SILENCIO.
+      #
+      # Se comprueba el enlace desde `@nestjs/swagger`, no la presencia en `node_modules/.pnpm`.
+      # Ahí puede quedar un directorio huérfano de una instalación anterior aunque el override
+      # funcione: buscarlo daría un falso positivo en local y verde en CI, que es la peor
+      # combinación posible para un gate.
+      #
+      # El control positivo va primero y no es adorno. Un glob que no encuentra nada da verde
+      # tanto si el override aplicó como si la ruta dejó de existir —otra versión de pnpm,
+      # `node-linker=hoisted`, un rename del layout—, y entonces el gate estaría afirmando algo
+      # que no ha llegado a mirar. Comprobar antes que el paquete SÍ está donde se espera
+      # convierte «no pude comprobar» en rojo, que es el único color honesto para ese caso.
+      - name: Verificar que swagger-ui-dist sigue fuera del arbol
+        run: |
+          if ! compgen -G "node_modules/.pnpm/@nestjs+swagger@*/node_modules/@nestjs/swagger" > /dev/null; then
+            echo "Control positivo fallido: @nestjs/swagger no está donde este gate lo busca."
+            echo "El layout de pnpm cambió, así que la comprobación de abajo no probaría nada."
+            exit 1
+          fi
+          if compgen -G "node_modules/.pnpm/@nestjs+swagger@*/node_modules/swagger-ui-dist" > /dev/null; then
+            echo "swagger-ui-dist volvió al árbol: el override de pnpm-workspace.yaml no aplicó."
+            exit 1
+          fi
+          echo "OK: @nestjs/swagger existe y no puede resolver swagger-ui-dist."
+
+      - name: Lint
+        run: pnpm lint:check
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test:ci
+
+      # El servicio de Postgres no ejecuta `docker/initdb/`, así que la base de tests se
+      # crea aquí a mano. En local la crea el init script al levantar el contenedor.
+      - name: Create test database
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -c 'CREATE DATABASE nest_base_template_test'
+
+      # Las migraciones se aplican a la base de tests, que es contra la que corren los E2E.
+      - name: Run migrations
+        run: pnpm migration:run
+        env:
+          DB_DATABASE: nest_base_template_test
+
+      - name: E2E tests
+        run: pnpm test:e2e:ci
+
+      - name: Build
+        run: pnpm build
+
+      # Nadie construía la imagen, así que un fallo del stage de producción —como el hook
+      # `prepare: husky` corriendo bajo `--prod`— solo aparecía al desplegar.
+      - name: Docker build
+        run: docker build -t nest-base-template:ci .
+
+      # Gate de cadena de suministro (backlog #6): CVEs HIGH/CRITICAL CON FIX
+      # disponible en la imagen rompen la CI. ignore-unfixed mantiene el gate
+      # accionable: rojo solo cuando hay algo que hacer (decisión del spec §3.2).
+      # El scan también detecta secretos horneados en layers — superficie
+      # complementaria al hook local, que solo ve archivos staged.
+      - name: Scan de la imagen (trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: nest-base-template:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage
+          path: coverage
+          if-no-files-found: ignore
+
+  # El auditor del modelo «casos primero» deja de ser una corrida manual por ciclo y pasa a
+  # ser gate (backlog #9): `thresholds.break: 85` en stryker.config.mjs rompe este job si el
+  # score global cae. Va en un job APARTE del de calidad, no como un step más, por tres
+  # razones: (1) no necesita PostgreSQL —`mutate` cubre solo domain/ y application/, que se
+  # ejercitan con la config unitaria—, así que arrastrar el servicio sería puro coste;
+  # (2) tarda minutos y en un job propio corre en paralelo con el resto en vez de retrasar
+  # el feedback rápido de lint/typecheck; (3) merece su propio timeout, más holgado.
+  mutation:
+    name: Mutación (auditor de casos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Mutation testing
+        run: pnpm test:mutation
+
+      # El HTML es lo único que hace accionable un rojo: lista cada mutante superviviente con
+      # su diff. Sin él, el fallo solo dice un porcentaje. `if: always()` porque el caso en
+      # que más se necesita es justamente cuando el step anterior falló.
+      - name: Upload reporte de mutación
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-report
+          path: reports/mutation
+          if-no-files-found: ignore

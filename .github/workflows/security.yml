@@ -1,0 +1,45 @@
+name: Security
+
+# Complementa el hook local de secretlint (backlog #6), no lo sustituye. Dos diferencias
+# que lo justifican como pieza aparte: (1) el hook solo ve archivos staged en el commit
+# actual — `git commit --no-verify` lo salta por completo; este workflow no tiene ese
+# atajo. (2) gitleaks escanea el HISTORIAL COMPLETO del repositorio (`fetch-depth: 0`),
+# así que también caza secretos que entraron antes de que existiera el gate local.
+#
+# Licencia: gitleaks-action es gratuito en repositorios personales. En repositorios de
+# organización requiere `GITLEAKS_LICENSE` como secret — documentado aquí, no
+# configurado: se añade cuando el repo tenga remoto y se sepa bajo qué cuenta vive.
+#
+# Actions pineadas por SHA — política y cómo bumpear: ver el comentario de cabecera de ci.yml.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Semanal y no solo en push/PR: una regla nueva de gitleaks (o un cambio en su
+    # allowlist) solo se re-evalúa contra el historial ya existente si algo dispara un
+    # escaneo — sin este cron, una regla añadida hoy jamás miraría hacia atrás por sí sola.
+    - cron: '17 4 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Gitleaks (historial completo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (historial completo)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
