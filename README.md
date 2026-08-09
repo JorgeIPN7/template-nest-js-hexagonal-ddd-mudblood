@@ -13,6 +13,7 @@ Base NestJS 11 lista para producción con arquitectura hexagonal (Clean Architec
 - [Base de datos](#base-de-datos)
 - [Testing](#testing)
 - [Scripts](#scripts)
+- [Skills de IA](#skills-de-ia) — cómo se trabaja en este repo con un asistente
 
 ---
 
@@ -645,6 +646,50 @@ El `Dockerfile` es multi-stage (deps → build → production), corre como usuar
 > El stage de producción instala con `--prod --ignore-scripts`. Ese `--ignore-scripts` es obligatorio: pnpm ejecuta el hook `prepare` también en instalaciones de producción, y `prepare` invoca a `husky`, que es devDependency. Sin él el build falla con `husky: command not found`.
 
 > `LOG_PRETTY=true` en la imagen requiere `pino-pretty`, que por eso está en `dependencies` y no en `devDependencies`.
+
+---
+
+## Skills de IA
+
+Una **skill** es un manual que se le carga a un asistente de IA para que trabaje como se trabaja aquí, en vez de improvisar. Son archivos de texto: viven en [`.claude/skills/`](./.claude/skills/), se leen igual que cualquier documento y no ejecutan nada por su cuenta.
+
+Hay siete, y se dividen en dos grupos según cómo se usan.
+
+### Las cuatro que forman el flujo de trabajo
+
+Se invocan **en este orden** para cualquier cambio que no sea trivial. Cada una produce algo escrito que alimenta a la siguiente:
+
+```
+brainstorming  →  writing-plans  →  subagent-driven-development   (preferido)
+   (spec)           (plan)      └→  executing-plans               (alternativa)
+```
+
+| Skill                                                                                               | Qué hace                                                                                     | Cuándo usarla                                                             |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [`brainstorming`](https://www.skills.sh/obra/superpowers/brainstorming)                             | Convierte una idea en una especificación escrita, preguntando de una en una hasta entenderla | **Antes de escribir código nuevo.** Deja la spec en `docs/specs/`         |
+| [`writing-plans`](https://www.skills.sh/obra/superpowers/writing-plans)                             | Parte esa spec en tareas pequeñas, con qué archivo tocar y cómo probar cada una              | Cuando ya hay spec y antes de tocar código. Deja el plan en `docs/plans/` |
+| [`subagent-driven-development`](https://www.skills.sh/obra/superpowers/subagent-driven-development) | Ejecuta el plan tarea a tarea, cada una con un asistente nuevo y dos revisiones              | **La opción por defecto** cuando las tareas del plan son independientes   |
+| [`executing-plans`](https://www.skills.sh/obra/superpowers/executing-plans)                         | Ejecuta el mismo plan, pero en la conversación actual y sin delegar                          | Planes pequeños, o con tareas tan acopladas que separarlas estorba        |
+
+Las dos últimas hacen el mismo trabajo; la diferencia es si cada tarea va a un asistente limpio o todas comparten la misma conversación.
+
+### Las tres que se consultan
+
+No son pasos del flujo: son la referencia que se abre mientras se escribe código, para no reinventar criterios ya decididos.
+
+| Skill                                                                                                   | Manda sobre                                                                        |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [`clean-ddd-hexagonal`](https://www.skills.sh/ccheney/robust-skills/clean-ddd-hexagonal)                | Dónde va cada archivo, qué capa puede importar a cuál, cómo se modela un dominio   |
+| [`nestjs-best-practices`](https://www.skills.sh/kadajett/agent-nestjs-skills/nestjs-best-practices)     | 45 reglas de NestJS 11: módulos, inyección de dependencias, seguridad, rendimiento |
+| [`javascript-typescript-jest`](https://www.skills.sh/github/awesome-copilot/javascript-typescript-jest) | Cómo se escriben los tests aquí: nombres, estructura AAA, qué mockear en cada capa |
+
+### De dónde vienen y qué cuidar al actualizarlas
+
+Las siete se instalaron desde repositorios públicos, y [`skills-lock.json`](./skills-lock.json) fija el origen y un hash de contenido de cada una — el equivalente a un `pnpm-lock.yaml` para las skills.
+
+> **⚠️ Tres están adaptadas a este repositorio y no son la versión original:** `clean-ddd-hexagonal` y `javascript-typescript-jest` se reescribieron para este stack y estas convenciones, y `nestjs-best-practices` lleva las reglas alineadas con NestJS 11. Traerse la versión de arriba sin más **pisaría esas adaptaciones**. Compara antes de actualizar.
+
+El lint y Prettier ignoran `.claude/` a propósito: son documentación, no código del proyecto. Sin esa exclusión, el hook de pre-commit fallaba al intentar analizar con tipos un `.ts` que no pertenece a ningún `tsconfig`.
 
 ---
 

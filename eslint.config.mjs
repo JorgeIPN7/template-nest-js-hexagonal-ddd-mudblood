@@ -18,6 +18,13 @@ export default tseslint.config(
       'node_modules/**',
       '*.tsbuildinfo',
       'src/metadata.ts',
+      // Las skills son documentación, no código del proyecto: no entran en `tsconfig.json`
+      // —cuyo `include` es solo `src/` y `test/`— así que el `projectService` de más abajo no
+      // puede darles tipos y las rechaza con «was not found by the project service». El lint
+      // del DoD nunca las vio (su glob es `{src,test}/**/*.ts`), pero `lint-staged` sí, con su
+      // `*.ts` universal: bastaba con stagear `.claude/skills/**/scripts/*.ts` para que el
+      // pre-commit reventara sin que la CI se enterara jamás.
+      '.claude/**',
     ],
   },
   eslint.configs.recommended,
