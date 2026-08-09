@@ -80,6 +80,25 @@ const ownLayers = (types) => ({
   to: { element: { types: { anyOf: types }, captured: SAME_MODULE } },
 });
 
+/**
+ * La anotación no es decorativa: `eslint.config.mjs` lleva `// @ts-check`, así que TypeScript
+ * comprueba el `...boundariesBlocks` del final. Sin ella infiere este literal de forma
+ * demasiado laxa y da un TS2345 en esa línea, por dos motivos encadenados:
+ *
+ *   1. `eslint-plugin-boundaries@7` describe en `dist/index.d.ts` solo un `export default`,
+ *      mientras que su `dist/index.js` termina con `module.exports = { ...publicInterface }`
+ *      «For CommonJS compatibility». En runtime `require()` devuelve `{ meta, rules, configs }`
+ *      —un plugin válido, y por eso el lint funciona—, pero TS ve el objeto módulo entero.
+ *   2. Los pares `['error', { … }]` de `rules` se infieren como array y no como TUPLA, que es
+ *      lo que exige `RuleEntry`.
+ *
+ * Ninguno de los dos es un defecto de esta configuración, y ninguno rompe un gate: el archivo
+ * queda fuera del `include` de `tsconfig.json`, así que `pnpm typecheck` no lo mira y el error
+ * solo se veía en el editor. Se arregla aquí, en el tipo exportado, porque es el mismo que la
+ * suite ya asume — ver el `as Linter.Config[]` de `src/__tests__/eslint-boundaries.spec.ts`.
+ *
+ * @type {import('eslint').Linter.Config[]}
+ */
 module.exports = [
   {
     files: ['src/**/*.ts'],
