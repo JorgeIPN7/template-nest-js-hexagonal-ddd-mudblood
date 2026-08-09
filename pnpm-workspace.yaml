@@ -1,0 +1,56 @@
+# pnpm settings. Since pnpm 11 these live here only — the "pnpm" key in package.json is
+# ignored silently. This is a single-package repo, not a monorepo; the file exists to
+# carry the settings below.
+packages:
+  - '.'
+
+# @nestjs/cli ships its own `typescript` as a direct dependency (5.9.3 at the time of
+# writing). Without this override, `nest build` would type-check with that copy while
+# `pnpm typecheck` used the root TypeScript 6 — two compilers validating the same code.
+#
+# Unscoped on purpose (applies to every `typescript` in the tree, not just @nestjs/cli's),
+# which means it silently shadows the direct `typescript` devDependency in package.json:
+# bumping that devDependency (by hand or via a future Renovate PR) changes nothing on its
+# own, because this override still wins the resolution. Bump BOTH together — the
+# devDependency AND this literal — or `pnpm typecheck` keeps compiling with the old
+# version while `package.json` claims a newer one.
+overrides:
+  typescript: 6.0.3
+  # `@nestjs/swagger` solo genera el documento OpenAPI; la interfaz la sirve Scalar desde
+  # `public/`. Sus 12 MB de assets no se cargan nunca: son merma que viajaría en la imagen.
+  #
+  # Quitarlo es seguro porque el require es perezoso — vive dentro de
+  # `getSwaggerAssetsAbsoluteFSPath()`, alcanzable solo desde `SwaggerModule.setup()`, que ya no
+  # se llama. Si alguien la reintroduce, el fallo es `MODULE_NOT_FOUND` en runtime y
+  # `--frozen-lockfile` reproduciría el estado roto en CI sin quejarse: por eso el E2E que
+  # arranca la aplicación y sirve la documentación es requisito, no adorno.
+  #
+  # El valor `'-'` elimina la dependencia; es sintaxis de pnpm desde 9.12.
+  swagger-ui-dist: '-'
+  # CVE GHSA-pm4m-ph32-ghv5 (High, DoS por tiempo exponencial de parseo en flow
+  # collections): `@nestjs/swagger@11.4.6` — su última versión a 2026-08-06 — declara
+  # `js-yaml@5.2.1`, vulnerable; el fix está en 5.2.2/5.2.3 pero upstream aún no lo
+  # adoptó. Scoped al path, no global: un override global forzaría también el
+  # `js-yaml@3.15.0` del que depende `@istanbuljs/load-nyc-config` (cadena de Jest, dev)
+  # a v5, y ese paquete usa la API v3 — rompería la suite. `^5.2.2` (>=5.2.2 <6.0.0), no
+  # `>=5.2.2` sin techo: upstream pinea exacto, así que el override sustituye la regla
+  # por completo — sin techo, un futuro `js-yaml@6` con breaking changes entraría en
+  # silencio en el próximo `pnpm install`. El caret expresa "línea 5.x, con el CVE
+  # arreglado" hasta que `@nestjs/swagger` adopte el fix y este override pueda retirarse.
+  '@nestjs/swagger>js-yaml': '^5.2.2'
+
+# pnpm blocks postinstall scripts by default. Each entry is an explicit trust decision.
+allowBuilds:
+  # Native binary for the transpiler that `nest build` and @swc/jest rely on.
+  '@swc/core': true
+  # Hashing nativo de passwords (argon2id). node-gyp-build usa el prebuild si existe
+  # y solo compila si no hay binario para la plataforma.
+  argon2: true
+  # Native resolver used by the ESLint import machinery.
+  unrs-resolver: true
+  # Analytics/telemetry only — nothing here needs it.
+  '@scarf/scarf': false
+  # Transitive dep of @scalar/api-reference. Its postinstall picks a Vue 2/3 shim at install
+  # time, which only matters when the package is imported. We never import it: the build only
+  # reads the prebuilt `dist/browser/standalone.js` out of the tarball.
+  vue-demi: false
