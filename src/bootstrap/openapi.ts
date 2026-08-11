@@ -64,6 +64,17 @@ export function setupOpenApi(
    * property» — y porque un fake escrito a mano es lo que pide la convención del repo.
    */
   buildDocument: typeof buildOpenApiDocument = buildOpenApiDocument,
+  /**
+   * Inyectable por la misma razón, y además por una propia: `public/` es un artefacto de build
+   * ignorado por git que solo generan `prebuild`, `prestart:dev` y `pretest:e2e`. La suite
+   * unitaria no dispara ninguno de los tres —en CI corre antes que el E2E y que el build—, así
+   * que leer el manifiesto de disco ataba `pnpm test` a un paso previo que nadie ejecuta: verde
+   * en local por los restos de un build anterior, rojo en un clon limpio y rojo en CI.
+   *
+   * Lo que estos tests observan es el orden de montaje, no el nombre del archivo servido. Que la
+   * URL del bundle apunte al asset real lo comprueba el E2E, que sí lo tiene generado.
+   */
+  readManifest: () => AssetManifest = readAssetManifest,
 ): string | null {
   if (!docsCfg.enabled) {
     return null;
@@ -72,7 +83,7 @@ export function setupOpenApi(
   const document = buildDocument(app, appCfg);
   const path = `${appCfg.globalPrefix}/${docsCfg.path}`;
   const base = `/${path}`;
-  const { fileName } = readAssetManifest();
+  const { fileName } = readManifest();
 
   // 1. Basic Auth, lo primero: protege la interfaz, el bundle y el documento crudo.
   if (docsCfg.username && docsCfg.password) {

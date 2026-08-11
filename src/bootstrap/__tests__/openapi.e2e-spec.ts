@@ -124,18 +124,38 @@ describe('OpenAPI docs (e2e)', () => {
   describe('con credenciales configuradas', () => {
     let app: INestApplication<App>;
     let docsPath: string;
+    /** Avisos emitidos al montar. Ver el test que los afirma al final de este bloque. */
+    let mountWarnings: string[];
 
     beforeAll(async () => {
+      // Montar Basic Auth con TRUST_PROXY=0 —el default— avisa por consola a propósito. Se
+      // silencia aquí para no ensuciar la salida de la suite, pero se guarda lo emitido en vez
+      // de descartarlo: taparlo sin afirmarlo dejaría que el aviso desapareciera sin que
+      // ningún test se enterase.
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
       const created = await withEnv(
         { DOCS_ENABLED: 'true', DOCS_USERNAME: 'equipo', DOCS_PASSWORD: 'secreto' },
         () => createTestApp({ withDocs: true }),
       );
+      mountWarnings = warn.mock.calls.map((call) => String(call[0]));
+      warn.mockRestore();
       app = created.app;
       docsPath = `/${created.docsPath ?? ''}`;
     });
 
     afterAll(async () => {
       await app.close();
+    });
+
+    it('debería avisar al montar de que TRUST_PROXY=0 agrupa a todos los clientes', () => {
+      // Arrange + Act
+      // (el aviso se emite al montar la documentación, en el `beforeAll`)
+
+      // Assert
+      // Con un proxy delante y `trust proxy` a 0, el limitador de intentos mete a todos los
+      // clientes en un solo contador. El aviso es la única señal de esa degradación, y sin
+      // esta aserción quedaría silenciado por el spy de arriba sin que nadie lo notara.
+      expect(mountWarnings.some((message) => message.includes('TRUST_PROXY=0'))).toBe(true);
     });
 
     it.each([

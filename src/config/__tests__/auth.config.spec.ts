@@ -2,6 +2,12 @@ import { resolveJwtSecret, ARGON2_PARAMS } from '../auth.config';
 import { envSchema } from '../env.schema';
 
 describe('resolveJwtSecret', () => {
+  // El spy se restaura pase lo que pase con las aserciones: `console.warn` es global y un
+  // mock que sobrevive a su test se lleva por delante la salida de las suites siguientes.
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('debería usar el secret del entorno cuando está definido', () => {
     // Arrange + Act
     const secret = resolveJwtSecret({ NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(32) });
@@ -10,10 +16,19 @@ describe('resolveJwtSecret', () => {
   });
 
   it('debería aplicar el default inseguro solo sin secret (development)', () => {
-    // Arrange + Act
+    // Arrange
+    // Esta rama avisa por consola a propósito. Se silencia para no ensuciar la salida de la
+    // suite, pero se AFIRMA en lugar de solo taparse: sin la aserción, borrar el
+    // `console.warn` de `auth.config.ts` dejaría la suite verde y el aviso desaparecería.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    // Act
     const secret = resolveJwtSecret({ NODE_ENV: 'development', JWT_SECRET: undefined });
+
     // Assert
     expect(secret).toContain('insecure-dev-secret');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('JWT_SECRET no definido');
   });
 });
 

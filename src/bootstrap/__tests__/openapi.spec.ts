@@ -35,6 +35,7 @@ describe('setupOpenApi', () => {
       buildAppConfig(),
       { enabled: true, path: 'docs' },
       fakeDocument(),
+      fakeManifest(),
     );
 
     // Assert
@@ -51,6 +52,7 @@ describe('setupOpenApi', () => {
       buildAppConfig({ globalPrefix: 'gateway' }),
       { enabled: true, path: 'openapi' },
       fakeDocument(),
+      fakeManifest(),
     );
 
     // Assert
@@ -62,7 +64,13 @@ describe('setupOpenApi', () => {
     const app = buildApp();
 
     // Act
-    setupOpenApi(app, buildAppConfig(), { enabled: true, path: 'docs' }, fakeDocument());
+    setupOpenApi(
+      app,
+      buildAppConfig(),
+      { enabled: true, path: 'docs' },
+      fakeDocument(),
+      fakeManifest(),
+    );
     const mounts = mountsOf(app);
 
     // Assert
@@ -80,7 +88,13 @@ describe('setupOpenApi', () => {
     const app = buildApp();
 
     // Act
-    setupOpenApi(app, buildAppConfig(), { enabled: true, path: 'docs' }, fakeDocument());
+    setupOpenApi(
+      app,
+      buildAppConfig(),
+      { enabled: true, path: 'docs' },
+      fakeDocument(),
+      fakeManifest(),
+    );
     const mounts = mountsOf(app);
 
     // Assert
@@ -125,3 +139,18 @@ const fakeDocument =
     onCall();
     return { openapi: '3.1.0', info: { title: 'test', version: '1' }, paths: {} };
   };
+
+/**
+ * Manifiesto del bundle escrito a mano, con la forma que produce `scripts/copy-scalar-asset.mjs`.
+ *
+ * El real vive en `public/`, que git ignora y que solo generan `prebuild`, `prestart:dev` y
+ * `pretest:e2e`: leerlo aquí hacía depender la suite unitaria de un paso de build que ella no
+ * dispara —verde en local por los restos de un build anterior, rojo en un clon limpio y rojo en
+ * CI, donde los unitarios corren antes que el E2E—. Estos tests observan el orden de montaje, no
+ * el nombre del archivo servido.
+ */
+const fakeManifest = () => () => ({
+  fileName: 'scalar.0123456789ab.js',
+  version: '1.64.0',
+  bytes: 3_748_834,
+});

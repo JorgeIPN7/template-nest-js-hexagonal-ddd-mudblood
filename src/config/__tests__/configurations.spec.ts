@@ -186,6 +186,12 @@ describe('throttlerConfig', () => {
 });
 
 describe('authConfig', () => {
+  // Ver la nota del spy más abajo: `console.warn` es global y un mock sin restaurar
+  // contaminaría las suites siguientes.
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('debería reflejar el secret y la vida del token configurados', () => {
     // Arrange
     const secret = 'x'.repeat(32);
@@ -205,12 +211,18 @@ describe('authConfig', () => {
     // La ausencia se construye, no se hereda: `test/setup-env.ts` fija JWT_SECRET para
     // todas las suites (y un shell con la variable exportada rompía este caso igual).
     delete process.env.JWT_SECRET;
+    // Este camino avisa por consola a propósito. Se silencia para no ensuciar la salida, y se
+    // afirma para que taparlo no equivalga a perderlo: si alguien borra el `console.warn` de
+    // `auth.config.ts`, este test se pone rojo en vez de quedarse verde en silencio.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     // Act
     const config = authConfig();
 
     // Assert
     expect(config.jwtSecret).toContain('insecure-dev-secret');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('JWT_SECRET no definido');
   });
 });
 

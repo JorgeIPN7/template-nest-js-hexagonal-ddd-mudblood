@@ -33,7 +33,8 @@ export async function relayOrdersOutbox(dataSource: DataSource): Promise<number>
 
   for (const row of rows) {
     // El único log del módulo fuera del bloque CLI: ES la publicación, no un adorno.
-    // Warning de no-console aceptado — mismo precedente que seed-admin.
+    // `no-console` está apagado para esta carpeta en `eslint.config.mjs`, con el motivo
+    // escrito allí — mismo precedente que seed-admin.
     console.log(`[outbox:relay] ${row.event_type} ${JSON.stringify(row.payload)}`);
     await dataSource.query(`UPDATE orders_outbox SET processed_at = now() WHERE id = $1`, [row.id]);
   }

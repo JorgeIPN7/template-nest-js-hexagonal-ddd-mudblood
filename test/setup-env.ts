@@ -30,6 +30,13 @@ process.env.DB_SYNCHRONIZE = 'false';
 // secret que venga del entorno del desarrollador.
 process.env.JWT_SECRET ??= 'e2e-test-secret-of-at-least-32-chars!!';
 
+// Los E2E arrancan la aplicación real, y varias suites provocan 404 y 401 a propósito para
+// afirmar su forma. Pino los escribe a stdout como JSON, así que la salida de una corrida
+// verde llega con volcados que parecen fallos y que obligan a distinguir a ojo el ruido
+// esperado del error de verdad. `??=` respeta un nivel explícito del shell: para depurar una
+// suite basta `LOG_LEVEL=info pnpm test:e2e`.
+process.env.LOG_LEVEL ??= 'silent';
+
 // El worker único de la suite E2E (`maxWorkers: 1`) acumula el heap de ~10 arranques de
 // AppModule en un mismo proceso. El umbral de 300 MB del `.env` es tuning de producción
 // (un proceso, una app) y bajo test produce 503 falsos intermitentes en el indicador

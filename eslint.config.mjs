@@ -90,6 +90,26 @@ export default tseslint.config(
     },
   },
   {
+    // `src/database/seeds/` y `src/database/outbox/` no son código de la aplicación: son
+    // programas de línea de comandos (`pnpm seed:admin`, `pnpm outbox:relay`). En un CLI la
+    // salida estándar ES la interfaz de usuario, no el rastro de una depuración olvidada. En el
+    // relay va aún más lejos: el `console.log` de cada fila ES la publicación del evento —el
+    // único efecto observable que el outbox tiene hoy, hasta que llegue BullMQ—, y su spec lo
+    // espía justamente por eso, así que también nombra `console.log` en las aserciones.
+    //
+    // Acotado a esas dos carpetas y a ese spec, NUNCA a `src/database/**`: ahí viven también
+    // `data-source.ts`, `typeorm-options.ts` y las migraciones, donde un `console.log` sí sería
+    // un olvido y la regla debe seguir avisando.
+    files: [
+      'src/database/seeds/**/*.ts',
+      'src/database/outbox/**/*.ts',
+      'src/database/__tests__/relay-orders-outbox.e2e-spec.ts',
+    ],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  {
     // Blindaje del ÚNICO fallo silencioso que introduce el ciclo 2 (puertos como
     // `abstract class`, sin `@Inject`). El token de inyección ES la referencia a la clase,
     // y viaja hasta el runtime dentro de `design:paramtypes`. Un `import type` borra esa
