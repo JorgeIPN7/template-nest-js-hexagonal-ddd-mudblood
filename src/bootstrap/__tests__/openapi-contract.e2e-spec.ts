@@ -256,6 +256,24 @@ describe('contrato OpenAPI', () => {
     // Los `$ref` apuntan a `#/components/schemas/...`, de ahí que se embeban los `components`
     // del documento en cada esquema compilado: así resuelven contra sí mismos.
     const ajv = new Ajv({ strict: false, allErrors: true });
+
+    // Ajv 8 no trae NINGÚN formato de serie: viven en el paquete `ajv-formats`. Sin registrarlos,
+    // cada `format` del documento se ignora —con un `console.warn` por cada compilación, que era
+    // el ruido que sepultaba la salida de la suite— y esta comprobación dejaba de mirar
+    // precisamente los campos que más fácil se documentan mal. El documento usa tres:
+    // `date-time`, `uuid` y `email`.
+    //
+    // Van a mano y no con `ajv-formats` porque aquí no se valida entrada de usuarios sino los
+    // EJEMPLOS de la documentación: basta con distinguir una fecha ISO de «ayer» y un UUID de
+    // «abc», y evita añadir una dependencia al árbol por tres expresiones. Son deliberadamente
+    // laxas por el mismo motivo — quien las endurezca para validar datos reales se estará
+    // equivocando de sitio: eso es trabajo de `class-validator` en los DTO.
+    //
+    // Al activarlas (2026-08-13) los 19 casos siguieron en verde: ningún ejemplo publicado
+    // violaba su formato. Lo que estaba roto era la comprobación, no la documentación.
+    ajv.addFormat('date-time', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/);
+    ajv.addFormat('uuid', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    ajv.addFormat('email', /^[^@\s]+@[^@\s]+\.[^@\s]+$/);
     const offenders: string[] = [];
 
     // Act
