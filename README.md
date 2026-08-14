@@ -436,7 +436,7 @@ Redoc queda fuera porque no puedes probar un endpoint desde la página, y eso es
 | Telemetría activa                      | Enviaba métricas de uso                         | `telemetry: false`          |
 | Agente IA autodetectado por URL        | Encendido en `localhost`                        | `agent: { disabled: true }` |
 
-**El bundle se sirve desde nuestro propio origen, nunca desde el CDN de Scalar.** El motivo es concreto: el paquete no permite adjuntar un hash `integrity`, así que auto-hospedarlo es la única forma de saber qué JavaScript se ejecuta en el navegador de quien abre la documentación. `scripts/copy-scalar-asset.mjs` lo copia a `public/` con un hash de contenido en el nombre, y los hooks `prebuild`, `prestart:dev` y `pretest:e2e` lo ejecutan solos.
+**El bundle se sirve desde nuestro propio origen, nunca desde el CDN de Scalar.** El motivo es concreto: el paquete no permite adjuntar un hash `integrity`, así que auto-hospedarlo es la única forma de saber qué JavaScript se ejecuta en el navegador de quien abre la documentación. `scripts/copy-scalar-asset.mjs` lo copia a `public/` con un hash de contenido en el nombre, y los hooks `prebuild`, `prestart:dev`, `pretest:e2e` y `pretest:e2e:ci` lo ejecutan solos. Los cuatro nombres van explícitos porque los hooks de pnpm se resuelven **por nombre exacto**: `pretest:e2e` no cubre a `test:e2e:ci`, y esa diferencia rompió la CI mientras en local todo seguía verde por los restos de un build anterior.
 
 Tres capas antes de que nadie vea las docs: [`DOCS_ENABLED` apagado por defecto](#rate-limiting-docs-y-runtime), Basic Auth opcional, y una CSP propia y restrictiva (`default-src 'none'`) acotada a esa ruta, con nonce por petición.
 

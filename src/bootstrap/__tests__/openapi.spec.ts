@@ -143,8 +143,8 @@ const fakeDocument =
 /**
  * Manifiesto del bundle escrito a mano, con la forma que produce `scripts/copy-scalar-asset.mjs`.
  *
- * El real vive en `public/`, que git ignora y que solo generan `prebuild`, `prestart:dev` y
- * `pretest:e2e`: leerlo aquí hacía depender la suite unitaria de un paso de build que ella no
+ * El real vive en `public/`, que git ignora y que solo generan `prebuild`, `prestart:dev`,
+ * `pretest:e2e` y `pretest:e2e:ci`: leerlo aquí hacía depender la suite unitaria de un paso que ella no
  * dispara —verde en local por los restos de un build anterior, rojo en un clon limpio y rojo en
  * CI, donde los unitarios corren antes que el E2E—. Estos tests observan el orden de montaje, no
  * el nombre del archivo servido.

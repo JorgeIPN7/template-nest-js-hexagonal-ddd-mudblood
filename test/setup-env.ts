@@ -44,3 +44,15 @@ process.env.LOG_LEVEL ??= 'silent';
 // 1024 sigue detectando una fuga real desbocada. `??=` respeta un valor explícito del
 // shell, mismo patrón que JWT_SECRET.
 process.env.HEALTH_HEAP_LIMIT_MB ??= '1024';
+
+// El RSS quedó fuera de aquel ajuste, y era la mitad que faltaba: `/health` y
+// `/health/readiness` ejecutan `memory_heap` Y `memory_rss`, así que subir solo el heap deja
+// el 503 a un indicador de distancia. Medido el 2026-08-13 sobre `pnpm test:e2e:ci` con la
+// suite ENTERA en verde: el proceso de Jest pico en 498 MB de RSS contra el límite de 600 del
+// `.env` — 83 %, un margen de 102 MB para 12 arranques de AppModule en un worker único.
+// No es teórico: la CI de ese día se puso roja exactamente ahí. Un fallo previo dejó 12 apps
+// sin cerrar y `health.e2e-spec.ts`, que corre la última, respondió 503 a los tres tests con
+// indicadores mientras `liveness` —que no ejecuta ninguno— seguía en 200.
+// 2048 mantiene el mismo criterio que el heap: absorbe el coste del entorno de test y sigue
+// cazando una fuga desbocada.
+process.env.HEALTH_RSS_LIMIT_MB ??= '2048';

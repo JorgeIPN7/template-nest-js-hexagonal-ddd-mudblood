@@ -38,7 +38,7 @@ const readAssetManifest = (): AssetManifest => {
   } catch {
     throw new Error(
       'No se encontró el bundle de Scalar en public/. Ejecuta `pnpm assets:scalar` — lo hacen ' +
-        'automáticamente `prebuild`, `prestart:dev` y `pretest:e2e`.',
+        'automáticamente `prebuild`, `prestart:dev`, `pretest:e2e` y `pretest:e2e:ci`.',
     );
   }
 };
@@ -66,10 +66,16 @@ export function setupOpenApi(
   buildDocument: typeof buildOpenApiDocument = buildOpenApiDocument,
   /**
    * Inyectable por la misma razón, y además por una propia: `public/` es un artefacto de build
-   * ignorado por git que solo generan `prebuild`, `prestart:dev` y `pretest:e2e`. La suite
-   * unitaria no dispara ninguno de los tres —en CI corre antes que el E2E y que el build—, así
-   * que leer el manifiesto de disco ataba `pnpm test` a un paso previo que nadie ejecuta: verde
-   * en local por los restos de un build anterior, rojo en un clon limpio y rojo en CI.
+   * ignorado por git que solo generan `prebuild`, `prestart:dev`, `pretest:e2e` y
+   * `pretest:e2e:ci`. La suite unitaria no dispara ninguno —en CI corre antes que el E2E y que
+   * el build—, así que leer el manifiesto de disco ataba `pnpm test` a un paso previo que nadie
+   * ejecuta: verde en local por los restos de un build anterior, rojo en un clon limpio y rojo
+   * en CI.
+   *
+   * `pretest:e2e:ci` es el cuarto porque faltaba, y su ausencia rompió la CI (2026-08-13): los
+   * hooks de pnpm se resuelven por nombre EXACTO, así que `pretest:e2e` no se dispara con
+   * `pnpm test:e2e:ci`. En local nunca se notó —`public/` sobrevive de cualquier build
+   * anterior—, y en el runner limpio reventaron las 12 pruebas de `openapi.e2e-spec.ts`.
    *
    * Lo que estos tests observan es el orden de montaje, no el nombre del archivo servido. Que la
    * URL del bundle apunte al asset real lo comprueba el E2E, que sí lo tiene generado.

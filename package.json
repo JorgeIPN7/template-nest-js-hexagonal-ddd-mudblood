@@ -55,7 +55,8 @@
     "assets:scalar": "node scripts/copy-scalar-asset.mjs",
     "prebuild": "pnpm assets:scalar",
     "prestart:dev": "pnpm assets:scalar",
-    "pretest:e2e": "pnpm assets:scalar"
+    "pretest:e2e": "pnpm assets:scalar",
+    "pretest:e2e:ci": "pnpm assets:scalar"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
