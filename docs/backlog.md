@@ -956,6 +956,47 @@ contenedor que ya no existe.
 
 ---
 
+## 25. El gate de trivy se pone rojo por la imagen base, sin que nadie toque el repo
+
+**Qué pasa.** El primer disparo real del scan de `ci.yml` (2026-08-14, ya con remoto) salió en rojo
+con **49 vulnerabilidades HIGH/CRITICAL con fix publicado, y ni una de este repositorio**: 15 del
+sistema de `node:22.22.1-alpine` (`libcrypto3`/`libssl3` 3.5.5-r0 —CVE-2026-31789 es CRITICAL—,
+`musl` 1.2.5-r21, `zlib` 1.3.1-r2) y 34 del **npm global que la propia imagen de Node empaqueta**
+en `/usr/local/lib/node_modules/npm` (`tar` 6.2.1 y 7.4.3, CVE-2026-59873 CRITICAL, más
+`brace-expansion`, `minimatch`, `glob`, `picomatch`, `ip-address`, `sigstore`). `app/node_modules`
+salió limpio: el gate de `pnpm audit --prod` ya cubre ese frente y lo estaba cubriendo bien.
+
+Las dos mitades quedaron cerradas en el [`Dockerfile`](../Dockerfile) —`apk upgrade --no-cache` en
+`base`, `rm -rf` del npm global en `production`— con el porqué de cada una en su comentario. Medido
+antes y después con la misma versión de trivy que usa la action (0.70.0) y sus flags exactos:
+exit 1 → **exit 0**, y la imagen sigue arrancando, sirviendo el bundle de Scalar y hasheando con
+argon2 (el binding nativo sobrevive al salto de `musl`).
+
+**Subir de versión de Node no era la salida, y se midió antes de descartarlo:** `node:22-alpine`
+(22.23.2) deja 8 y `node:24-alpine` (24.19.0, npm 11.17.0) deja 7, todas del mismo npm interno.
+Mientras npm viaje en la imagen publicada, el gate seguiría rojo con cualquier Node.
+
+**Lo que queda abierto es el patrón, no este rojo concreto.** Un CVE nuevo de OpenSSL o de musl con
+parche disponible vuelve a poner la CI en rojo sin que nadie haya tocado una línea, y la mitad del
+SO solo se re-parchea cuando la capa de `apk upgrade` se reconstruye — es decir, cuando algo
+invalida la caché, no cada semana. Es la contrapartida asumida de un gate que solo mira lo
+accionable: honesto, pero interrumpe.
+
+**Criterio ya decidido.** No relajar el gate ni abrir un `.trivyignore`: un CVE con fix publicado en
+la imagen que se despliega es exactamente lo que este gate existe para gritar. Cuando el ruido
+moleste, las dos palancas por orden de preferencia son (1) fijar `FROM` por **digest** y dejar que
+Renovate abra la PR del bump —ya está previsto: `:pinAllExceptPeerDependencies` de `renovate.json`
+cubre el `Dockerfile`, entrada #6— de modo que el parcheo pase a ser una PR revisable en vez de un
+efecto colateral de la caché, y (2) un `schedule:` semanal que reconstruya y escanee, para enterarse
+por un job y no por el siguiente PR de otra persona. Ninguna se hace hoy porque ambas dependen de
+que Renovate esté instalado en el remoto, que es el mismo trigger que espera la entrada #6.
+
+**Cómo se sabrá que está hecho.** El `FROM` del Dockerfile lleva digest, existe una PR automática
+que lo sube cuando la base publica parches, y un rojo de trivy vuelve a significar «alguien metió
+algo» en vez de «pasó el tiempo».
+
+---
+
 ## Cerrado al verificarlo
 
 - **`operationIdFactory` colisionando entre controllers con métodos homónimos.** No estaba latente:
