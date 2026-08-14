@@ -51,6 +51,7 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d postgres",
+    "init:project": "node scripts/init-project.mjs",
     "assets:scalar": "node scripts/copy-scalar-asset.mjs",
     "prebuild": "pnpm assets:scalar",
     "prestart:dev": "pnpm assets:scalar",

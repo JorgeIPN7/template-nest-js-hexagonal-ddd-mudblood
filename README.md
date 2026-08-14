@@ -2,6 +2,98 @@
 
 Base NestJS 11 lista para producción con arquitectura hexagonal (Clean Architecture + DDD), TypeORM sobre PostgreSQL, SWC, Pino, Zod para configuración, documentación OpenAPI servida con Scalar, Terminus, rate limiting y buenas prácticas de seguridad y observabilidad.
 
+<!-- template-only:start -->
+
+---
+
+## Empezar un proyecto nuevo desde esta base
+
+Esta sección solo existe mientras el repositorio **es** el template: `pnpm init:project` la borra del README del proyecto derivado, junto con el resto de bloques marcados `template-only`.
+
+### 1. Traerte el código
+
+Cuatro formas, y solo una recomendada:
+
+| Forma                          | Cómo                                                                         | Qué historial arrastras                | Veredicto                                                                                   |
+| ------------------------------ | ---------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Botón «Use this template»**  | En la página del repositorio en GitHub                                       | Un único commit inicial, limpio        | ✅ **Recomendada**                                                                          |
+| `degit` / `giget`              | `pnpm dlx giget gh:JorgeIPN7/template-nest-js-hexagonal-ddd-mudblood mi-api` | Ninguno — descarga el árbol sin `.git` | Buena si no quieres pasar por la interfaz web, o si el origen no está en GitHub             |
+| `git clone` + reiniciar el git | `git clone --depth 1 <url> mi-api && cd mi-api && rm -rf .git && git init`   | Ninguno                                | Equivalente a la anterior, con más pasos                                                    |
+| **Fork**                       | Botón _Fork_                                                                 | Todo, **y queda ligado al original**   | ❌ Los PR apuntan por defecto al repositorio de origen y el tuyo aparece en su red de forks |
+
+Un fork no es una copia independiente: es una rama pública del proyecto original. Para un proyecto de cliente eso es lo contrario de lo que quieres.
+
+> **⚠️ Copiar y pegar los archivos en una carpeta nueva es la peor opción, y no por comodidad.** El explorador de archivos oculta lo que empieza por punto, que es justo donde vive media configuración. Esto es lo que se queda atrás y qué se rompe:
+
+| Lo que no copias                                                             | Qué deja de funcionar                                                                                                                                                        |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.swcrc`                                                                     | **⚠️ La inyección de dependencias, en runtime.** Sin `decoratorMetadata` Nest no sabe qué inyectar y muere con `Nest can't resolve dependencies` — con el typecheck en verde |
+| `.husky/`                                                                    | Los hooks de `pre-commit` y `commit-msg`: ni lint, ni typecheck, ni commitlint, ni el escaneo de secretos antes de commitear                                                 |
+| `.github/`                                                                   | La CI entera. Nada verifica un PR                                                                                                                                            |
+| `.secretlintrc.json`                                                         | `secretlint` corre sin reglas: una clave staged deja de bloquear el commit                                                                                                   |
+| `.gitignore`                                                                 | Acabas commiteando `node_modules/`, `dist/` y tu `.env` — con el `JWT_SECRET` dentro                                                                                         |
+| `.env.example`                                                               | El único sitio donde está documentada cada variable, con qué rompe y con qué combina mal                                                                                     |
+| `.prettierrc`, `.prettierignore`, `.editorconfig`, `.nvmrc`, `.node-version` | Formato y versión de Node dejan de estar fijados: el primer `pnpm format:check` reformatea el repositorio entero                                                             |
+
+Y aunque copies también los ocultos, sigue faltando `.git`: sin él `pnpm install` termina bien pero imprime `husky - .git can't be found` y los hooks no quedan instalados.
+
+### 2. Qué hace falta para que exista el botón «Use this template»
+
+| Lado                   | Requisito                                                                                                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Quien publica**      | Marcar el repositorio como plantilla: _Settings → General → ✅ Template repository_. Es una casilla; no cambia visibilidad ni permisos, solo añade el botón. También con `gh repo edit --template`      |
+| **Quien lo usa**       | Una cuenta de GitHub. Si el repositorio es privado, además acceso de lectura                                                                                                                            |
+| **Lo que se lleva**    | Todo el árbol de la rama por defecto, en **un commit inicial** sin relación con el original. Marcando _Include all branches_ se lleva también las demás ramas                                           |
+| **Lo que NO se lleva** | Historial, tags, releases, issues, wiki, stars y —importante si algún día los hubiera— los _secrets_ de GitHub Actions. La CI de este repositorio no usa ninguno, así que funciona desde el primer push |
+
+### 3. Ponerle nombre: `pnpm init:project`
+
+El template lleva su identidad escrita en 17 archivos: el nombre del paquete, el de la base de datos (dos: la de desarrollo y la de tests), el del proyecto y el contenedor de Docker Compose, el título del documento OpenAPI y el `service` de los logs. Cambiarlos a mano es donde se queda algo atrás.
+
+```bash
+pnpm init:project --name mi-api --dry-run     # enseña el plan, no escribe nada
+pnpm init:project --name mi-api --title "Mi API" --repo https://github.com/tu-org/mi-api
+```
+
+| Qué toca                           | Cómo                                                                                                                                                                 |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 15 archivos con el nombre literal  | Sustitución de tokens: paquete, base de datos, proyecto Compose, título OpenAPI, URL del repositorio                                                                 |
+| `package.json`                     | Campo a campo: `name`, `version` a `0.1.0`, `description`, `author`. Sin `--repo`, **elimina** `repository`, `bugs` y `homepage` en lugar de dejarlos apuntando aquí |
+| `CHANGELOG.md` y `docs/backlog.md` | Los archiva en `docs/template-history/` y crea los del proyecto nuevo, vacíos. No los reescribe: son historia real de otro proyecto, y renombrarla la falsearía      |
+| Los bloques `template-only`        | Los recorta del README                                                                                                                                               |
+| Un `JWT_SECRET`                    | Lo genera y lo **imprime** — nunca lo escribe en un archivo: `.env.example` está versionado y `secretlint` bloquearía el commit, con razón                           |
+
+Lo que **no** hace: tocar git, y borrar los módulos de ejemplo (§4). Tampoco se autoelimina salvo con `--self-destruct`, para que un renombrado interrumpido a mitad se pueda reintentar.
+
+Después: `pnpm install` → `cp .env.example .env` (pega ahí el `JWT_SECRET`) → **`pnpm db:reset`** → `pnpm migration:run`. El `db:reset` no es opcional: el nombre de la base cambió y el volumen anterior contiene la antigua.
+
+`src/__tests__/init-project.spec.ts` vigila el manifiesto del script contra el repositorio real. Si alguien escribe el nombre del template en un archivo nuevo sin declararlo, la suite se pone roja — sin ese gate, el renombrado quedaría a medias en silencio.
+
+### 4. Quitar los módulos de ejemplo (a mano, y con este orden)
+
+`health` se queda siempre. Los otros tres son ejemplos, pero **no son independientes**:
+
+| Módulo   | ¿Se puede quitar?                | Qué arrastra                                                                                  |
+| -------- | -------------------------------- | --------------------------------------------------------------------------------------------- |
+| `orders` | Sí, sin tocar nada más           | Es el único consumidor de `UsersLookup`; nadie depende de él                                  |
+| `auth`   | Sí, pero deja la API **abierta** | Registra el `APP_GUARD` global. Quitarlo sin sustituirlo deja todo endpoint sin autenticación |
+| `users`  | **No sin reescribir `auth`**     | `auth` consume `UsersLookup` y `UsersProvisioning`; sin ellos no hay ni login ni registro     |
+
+Para cada módulo que quites:
+
+1. Borra `src/modules/<contexto>/` entera — los tests van dentro, así que se van con ella.
+2. Quita su import y su entrada en `imports:` de [`src/app.module.ts`](src/app.module.ts).
+3. Borra su migración y la tabla que creó. La de `orders` es [`1786076763455-create-orders-and-outbox.ts`](src/database/migrations/1786076763455-create-orders-and-outbox.ts); si ya la aplicaste, `pnpm migration:revert` antes de borrar el archivo. Con la base todavía sin datos, `pnpm db:reset` es más rápido.
+4. Quita su scope del `scope-enum` de [`commitlint.config.cjs`](commitlint.config.cjs).
+5. Si era `orders`, quita también `pnpm outbox:relay` de `package.json` y `src/database/outbox/`.
+6. Revisa las secciones que lo describen en este README y en [`CLAUDE.md`](CLAUDE.md).
+7. **Vuelve a medir la mutación.** `stryker.config.mjs` apunta por globs, así que no hay que editarlo, pero el umbral `break: 85` está calibrado sobre el peso en mutantes de los módulos actuales: quitar uno mueve el score global. Corre `pnpm test:mutation` y ajusta el umbral con el número nuevo, no a ojo.
+8. Definition of Done completo: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`.
+
+<!-- template-only:end -->
+
+---
+
 ## Contenido
 
 - [Puesta en marcha](#puesta-en-marcha) — empieza por aquí
