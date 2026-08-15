@@ -113,7 +113,7 @@
     "eslint": "10.8.1",
     "eslint-config-prettier": "10.1.8",
     "eslint-import-resolver-typescript": "4.4.5",
-    "eslint-plugin-boundaries": "7.1.0",
+    "eslint-plugin-boundaries": "7.2.0",
     "eslint-plugin-prettier": "5.5.6",
     "fast-check": "4.9.0",
     "globals": "17.7.0",
