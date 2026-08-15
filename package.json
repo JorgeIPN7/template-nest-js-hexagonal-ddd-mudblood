@@ -59,11 +59,11 @@
     "pretest:e2e:ci": "pnpm assets:scalar"
   },
   "dependencies": {
-    "@nestjs/common": "11.1.28",
+    "@nestjs/common": "11.2.1",
     "@nestjs/config": "4.0.4",
-    "@nestjs/core": "11.1.28",
+    "@nestjs/core": "11.2.1",
     "@nestjs/jwt": "11.0.2",
-    "@nestjs/platform-express": "11.1.28",
+    "@nestjs/platform-express": "11.2.1",
     "@nestjs/swagger": "11.4.6",
     "@nestjs/terminus": "11.1.1",
     "@nestjs/throttler": "6.5.0",
@@ -95,7 +95,7 @@
     "@fast-check/jest": "2.2.0",
     "@nestjs/cli": "11.0.24",
     "@nestjs/schematics": "11.1.0",
-    "@nestjs/testing": "11.1.28",
+    "@nestjs/testing": "11.2.1",
     "@scalar/api-reference": "1.64.0",
     "@secretlint/secretlint-rule-preset-recommend": "13.0.4",
     "@stryker-mutator/core": "9.6.1",
