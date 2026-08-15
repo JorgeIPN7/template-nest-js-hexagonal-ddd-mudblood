@@ -14,7 +14,7 @@
   },
   "homepage": "https://github.com/JorgeIPN7/template-nest-js-hexagonal-ddd-mudblood#readme",
   "engines": {
-    "node": ">=22.22.1 <25.0.0",
+    "node": ">=22.23.2 <25.0.0",
     "pnpm": ">=11.0.0"
   },
   "packageManager": "pnpm@11.17.0",

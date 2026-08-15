@@ -49,9 +49,9 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
   en `pre-commit`, `pnpm audit --prod --audit-level=high` y trivy sobre la imagen en CI. Con esto
   se cerró el Tier 1 del roadmap.
 - **CI lista para el remoto** (2026-08-06, backlog #6). Actions pineadas por SHA de commit en vez
-  de por tag, workflow `security.yml` con gitleaks sobre el historial completo (push, PR y cron
-  semanal) y `renovate.json` con `:pinAllExceptPeerDependencies`. Todo config-ready: nada de esto
-  se ha ejecutado nunca, porque hasta ahora el repositorio no tenía remoto.
+  de por tag, workflow `security.yml` con gitleaks (push, PR y cron semanal) y `renovate.json`.
+  Se escribió como config-ready, sin haberse ejecutado nunca; el remoto llegó después y el primer
+  disparo real fue el 2026-08-14 — ver más abajo, porque salió rojo y enseñó cosas.
 - **Segundo bounded context: `orders`** (2026-08-07). Un solo caso de uso (`POST /orders`) que
   ejercita las tres costuras que un contexto único no puede: paso cross-módulo por la puerta
   pública, eventos de dominio (`OrderPlaced`) y outbox transaccional con relay por CLI
@@ -92,6 +92,11 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 - **`staging` se trata como producción**, no como desarrollo (2026-07-28): los mensajes de error
   nativos se sanitizan y helmet aplica CSP.
 - **La CSP corre también en desarrollo** (2026-08-01), para que lo que rompa, rompa en local.
+- **⚠️ El suelo de Node sube de `22.22.1` a `22.23.2`** (2026-08-14). No es mantenimiento
+  rutinario: es la única forma de mover el OpenSSL que la aplicación usa de verdad (ver _Security_).
+  Toca `.nvmrc`, `.node-version`, `engines` de `package.json` y el `FROM` del `Dockerfile`. Quien
+  derive la plantilla necesita `nvm install 22.23.2`; `engines` no bloquea la instalación —no hay
+  `engine-strict`— así que una versión anterior solo avisa, pero se queda con el OpenSSL vulnerable.
 
 ### Removed
 
@@ -164,6 +169,33 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
   sobre HTTP contra PostgreSQL real: las medianas 409/201 pasaron de 7.52 ms / 91.47 ms (rangos
   disjuntos, 12.2×) a 79.61 ms / 90.82 ms (rangos solapados, 1.14×). El 409 en sí **se mantiene**,
   como decisión escrita: sin él, quien ya tiene cuenta no sabe por qué no puede darse de alta.
+- **El primer scan real de trivy salió rojo, y el arreglo inicial dejó verde el gate sin cerrar el
+  CRITICAL** (2026-08-14, backlog #25). 49 vulnerabilidades HIGH/CRITICAL con fix, ninguna de este
+  repositorio. El commit `55b42e8` las atacó con `apk upgrade` y borrando el npm global; trivy pasó
+  a verde. **La imagen seguía ejecutando OpenSSL 3.5.5**, la versión del CVE que se daba por
+  cerrado: `node:*-alpine` enlaza OpenSSL **estáticamente dentro del binario de Node** —`ldd` no
+  lista `libssl.so.3`— y es ese, no el de `apk`, el que usan `pg` con `DB_SSL=true` y toda llamada
+  HTTPS saliente. `apk` no puede tocarlo y el analizador de paquetes de SO de trivy no lo mira.
+  Cerrado subiendo el `FROM` a `node:22.23.2-alpine` (security release; recupera además 22.22.2,
+  22.23.0 y 22.23.2), con lo que `process.versions.openssl` pasa a **3.5.7**. La lección, escrita
+  en el propio Dockerfile: **un verde de trivy no significa que el TLS de la aplicación esté
+  parcheado**; lo que lo significa es `node -p "process.versions.openssl"`.
+- **Aserciones sobre el resultado en el `Dockerfile`** (2026-08-14). El `apk upgrade` sale 0 aunque
+  no parchee nada —apk hace un `preupgrade` de `apk-tools` en dos fases— y se llevaba por delante
+  el `/etc/passwd` que declara al usuario `node`, dejando además `.apk-new` (incluido
+  `/etc/shadow.apk-new`) en la imagen publicada. Ahora comprueba que no queda nada pendiente, que
+  `node` existe, y los borra. Fuera también corepack, sus cinco shims y `/opt/yarn-v1.22.22`: el
+  pnpm que se conservaba «para instalar» no era funcional (nunca se horneó store) sino una vía de
+  descarga-y-ejecución con el prompt suprimido.
+- **`docker build --pull` en CI** (2026-08-14). La clave de caché de un `RUN` es su cadena literal,
+  que no cambia nunca: sin `--pull`, un build tibio reutiliza la capa parcheada el día que se
+  construyó y ni re-baja el tag base.
+- **Endurecido `security.yml`** (2026-08-14). Comentarios de PR de gitleaks apagados
+  (`pulls.createReviewComment` exigía `pull-requests: write` y daba 403 con un mensaje que culpaba
+  al tamaño del diff), `workflow_dispatch` añadido, `github.event_name` en la clave de
+  `concurrency` —un push a main cancelaba el cron semanal, que es el único trigger que recorre el
+  historial entero— y versión de gitleaks fijada explícitamente en vez de heredar la de 2025 que
+  trae la action por defecto.
 
 ### Known issues
 

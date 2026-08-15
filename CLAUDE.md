@@ -4,7 +4,7 @@ Production-ready NestJS 11 base template. Hexagonal/DDD layout, SWC builds, Pino
 
 ## Stack
 
-NestJS 11 · TypeScript 6.0 · Node 22.22.1+ · pnpm 11 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.64
+NestJS 11 · TypeScript 6.0 · Node 22.23.2+ · pnpm 11 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.64
 
 **OpenAPI: dos piezas distintas que el nombre «Swagger» confunde.** `@nestjs/swagger` sigue siendo el **generador** del documento a partir de decoradores; Scalar es solo el **renderizador** que lo consume. Por eso los imports de `@nestjs/swagger` se quedan —es el nombre del paquete upstream— mientras que el vocabulario propio del repo (config, variables de entorno, nombres de archivo) dice `docs`/`openapi`.
 
@@ -409,8 +409,10 @@ Related: Zod's `.default()` only fires on `undefined`, so a variable that is pre
 
 ## Deferred work
 
-`docs/backlog.md` holds work that was postponed **with a decision attached**, not forgotten. The repo
-has no remote, so that file is the issue tracker. Each entry records what happens, the approach
-already chosen, and how you'll know it's done — read the entry before reopening the discussion.
+`docs/backlog.md` holds work that was postponed **with a decision attached**, not forgotten. That
+file is the issue tracker — a role it keeps now that the repo has a remote (`origin`, since August
+2026), because the entries carry reasoning that a GitHub issue title doesn't. Each entry records
+what happens, the approach already chosen, and how you'll know it's done — read the entry before
+reopening the discussion.
 
 It also records what was closed by verifying it, so nobody re-investigates a non-problem.

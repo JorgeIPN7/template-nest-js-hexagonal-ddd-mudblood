@@ -124,9 +124,9 @@ body:
     attributes:
       label: Versión de Node
       description: >-
-        Salida de `node --version`. El repo fija `22.22.1` en `.nvmrc`, pero `engines` **no
+        Salida de `node --version`. El repo fija `22.23.2` en `.nvmrc`, pero `engines` **no
         bloquea la instalación**: con otra versión pnpm solo avisa y sigue.
-      placeholder: v22.22.1
+      placeholder: v22.23.2
     validations:
       required: true
 

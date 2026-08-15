@@ -4,8 +4,14 @@ Trabajo aplazado **con criterio**, no olvidado. Cada entrada dice qué se decidi
 aplazó y cuál es el camino ya elegido, para que quien lo retome no vuelva a abrir la discusión
 desde cero.
 
-El repositorio no tiene remoto, así que este archivo hace de gestor de incidencias. Al añadir uno,
-mantén las tres secciones: **Qué pasa**, **Criterio ya decidido** y **Cómo se sabrá que está hecho**.
+Este archivo hace de gestor de incidencias. Al añadir una entrada, mantén las tres secciones:
+**Qué pasa**, **Criterio ya decidido** y **Cómo se sabrá que está hecho**.
+
+> **El repositorio ya tiene remoto** (`origin`, desde agosto de 2026). Hasta el 2026-08-14 varias
+> entradas de aquí decían lo contrario y dejaban trabajo esperando «a que el repo tenga remoto» —
+> un disparador que ya se había producido, así que nadie lo recogía. Si encuentras esa fórmula en
+> alguna entrada que se escapara, el trigger que queda pendiente de verdad es **instalar la app de
+> Renovate en GitHub**, que es un paso humano y no una condición del repositorio.
 
 ---
 
@@ -159,11 +165,13 @@ caso↔`it`, ejercitando la config real igual que `eslint-boundaries.spec.ts`); 
 con `severity: HIGH,CRITICAL` + `ignore-unfixed` + `exit-code: 1` tras el build de Docker. El
 bloqueo local se verificó sin commitear (Task 3): con una AWS access key sintética staged,
 `pnpm exec lint-staged` falla nombrando secretlint. Los steps de CI quedan config-ready como el
-resto de `ci.yml`: corren —y el DoD «un CVE high o una imagen vulnerable los pone rojos» se
-ejercita— cuando el repo tenga remoto, igual que la entrada de gitleaks (historial completo,
-descartado en local por ser binario Go que cada dev instalaría aparte — y que además hará de
-red bajo el bypass local: `git commit --no-verify` salta el hook, gitleaks en CI no) y
-Renovate, que siguen esperando ese trigger.
+resto de `ci.yml`. **Ese trigger ya se cumplió:** el remoto existe y el primer disparo real del
+scan de trivy se registró el 2026-08-14 (entrada #25), con lo que el DoD «un CVE high o una imagen
+vulnerable los pone rojos» quedó ejercitado — de hecho salió rojo. Gitleaks también corre ya
+(descartado en local por ser un binario Go que cada dev instalaría aparte, y porque hace de red
+bajo el bypass local: `git commit --no-verify` salta el hook, gitleaks en CI no; ojo con lo que
+cubre de verdad, ver la cabecera de `security.yml`). Lo único que sigue esperando un paso humano es
+**instalar la app de Renovate**.
 
 **El gate de audit cazó un CVE real al primer disparo en local, antes de que exista CI que lo
 ejecute.** `pnpm audit --prod --audit-level=high` salió con exit 1: `js-yaml@5.2.1` (High, ReDoS,
@@ -177,37 +185,55 @@ ese mismo override, no se repite aquí. Con el override aplicado, `pnpm audit --
 quedó config-ready para un CVE hipotético, encontró uno real en el propio árbol el primer día que
 corrió.
 
-**Actualización (2026-08-06) — piezas de archivo dejadas config-ready antes de que exista
-remoto**, adelantándose al día en que se cree el repositorio en GitHub (paso humano aparte):
+**Actualización (2026-08-06) — piezas de archivo dejadas config-ready antes de que existiera
+remoto.** El remoto llegó después; lo que quedaba pendiente de él ya corre.
 
-- **Pin por SHA de las actions de `ci.yml`: HECHO.** `checkout@v5`, `pnpm/action-setup@v4`,
-  `setup-node@v5`, `upload-artifact@v4` y `trivy-action@v0.36.0` pasaron de tag a
-  `owner/repo@<sha> # v<tag>`, con los cinco SHA verificados contra la API de GitHub el
-  2026-08-06. La política completa (por qué un SHA y no un tag, cómo bumpear) queda
-  documentada una sola vez, en el propio `ci.yml` junto a `permissions:` — `security.yml` la
-  referencia con un puntero en vez de repetirla. El orden de los steps de `ci.yml` no cambió
-  — solo las líneas `uses:` y los comentarios nuevos.
-- **`.github/workflows/security.yml`: CREADO, config-ready.** Gitleaks sobre el **historial
-  completo** (`fetch-depth: 0`), la pieza que sí necesitaba remoto de verdad: un hook local
-  solo puede ver lo que está `staged`, nunca el pasado del repositorio, y además
-  `git commit --no-verify` lo salta — el workflow no tiene ese atajo. Corre en push/PR a
-  `main` y semanalmente (`cron: '17 4 * * 1'`), para cazar secretos que entraron antes de que
-  existiera el gate local de secretlint. Licencia: gratuito en repos personales; uno de
-  organización necesitaría `GITLEAKS_LICENSE` en secrets — documentado en el propio workflow,
-  sin configurar todavía porque depende de bajo qué cuenta nazca el remoto.
+- **Pin por SHA de las actions: HECHO.** Todas pasaron de tag a `owner/repo@<sha> # v<tag>`. La
+  política completa (por qué un SHA y no un tag, cómo bumpear, y el salto extra que exigen los tags
+  anotados) queda documentada una sola vez, en el propio `ci.yml` junto a `permissions:` —
+  `security.yml` la referencia con un puntero en vez de repetirla.
+  **Set vigente, reverificado contra la API el 2026-08-14** (el del 2026-08-06 se quedó obsoleto
+  con el bump a node24 de `55b42e8`, y esta lista lo seguía anunciando con los `@v4` viejos):
+  `checkout@v5`, `setup-node@v5`, `pnpm/action-setup@v6.0.10`, `upload-artifact@v7.0.1`,
+  `trivy-action@v0.36.0` y `gitleaks-action@v3.0.0` en `security.yml`.
+  ⚠️ **El pin cubre el wrapper, no siempre lo que este ejecuta.** `gitleaks-action` descarga en
+  runtime el binario de gitleaks desde una release de GitHub, sin checksum ni firma: el SHA no
+  protege eso. Está anotado como límite conocido en la cabecera de `security.yml`, con la versión
+  fijada explícitamente para al menos no heredar una de 2025.
+- **`.github/workflows/security.yml`: CREADO**, y ya corriendo. Gitleaks es la pieza que sí
+  necesitaba remoto de verdad: un hook local solo puede ver lo que está `staged`, nunca el pasado
+  del repositorio, y además `git commit --no-verify` lo salta — el workflow no tiene ese atajo.
+  Corre en push/PR a `main`, en `workflow_dispatch` y semanalmente (`cron: '17 4 * * 1'`).
+  ⚠️ **Corrección del 2026-08-14:** esta entrada decía «gitleaks sobre el **historial completo**
+  (`fetch-depth: 0`)» y era engañoso. `fetch-depth: 0` hace el historial _disponible_; el rango lo
+  elige la action, que en `push` y `pull_request` pasa `--log-opts` con el rango del evento (a
+  menudo un solo commit) y **no** tiene rama `else`. El barrido completo ocurre solo en `schedule`
+  y `workflow_dispatch` — este último se añadió ese mismo día porque no había escotilla manual
+  para el único modo que mira hacia atrás. El detalle completo vive en la cabecera del workflow.
+  Licencia: gratuito en repos personales, que es el caso de `origin` hoy; el día que el repo pase a
+  vivir bajo una organización necesitará `GITLEAKS_LICENSE` en secrets — documentado en el propio
+  workflow, sin configurar mientras no haga falta.
 - **`renovate.json`: CREADO, config-ready.** `extends: ["config:recommended", ":semanticCommits",
-":pinAllExceptPeerDependencies"]` — semantic commits produce `chore(deps): …`/`fix(deps): …`,
-  ambos válidos contra `commitlint.config.cjs` (tipos `chore`/`fix`, scope `deps`, ya en la
-  lista cerrada). `:pinAllExceptPeerDependencies` fija `rangeStrategy: "pin"` para **todo**
-  `matchPackageNames: ["*"]` salvo `engines`/`peerDependencies`, que quedan en `"auto"` — cubre
-  cada dependencia de cada manager, `Dockerfile` incluido: `FROM node:22.22.1-alpine` pasará a
-  fijarse por digest en la primera PR de Renovate, mismo espíritu que el pin por SHA de arriba.
-  Por esa cobertura total, un `rangeStrategy` propio a nivel raíz del archivo sería config
-  muerta — cualquier `packageRule` que matchee (y esta matchea todo) siempre gana sobre el
-  default raíz — así que no se añadió uno. `labels: ["dependencies"]` clasifica cada PR para
-  triage; `lockFileMaintenance.enabled` añade una PR periódica que solo refresca las
-  transitivas de `pnpm-lock.yaml`, sin tocar ningún rango declarado — eso ya lo decide el resto
-  de la config.
+":pinAllExceptPeerDependencies", "docker:pinDigests"]` — semantic commits produce
+  `chore(deps): …`/`fix(deps): …`, ambos válidos contra `commitlint.config.cjs` (tipos
+  `chore`/`fix`, scope `deps`, ya en la lista cerrada). `:pinAllExceptPeerDependencies` fija
+  `rangeStrategy: "pin"` para **todo** `matchPackageNames: ["*"]` salvo `engines`/
+  `peerDependencies`, que quedan en `"auto"`. Por esa cobertura total, un `rangeStrategy` propio a
+  nivel raíz del archivo sería config muerta — cualquier `packageRule` que matchee (y esta matchea
+  todo) siempre gana sobre el default raíz — así que no se añadió uno.
+  **⚠️ Corrección del 2026-08-14:** hasta esa fecha esta entrada afirmaba que ese preset «cubre
+  cada dependencia de cada manager, `Dockerfile` incluido: `FROM node:…` pasará a fijarse por
+  digest en la primera PR de Renovate». **Era falso**, y sostenía el criterio de cierre de la
+  entrada #25, que quedaba inalcanzable. `rangeStrategy` resuelve RANGOS a versiones exactas; el
+  pin por digest es la opción **`pinDigests`**, que por defecto vale `false` y solo la activa el
+  preset `docker:pinDigests` — incluido en `config:best-practices`, **no** en el
+  `config:recommended` que extiende este archivo. Encima `FROM node:22.23.2-alpine` ya es un tag
+  exacto, así que `rangeStrategy` no tiene nada que resolver ahí: era un no-op sobre esa línea. El
+  preset que sí lo produce ya está añadido. La misma frase se corrigió en `SECURITY.md` y en la
+  entrada #25.
+  `labels: ["dependencies"]` clasifica cada PR para triage; `lockFileMaintenance.enabled` añade una
+  PR periódica que solo refresca las transitivas de `pnpm-lock.yaml`, sin tocar ningún rango
+  declarado — eso ya lo decide el resto de la config.
   **Guardado de `pnpm-workspace.yaml`:** ese archivo no se deja en manos de Renovate
   (`packageRules` con `matchFileNames: ["pnpm-workspace.yaml"]` y `enabled: false`). Se
   verificó (2026-08-06, no un supuesto) que Renovate **sí** sabe extraer `overrides` de
@@ -966,34 +992,72 @@ en `/usr/local/lib/node_modules/npm` (`tar` 6.2.1 y 7.4.3, CVE-2026-59873 CRITIC
 `brace-expansion`, `minimatch`, `glob`, `picomatch`, `ip-address`, `sigstore`). `app/node_modules`
 salió limpio: el gate de `pnpm audit --prod` ya cubre ese frente y lo estaba cubriendo bien.
 
-Las dos mitades quedaron cerradas en el [`Dockerfile`](../Dockerfile) —`apk upgrade --no-cache` en
-`base`, `rm -rf` del npm global en `production`— con el porqué de cada una en su comentario. Medido
-antes y después con la misma versión de trivy que usa la action (0.70.0) y sus flags exactos:
-exit 1 → **exit 0**, y la imagen sigue arrancando, sirviendo el bundle de Scalar y hasheando con
-argon2 (el binding nativo sobrevive al salto de `musl`).
+**⚠️ El primer intento de arreglo (commit `55b42e8`) dejó verde el gate sin cerrar la
+vulnerabilidad que más importaba, y eso es la lección de esta entrada.** Aquel commit trató el rojo
+como si tuviera dos mitades —`apk upgrade --no-cache` en `base` para el SO, `rm -rf` del npm global
+en `production`— y dio por parcheado el CRITICAL de OpenSSL. **No lo estaba.** Medido el
+2026-08-14 sobre la imagen ya construida:
 
-**Subir de versión de Node no era la salida, y se midió antes de descartarlo:** `node:22-alpine`
-(22.23.2) deja 8 y `node:24-alpine` (24.19.0, npm 11.17.0) deja 7, todas del mismo npm interno.
-Mientras npm viaje en la imagen publicada, el gate seguiría rojo con cualquier Node.
+```
+ldd /usr/local/bin/node   ->  ld-musl, libstdc++, libgcc_s, libc.musl
+                              (ni libssl.so.3 ni libcrypto.so.3)
+node -p process.versions.openssl  ->  3.5.5      <-- el CVE que se daba por cerrado
+apk list --installed | grep libcrypto3  ->  3.5.7-r0   <-- solo lo usan apk, busybox, wget
+```
+
+En esta imagen hay **dos** OpenSSL. `node:*-alpine` instala un tarball musl precompilado con
+OpenSSL **enlazado estáticamente dentro del binario**, y ese —no el de `apk`— es el que terminan
+`pg` con `DB_SSL=true` y toda llamada HTTPS saliente. `apk` no puede tocarlo y el analizador de
+paquetes de SO de trivy no lo mira, así que el gate pasó a verde mientras la pila TLS real seguía
+en 3.5.5. Un verde de trivy **no** significa «el TLS de la aplicación está parcheado».
+
+Peor: el propio commit descartó por escrito subir de versión («subir de versión no cierra esto»).
+Era cierto **solo para la mitad de npm** —`22.23.2` y `24.19.0` siguen empaquetando su npm, por eso
+el `rm -rf` sigue haciendo falta— y se generalizó hasta bloquear el único arreglo posible de la otra
+mitad. El pin se había quedado además **tres security releases atrás**:
+
+| Release  | OpenSSL | Fecha      | security |
+| -------- | ------- | ---------- | -------- |
+| v22.22.1 | 3.5.5   | 2026-03-04 | —        |
+| v22.22.2 | 3.5.5   | 2026-03-24 | sí       |
+| v22.23.0 | 3.5.7   | 2026-06-17 | sí       |
+| v22.23.2 | 3.5.7   | 2026-07-28 | sí       |
+
+**Cerrado el 2026-08-14** subiendo el `FROM` a `node:22.23.2-alpine`, con lo que
+`process.versions.openssl` pasa a **3.5.7**. `apk upgrade` se queda porque sigue haciendo falta
+(musl, zlib, ca-certificates, baselayout) pero **ya no se presenta como suficiente**, y ganó
+aserciones sobre el resultado: doble pasada por el preupgrade de `apk-tools`, comprobación de que
+no quedan paquetes pendientes, `id node` y borrado de los `.apk-new` que se estaban publicando en
+la imagen final. Se borran también corepack, sus shims y `/opt/yarn-v1.22.22`. Verificado sobre la
+imagen reconstruida: argon2 hashea y verifica cruzando el salto de `musl` 1.2.5 → 1.2.6.
 
 **Lo que queda abierto es el patrón, no este rojo concreto.** Un CVE nuevo de OpenSSL o de musl con
-parche disponible vuelve a poner la CI en rojo sin que nadie haya tocado una línea, y la mitad del
-SO solo se re-parchea cuando la capa de `apk upgrade` se reconstruye — es decir, cuando algo
-invalida la caché, no cada semana. Es la contrapartida asumida de un gate que solo mira lo
-accionable: honesto, pero interrumpe.
+parche disponible vuelve a poner la CI en rojo sin que nadie haya tocado una línea. Dos matices que
+ese día se aprendieron: la mitad del SO solo se re-parchea cuando la capa de `apk upgrade` se
+reconstruye —por eso `ci.yml` construye ahora con `--pull`, que al menos garantiza tag base fresco
+en cada run—, y **la mitad de Node no se parchea sola de ninguna manera**: exige subir el `FROM`.
 
 **Criterio ya decidido.** No relajar el gate ni abrir un `.trivyignore`: un CVE con fix publicado en
-la imagen que se despliega es exactamente lo que este gate existe para gritar. Cuando el ruido
-moleste, las dos palancas por orden de preferencia son (1) fijar `FROM` por **digest** y dejar que
-Renovate abra la PR del bump —ya está previsto: `:pinAllExceptPeerDependencies` de `renovate.json`
-cubre el `Dockerfile`, entrada #6— de modo que el parcheo pase a ser una PR revisable en vez de un
-efecto colateral de la caché, y (2) un `schedule:` semanal que reconstruya y escanee, para enterarse
-por un job y no por el siguiente PR de otra persona. Ninguna se hace hoy porque ambas dependen de
-que Renovate esté instalado en el remoto, que es el mismo trigger que espera la entrada #6.
+la imagen que se despliega es exactamente lo que este gate existe para gritar. Las dos palancas, por
+orden de preferencia:
+
+1. **Fijar `FROM` por digest y dejar que Renovate abra la PR del bump.** Es la que cubre las dos
+   mitades, porque una PR de bump del `FROM` mueve también el OpenSSL de Node. ⚠️ Hasta el
+   2026-08-14 esta entrada daba por hecho que ya estaba previsto vía
+   `:pinAllExceptPeerDependencies`; **era falso** —ese preset fija `rangeStrategy`, no
+   `pinDigests`— y hacía este criterio de cierre inalcanzable. `renovate.json` extiende ahora
+   `docker:pinDigests`, que es el que de verdad lo produce. Detalle en la entrada #6.
+   Falta el paso humano: **instalar la app de Renovate en el remoto**.
+2. **Un `schedule:` semanal que reconstruya y escanee**, para enterarse por un job propio y no por
+   el siguiente PR de otra persona. ⚠️ Esta entrada decía que «ambas dependen de que Renovate esté
+   instalado»: falso para esta segunda, que solo necesita cron —`security.yml` ya tiene uno— y se
+   puede hacer hoy sin depender de nadie.
 
 **Cómo se sabrá que está hecho.** El `FROM` del Dockerfile lleva digest, existe una PR automática
 que lo sube cuando la base publica parches, y un rojo de trivy vuelve a significar «alguien metió
-algo» en vez de «pasó el tiempo».
+algo» en vez de «pasó el tiempo». Y la comprobación que no puede faltar en ningún bump futuro:
+`node -p "process.versions.openssl"` dentro de la imagen, porque es lo único que dice la verdad
+sobre el OpenSSL que la aplicación usa.
 
 ---
 

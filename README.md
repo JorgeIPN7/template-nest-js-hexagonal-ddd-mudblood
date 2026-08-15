@@ -117,7 +117,7 @@ Nada de esto requiere darse de alta en ningún servicio. **El proyecto no usa to
 
 | Herramienta             | Versión             | Quién la fija                              | Descarga                                                                                                                             |
 | ----------------------- | ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Node.js**             | `22.22.1`           | `.nvmrc`, `.node-version`, `Dockerfile`    | [nodejs.org](https://nodejs.org/) · [nvm](https://github.com/nvm-sh/nvm) · [nvm-windows](https://github.com/coreybutler/nvm-windows) |
+| **Node.js**             | `22.23.2`           | `.nvmrc`, `.node-version`, `Dockerfile`    | [nodejs.org](https://nodejs.org/) · [nvm](https://github.com/nvm-sh/nvm) · [nvm-windows](https://github.com/coreybutler/nvm-windows) |
 | **pnpm**                | `11.17.0`           | `packageManager` en `package.json`         | Vía Corepack (incluido en Node): `corepack enable`                                                                                   |
 | **Docker** + Compose v2 | cualquiera reciente | los scripts usan `docker compose`          | [Docker Desktop](https://www.docker.com/products/docker-desktop/)                                                                    |
 | **Git**                 | cualquiera          | necesario para que Husky instale los hooks | [git-scm.com](https://git-scm.com/)                                                                                                  |
@@ -131,7 +131,7 @@ Nada de esto requiere darse de alta en ningún servicio. **El proyecto no usa to
 ```bash
 git clone https://github.com/JorgeIPN7/template-nest-js-hexagonal-ddd-mudblood.git && cd template-nest-js-hexagonal-ddd-mudblood
 
-nvm use                 # o instala Node 22.22.1 a mano
+nvm use                 # o instala Node 22.23.2 a mano
 corepack enable         # recomendado: usa el pnpm que fija el repo
 
 pnpm install

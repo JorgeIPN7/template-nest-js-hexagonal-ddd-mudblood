@@ -3,26 +3,70 @@
 # ------------------------------------------------------------------------------------
 # Base: fija la versión de Node del repo (.nvmrc) y habilita el pnpm de `packageManager`.
 # ------------------------------------------------------------------------------------
-FROM node:22.22.1-alpine AS base
+FROM node:22.23.2-alpine AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-# `apk upgrade` no es tidying: una imagen base se publica con los paquetes del día en que se
-# construyó, y los CVE del sistema aparecen DESPUÉS. Medido el 2026-08-14 sobre esta misma
-# `node:22.22.1-alpine`: 15 vulnerabilidades HIGH/CRITICAL con fix publicado —libcrypto3/libssl3
-# 3.5.5-r0 (CVE-2026-31789 es CRITICAL), musl 1.2.5-r21, zlib 1.3.1-r2— que ponían rojo el gate
-# de trivy de ci.yml sin que nada de este repo hubiera cambiado. El repo de Alpine 3.23 ya servía
-# las versiones parcheadas, así que el arreglo es pedirlas, no esperar a que Node republique.
+# ⚠️ En esta imagen hay DOS OpenSSL y no son el mismo. `apk` gobierna el del sistema
+# (`libcrypto3`/`libssl3`), que usan apk, busybox y wget. El de la APLICACIÓN viaja enlazado
+# ESTÁTICAMENTE dentro del binario de Node —`node:*-alpine` instala un tarball musl precompilado,
+# y `ldd /usr/local/bin/node` no lista ni `libssl.so.3` ni `libcrypto.so.3`— y es el que terminan
+# `pg` con `DB_SSL=true` y toda llamada HTTPS saliente. Ese solo se mueve subiendo el `FROM`.
 #
-# El precio, dicho sin adornos: esta línea hace el build NO reproducible — la misma instrucción
-# instala paquetes distintos según el día. Se acepta a conciencia. La alternativa determinista
-# (`apk add libcrypto3=3.5.7-r0 …`) se rompe sola en cuanto Alpine retira esa revisión exacta del
-# repositorio, que es cuestión de semanas, y además vuelve a dejar el parcheado a merced de que
-# alguien acuerde de subir el número a mano.
+# La distinción no es teórica, se pagó cara. El 2026-08-14 este archivo fijaba `22.22.1-alpine` y
+# `apk upgrade` subió `libcrypto3` 3.5.5-r0 → 3.5.7-r0: trivy pasó de rojo a verde mientras
+# `process.versions.openssl` seguía devolviendo **3.5.5**, que es exactamente la versión del
+# CVE-2026-31789 que se daba por cerrado. Trivy nunca lo vio porque su analizador de paquetes de
+# SO no mira dentro del binario de Node. `22.23.2` (security release del 2026-07-28) empaqueta
+# 3.5.7 y de paso recupera las tres security releases que el pin anterior se había dejado atrás
+# (22.22.2, 22.23.0, 22.23.2).
+#
+# **Un verde de trivy no significa «el TLS de la aplicación está parcheado».** Lo que lo significa
+# es `node -p "process.versions.openssl"`, y el único mando que lo mueve es el `FROM` de arriba.
+#
+# `apk upgrade` se queda porque sigue haciendo falta —musl, zlib, ca-certificates,
+# alpine-baselayout: una imagen base se publica con los paquetes del día en que se construyó y los
+# CVE del sistema aparecen DESPUÉS—, solo que no es suficiente. El precio, dicho sin adornos: hace
+# el build NO reproducible, la misma instrucción instala paquetes distintos según el día. Se acepta
+# a conciencia; la alternativa determinista (`apk add libcrypto3=3.5.7-r0 …`) se rompe sola en
+# cuanto Alpine retira esa revisión exacta del repositorio, que es cuestión de semanas.
 #
 # Va en `base` y no en cada stage por eficiencia: es una sola capa que deps/build/production
 # heredan, así que cubrir los cuatro cuesta exactamente una ejecución.
-RUN apk upgrade --no-cache && corepack enable
+#
+# Las aserciones tampoco son adorno — cada una cubre un fallo silencioso medido, no imaginado:
+#
+# 1. **Doble `apk upgrade`.** apk avisa `a preupgrade is available` y sube `libapk`/`apk-tools`
+#    —el propio binario que está haciendo el upgrade— en una primera fase, antes que el resto;
+#    sale 0 tras cualquiera de las dos. En el build del 2026-08-14 la traza lo enseña literal:
+#    `Preupgrading: … Continuing with the main upgrade transaction`. La segunda pasada cierra la
+#    fase principal y `apk version -l '<'` lo comprueba en vez de suponerlo: sin esa aserción, un
+#    upgrade que no parchea nada sale 0 y solo se nota semanas después, en un rojo de trivy que se
+#    achacará a un CVE nuevo y no a este paso.
+# 2. **⚠️ El índice tiene que sobrevivir hasta la aserción**, y por eso `apk update` explícito en
+#    vez de `apk upgrade --no-cache`: sin índice, `apk version -l '<'` no tiene contra qué comparar
+#    y devuelve vacío — daría VERDE sin haber mirado, el mismo antipatrón que el control positivo
+#    de `ci.yml` existe para evitar. La limpieza de la caché va al final, a mano.
+# 3. **`id node`.** `alpine-baselayout` es dueño de `/etc/passwd` y su reemplazo NO trae al usuario
+#    `node` (medido: `grep -c node /etc/passwd.apk-new` → 0). Hoy sobrevive solo porque apk desvía
+#    el conflicto a `.apk-new`; si esa política cambia, el `USER node` del stage de producción
+#    falla con un error que no señala aquí. Y esos `.apk-new` se publicaban en la imagen final —incluido
+#    `/etc/shadow.apk-new`, justo lo que marca cualquier auditoría de contenedores—, que es lo que
+#    barre el `rm -f`.
+RUN apk update && \
+    apk upgrade && apk upgrade && \
+    if [ -n "$(apk version -l '<' | tail -n +2)" ]; then \
+      echo "apk dejó paquetes sin actualizar: el preupgrade se quedó a medias."; \
+      apk version -l '<'; \
+      exit 1; \
+    fi && \
+    if ! id node > /dev/null 2>&1; then \
+      echo "el upgrade se llevó por delante el usuario node: USER node fallaría al arrancar."; \
+      exit 1; \
+    fi && \
+    rm -f /etc/*.apk-new && \
+    corepack enable && \
+    rm -rf /var/cache/apk/*
 WORKDIR /app
 
 # ------------------------------------------------------------------------------------
@@ -82,21 +126,55 @@ RUN if [ -d node_modules/@scalar/api-reference ]; then \
       exit 1; \
     fi
 
-# npm fuera de la imagen final. No es una optimización de tamaño (~10 MB), es superficie: el npm
-# global que viaja dentro de `node:*-alpine` empaqueta su propio árbol en
-# /usr/local/lib/node_modules/npm, y ese árbol es el que aportaba 34 de las vulnerabilidades
-# HIGH/CRITICAL del scan del 2026-08-14 —`tar` 6.2.1 y 7.4.3 (CVE-2026-59873, CRITICAL),
-# `brace-expansion`, `minimatch`, `glob`, `picomatch`, `ip-address`, `sigstore`—. Ni una sola
-# venía de `app/node_modules`: las dependencias de este repo salieron limpias.
+# Ningún gestor de paquetes en la imagen final. No es una optimización de tamaño —son 23.5 MB
+# medidos sobre `node:22.23.2-alpine`: npm 17.2M, corepack 1.2M, yarn 5.1M—, es superficie, y el
+# argumento se aplica a los tres por igual:
 #
-# Subir de versión no cierra esto, se midió antes de escribir la línea: `node:22-alpine` (22.23.2)
-# deja 8 y `node:24-alpine` (24.19.0, npm 11.17.0) deja 7, todas del mismo directorio. Mientras
-# npm viaje en la imagen publicada, el gate seguirá rojo con cualquier Node.
+# **npm.** Empaqueta su propio árbol en /usr/local/lib/node_modules/npm, y ese árbol aportaba 34 de
+# las vulnerabilidades HIGH/CRITICAL del scan del 2026-08-14 —`tar` 6.2.1 y 7.4.3 (CVE-2026-59873,
+# CRITICAL), `brace-expansion`, `minimatch`, `glob`, `picomatch`, `ip-address`, `sigstore`—. Ni una
+# venía de `app/node_modules`: las dependencias de este repo salieron limpias, `pnpm audit --prod`
+# ya cubría ese frente. Subir de Node no lo cierra y se midió antes de descartarlo: `22.23.2` (el
+# pin de arriba) y `24.19.0` siguen empaquetando el suyo. Mientras npm viaje dentro, el gate volverá
+# a ponerse rojo por él.
 #
-# Y nada de esto hace falta en runtime: el CMD es `node dist/src/main`, y quien instala es
-# corepack+pnpm, que sí se conservan. Se borra DESPUÉS del install, no antes, para no invalidar
-# esa capa de caché ni arriesgar un script de instalación que invocara npm.
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+# **corepack y sus shims.** Aquí la versión anterior de este comentario afirmaba que se conservaban
+# porque «quien instala es corepack+pnpm», y era falso: medido en la imagen construida, `/pnpm` no
+# existe y `/home/node` está vacío — todos los `pnpm install` corren como root ANTES del `USER node`,
+# así que nunca se horneó ni store ni caché de corepack, y `pnpm --version` ya fallaba sin red. Lo
+# que quedaba no era un gestor funcional sino cinco symlinks a `corepack/dist/*.js` cuya conducta
+# completa es descargar un tarball de registry.npmjs.org y ejecutarlo, con el prompt suprimido por
+# COREPACK_ENABLE_DOWNLOAD_PROMPT=0. Es decir: se borraba JavaScript inerte y se conservaba a
+# cambio una vía de fetch-and-exec viva, con cero beneficio a cambio.
+#
+# **Yarn 1.22.22 en /opt.** Llega dentro de la imagen base y `corepack enable` ya pisó sus symlinks,
+# así que eran 5.1 MB inalcanzables — pero con un package.json que el analizador `node-pkg` de trivy
+# sí parsea, exactamente como parseó el de npm. Es Yarn 1, en mantenimiento: sin fix,
+# `ignore-unfixed` lo escondería para siempre dejando la superficie; con fix, rojo por un binario
+# que nadie invoca.
+#
+# Nada de esto hace falta en runtime: el CMD es `node dist/src/main`. Se borra DESPUÉS del install
+# para no invalidar esa capa de caché ni arriesgar un script de instalación que invocara npm.
+#
+# El control positivo va PRIMERO por la misma razón que el de `ci.yml`: un `rm -rf` sobre una ruta
+# que ya no existe devuelve 0, así que sin él un rename del layout en la imagen base dejaría el
+# gestor dentro con el build en verde. Y la comprobación final asegura sobre el RESULTADO, no sobre
+# la intención, misma regla que el bloque «Dos aserciones» de justo arriba.
+RUN if [ ! -d /usr/local/lib/node_modules/npm ]; then \
+      echo "Control positivo fallido: npm no está donde este paso lo borra."; \
+      echo "El layout de la imagen base cambió, así que el rm no probaría nada."; \
+      exit 1; \
+    fi && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+           /usr/local/lib/node_modules/corepack /usr/local/bin/corepack \
+           /usr/local/bin/pnpm /usr/local/bin/pnpx \
+           /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-v1.22.22 && \
+    for bin in npm npx corepack pnpm pnpx yarn yarnpkg; do \
+      if command -v "$bin" > /dev/null 2>&1; then \
+        echo "Quedó un gestor de paquetes en la imagen final: $bin."; \
+        exit 1; \
+      fi; \
+    done
 
 # Nunca correr como root. La imagen de Node ya trae el usuario `node`.
 USER node

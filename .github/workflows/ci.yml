@@ -22,11 +22,18 @@ permissions:
 #
 # ⚠️ Al resolver ese SHA por API, `git/ref/tags/<tag>` NO siempre devuelve un commit. Si el tag
 # es ANOTADO, `object.type` vale `"tag"` y `object.sha` identifica al objeto tag, no al commit
-# que hay debajo; hay que dar un salto más por `git/tags/<sha>` para obtenerlo. Pasó de verdad
-# en el bump del 2026-08-14: `pnpm/action-setup@v6.0.10` resuelve primero a
-# ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 (el objeto tag) y solo después a
-# 0977fd99725f1db4007ccb2928dbb4e90d06cc86, que es el commit y lo que está escrito abajo. Los
-# tags ligeros —el caso de checkout, setup-node y upload-artifact— apuntan al commit de una vez.
+# que hay debajo; hay que dar un salto más por `git/tags/<sha>` para obtenerlo. Anotar o no es
+# una decisión POR TAG de quien publica, no una propiedad del repositorio, así que la única
+# respuesta fiable es mirar `object.type` en cada bump — no fiarse de cómo salió la vez anterior
+# ni de esta lista, que es una foto del 2026-08-14 y no una regla:
+#
+#   anotados (doble salto):  pnpm/action-setup@v6.0.10  ff378ebe → 0977fd99
+#                            aquasecurity/trivy-action@v0.36.0  a9c7b0f0 → ed142fd0
+#   ligeros  (salto único):  actions/checkout@v5, actions/setup-node@v5,
+#                            actions/upload-artifact@v7.0.1, gitleaks/gitleaks-action@v3.0.0
+#
+# Los seis se reverificaron contra la API el 2026-08-14 y coinciden con lo escrito abajo y en
+# `security.yml`. Equivocarse aquí no da un error legible: el runner no resuelve la action.
 #
 # Bump del 2026-08-14, motivo común: GitHub anunció la retirada de Node 20 en los runners
 # (aviso «Node.js 20 is deprecated … forced to run on Node.js 24»). El runtime lo declara el
@@ -152,8 +159,16 @@ jobs:
 
       # Nadie construía la imagen, así que un fallo del stage de producción —como el hook
       # `prepare: husky` corriendo bajo `--prod`— solo aparecía al desplegar.
+      #
+      # `--pull` no es rutina: el `apk upgrade` del Dockerfile solo vuelve a correr si su capa se
+      # invalida, y la clave de caché de un `RUN` es la CADENA LITERAL de la instrucción — que no
+      # cambia nunca. Sin `--pull`, un build tibio (una máquina local, un runner self-hosted, un
+      # `--cache-from` futuro) reutiliza la capa parcheada el día que se construyó por primera vez
+      # y encima ni re-baja el tag base. El gate escanearía una imagen distinta de la que se
+      # despliega, y la divergencia crece con la edad de la caché. En los runners hosted siempre
+      # está frío, que es exactamente lo que lo esconde.
       - name: Docker build
-        run: docker build -t nest-base-template:ci .
+        run: docker build --pull -t nest-base-template:ci .
 
       # Gate de cadena de suministro (backlog #6): CVEs HIGH/CRITICAL CON FIX
       # disponible en la imagen rompen la CI. ignore-unfixed mantiene el gate
@@ -168,12 +183,20 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+      # Las DOS suites producen cobertura y en directorios distintos: `jest.config.mjs` escribe en
+      # `coverage/` y `test/jest-e2e.config.mjs` en `coverage-e2e/`. Subir solo el primero es
+      # justamente perder el que hace falta: el informe E2E es el ÚNICO que mide `*.module.ts` y
+      # `*.typeorm.repository.ts` —los archivos que la suite unitaria excluye a propósito, con su
+      # propio umbral—, así que cuando rompa ese umbral, quien baje el artefacto se encontraría con
+      # el informe unitario, que por construcción no contiene ninguno de esos archivos.
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
-          path: coverage
+          path: |
+            coverage
+            coverage-e2e
           if-no-files-found: ignore
 
   # El auditor del modelo «casos primero» deja de ser una corrida manual por ciclo y pasa a

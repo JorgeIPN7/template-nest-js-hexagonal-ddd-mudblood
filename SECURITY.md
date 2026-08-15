@@ -91,8 +91,14 @@ Detalles que importan y que no se ven en la tabla:
   [`docs/backlog.md` §6](./docs/backlog.md).
 - **Todas las actions se referencian por SHA de commit, nunca por tag** — un tag es mutable y se
   puede re-apuntar sin aviso. La política y cómo bumpear están en la cabecera de `ci.yml`.
-- **Renovate está configurado** ([`renovate.json`](./renovate.json)) con `:pinAllExceptPeerDependencies`,
-  a la espera de que se instale la app en el remoto.
+- **Renovate está configurado** ([`renovate.json`](./renovate.json)), a la espera de que se instale
+  la app en el remoto. Extiende dos presets que **no son el mismo** y durante un tiempo este
+  documento los confundió: `:pinAllExceptPeerDependencies` fija `rangeStrategy: "pin"` —resuelve
+  rangos a versiones exactas— y **no toca digests**; el pin por digest del `FROM` del `Dockerfile`
+  es la opción `pinDigests`, que por defecto está en `false` y llega con el preset
+  `docker:pinDigests`, incluido en `config:best-practices` pero **no** en el `config:recommended`
+  que extiende este repo. Sin ese segundo preset el `FROM` nunca habría recibido digest, por muchas
+  PR que abriera Renovate.
 
 ### Autenticación y credenciales
 
