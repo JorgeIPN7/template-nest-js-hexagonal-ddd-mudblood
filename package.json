@@ -101,7 +101,7 @@
     "@stryker-mutator/core": "9.6.1",
     "@stryker-mutator/jest-runner": "9.6.1",
     "@swc/cli": "0.8.1",
-    "@swc/core": "1.15.46",
+    "@swc/core": "1.16.0",
     "@swc/jest": "0.2.39",
     "@types/compression": "1.8.1",
     "@types/express": "5.0.6",
