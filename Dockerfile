@@ -17,12 +17,25 @@ ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # `apk upgrade` subió `libcrypto3` 3.5.5-r0 → 3.5.7-r0: trivy pasó de rojo a verde mientras
 # `process.versions.openssl` seguía devolviendo **3.5.5**, que es exactamente la versión del
 # CVE-2026-31789 que se daba por cerrado. Trivy nunca lo vio porque su analizador de paquetes de
-# SO no mira dentro del binario de Node. `22.23.2` (security release del 2026-07-28) empaqueta
-# 3.5.7 y de paso recupera las tres security releases que el pin anterior se había dejado atrás
-# (22.22.2, 22.23.0, 22.23.2).
+# SO no mira dentro del binario de Node. La salida de aquel episodio fue `22.23.2` (security
+# release del 2026-07-28), que empaqueta 3.5.7 y recupera las tres security releases que el pin
+# anterior se había dejado atrás (22.22.2, 22.23.0, 22.23.2).
 #
 # **Un verde de trivy no significa «el TLS de la aplicación está parcheado».** Lo que lo significa
 # es `node -p "process.versions.openssl"`, y el único mando que lo mueve es el `FROM` de arriba.
+#
+# ⚠️ El párrafo de arriba describe el episodio de 22.23.2; `bdfe609` movió después el `FROM` a
+# `24.19.0` —PR automática de Renovate, una sola línea— **sin** rehacer la medición que este mismo
+# archivo declara obligatoria, y así estuvo hasta el 2026-08-19. **Medido ya sobre el pin vigente**,
+# con la imagen construida:
+#
+#     docker run --rm <img> node -p "process.version + ' | openssl ' + process.versions.openssl"
+#     → v24.19.0 | openssl 3.5.7
+#
+# Es decir: 24.19.0 empaqueta el mismo 3.5.7 que cerró el CVE-2026-31789, así que el frente sigue
+# cubierto — pero eso es una medición, no una deducción del número de versión, y es la única forma
+# de saberlo. Repetir este comando en CADA bump del `FROM`; es requisito escrito en
+# `docs/backlog.md` #25.
 #
 # `apk upgrade` se queda porque sigue haciendo falta —musl, zlib, ca-certificates,
 # alpine-baselayout: una imagen base se publica con los paquetes del día en que se construyó y los
@@ -110,13 +123,27 @@ COPY --from=build /app/dist ./dist
 # ve en la máquina de quien programa.
 COPY --from=build /app/public ./public
 
-# Dos aserciones sobre el resultado, no sobre la intención.
+# Tres aserciones sobre el resultado, no sobre la intención.
 #
 # `@scalar/api-reference` es devDependency: solo el builder la necesita para resolver el bundle.
 # Si acabara en `dependencies`, `--prod` metería sus 14 MB y la imagen pesaría más que antes de
 # migrar. La regresión sería invisible —todo funciona, solo pesa de más— así que se comprueba.
 #
 # Y sin el manifiesto, `setupOpenApi` lanza al arrancar: mejor descubrirlo construyendo.
+#
+# La tercera es `argon2`, la única dependencia nativa del proyecto y —hasta el 2026-08-19— el único
+# artefacto de esta imagen que nadie comprobaba. El `--ignore-scripts` de arriba es obligatorio y
+# tiene una consecuencia que no se ve: el script `install` de argon2 (`node-gyp-build`) NO corre
+# aquí, así que en la imagen no existe fallback de compilación, solo los prebuilds que vengan en el
+# tarball. Hoy están los dos que `node:24-alpine` necesita
+# (`prebuilds/linux-x64/argon2.musl.node` y `prebuilds/linux-arm64/argon2.armv8.musl.node`),
+# mientras `pnpm-workspace.yaml` registra `argon2: true` en `allowBuilds` — una decisión de
+# confianza sobre un build que en esta imagen nunca se ejecuta.
+#
+# Sin esta línea, el día que argon2 renombre o retire el prebuild de la plataforma desplegada, o el
+# día que se adopte otra arquitectura, TODO sale verde: el install termina en 0, el `docker build`
+# en 0 y trivy pasa. El fallo llega en el primer `POST /auth/register` del entorno real, en el
+# `require`.
 RUN if [ -d node_modules/@scalar/api-reference ]; then \
       echo "@scalar/api-reference no debe estar en la imagen final: muévela a devDependencies."; \
       exit 1; \
@@ -124,19 +151,21 @@ RUN if [ -d node_modules/@scalar/api-reference ]; then \
     if [ ! -f public/scalar-asset.json ]; then \
       echo "Falta el bundle de Scalar en public/."; \
       exit 1; \
-    fi
+    fi && \
+    node -e "require('argon2')"
 
 # Ningún gestor de paquetes en la imagen final. No es una optimización de tamaño —son 23.5 MB
-# medidos sobre `node:22.23.2-alpine`: npm 17.2M, corepack 1.2M, yarn 5.1M—, es superficie, y el
+# medidos el 2026-08-14 sobre `node:22.23.2-alpine`, la base de entonces y no la de ahora: npm
+# 17.2M, corepack 1.2M, yarn 5.1M—, es superficie, y el
 # argumento se aplica a los tres por igual:
 #
 # **npm.** Empaqueta su propio árbol en /usr/local/lib/node_modules/npm, y ese árbol aportaba 34 de
 # las vulnerabilidades HIGH/CRITICAL del scan del 2026-08-14 —`tar` 6.2.1 y 7.4.3 (CVE-2026-59873,
 # CRITICAL), `brace-expansion`, `minimatch`, `glob`, `picomatch`, `ip-address`, `sigstore`—. Ni una
 # venía de `app/node_modules`: las dependencias de este repo salieron limpias, `pnpm audit --prod`
-# ya cubría ese frente. Subir de Node no lo cierra y se midió antes de descartarlo: `22.23.2` (el
-# pin de arriba) y `24.19.0` siguen empaquetando el suyo. Mientras npm viaje dentro, el gate volverá
-# a ponerse rojo por él.
+# ya cubría ese frente. Subir de Node no lo cierra y se midió antes de descartarlo: tanto `22.23.2`
+# —el pin de entonces— como `24.19.0`, que es el de la línea `FROM` desde `bdfe609`, siguen
+# empaquetando el suyo. Mientras npm viaje dentro, el gate volverá a ponerse rojo por él.
 #
 # **corepack y sus shims.** Aquí la versión anterior de este comentario afirmaba que se conservaban
 # porque «quien instala es corepack+pnpm», y era falso: medido en la imagen construida, `/pnpm` no
