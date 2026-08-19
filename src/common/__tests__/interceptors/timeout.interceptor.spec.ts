@@ -1,5 +1,5 @@
 import { RequestTimeoutException, type ExecutionContext } from '@nestjs/common';
-import { SSE_METADATA } from '@nestjs/common/constants';
+import { SSE_METADATA } from '../../nest-metadata.constants';
 import type { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { firstValueFrom, of, throwError, timer } from 'rxjs';

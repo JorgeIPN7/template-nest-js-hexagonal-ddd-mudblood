@@ -1,5 +1,5 @@
 import type { ExecutionContext } from '@nestjs/common';
-import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
+import { ROUTE_ARGS_METADATA } from '../../nest-metadata.constants';
 
 import type { AuthenticatedUser } from '../../auth/authenticated-user';
 import { CurrentUser } from '../../decorators/current-user.decorator';
