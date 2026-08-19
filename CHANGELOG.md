@@ -62,6 +62,25 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
   `CLAUDE.md` con el ejemplo trabajado, y con el dato medido que la justifica: TypeORM enumera
   cada columna en cada `SELECT`, así que un `DROP COLUMN` rompe **toda** lectura de la tabla en el
   código viejo, no solo la que usaba la columna.
+- **Guardián de los pines del toolchain** (2026-08-19). `src/__tests__/toolchain-pins.spec.ts`
+  afirma que `.nvmrc`, `.node-version`, el `FROM` del `Dockerfile` y el suelo de `engines.node`
+  dicen la misma versión, que `README.md` y la plantilla de incidencias la citan, y que en el árbol
+  resuelve **una sola** copia de `typescript` y es la que declara `package.json`. Nace de dos bumps
+  que quedaron a medias y en verde: `bdfe609` movió Node en tres de los cuatro sitios y `2723d87`
+  movió pnpm sin tocar los documentos. **Añádelo a la lista de la entrada de Node, más abajo: son
+  cinco archivos los que se mueven juntos, no cuatro.**
+- **Claves de metadatos de Nest copiadas y ancladas** (2026-08-19).
+  `src/common/nest-metadata.constants.ts` sustituye al import profundo
+  `@nestjs/common/constants`, que era un entrypoint **no declarado** —`@nestjs/common@11.2.1` no
+  publica `exports`— y por tanto una rotura de arranque a un minor de distancia, con typecheck en
+  verde. Su spec deriva las dos claves de los decoradores públicos (`@Sse()`, `@Req()`), así que un
+  renombrado se ve como un test rojo en vez de como un interceptor que deja de detectar SSE en
+  silencio. `eslint.config.mjs` prohíbe el import profundo.
+- **El orden de los dos `APP_GUARD` globales está fijado por un test** (2026-08-19).
+  `ThrottlerGuard` se registra en `app.module.ts` y `JwtAuthGuard` en `auth.module.ts`, y su orden
+  relativo era emergente del orden en que Nest refleja los módulos. Si se invirtiera, el 401
+  llegaría antes que el contador del throttler y los endpoints protegidos perderían el límite de
+  peticiones para tráfico no autenticado, en silencio. Lo afirma `app.module.e2e-spec.ts`.
 - **Gobernanza del repositorio** (2026-08-08). `LICENSE` (MIT), `SECURITY.md`, `CHANGELOG.md`,
   `.github/CODEOWNERS` y plantillas de issue en formato de formulario, de cara a la creación del
   primer remoto.
@@ -94,12 +113,38 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 - **La CSP corre también en desarrollo** (2026-08-01), para que lo que rompa, rompa en local.
 - **⚠️ El suelo de Node sube de `22.22.1` a `22.23.2`** (2026-08-14). No es mantenimiento
   rutinario: es la única forma de mover el OpenSSL que la aplicación usa de verdad (ver _Security_).
-  Toca `.nvmrc`, `.node-version`, `engines` de `package.json` y el `FROM` del `Dockerfile`. Quien
-  derive la plantilla necesita `nvm install 22.23.2`; `engines` no bloquea la instalación —no hay
-  `engine-strict`— así que una versión anterior solo avisa, pero se queda con el OpenSSL vulnerable.
+  Toca `.nvmrc`, `.node-version`, `engines` de `package.json` y el `FROM` del `Dockerfile` —y
+  desde el 2026-08-19 también `README.md` y la plantilla de incidencias, con
+  `src/__tests__/toolchain-pins.spec.ts` afirmándolo, porque esta lista de cuatro se cumplió a tres
+  en el siguiente bump. Quien derive la plantilla necesita `nvm install 22.23.2`; `engines` no
+  bloquea la instalación —no hay `engine-strict`— así que una versión anterior solo avisa, pero se
+  queda con el OpenSSL vulnerable.
+
+- **⚠️ `engines.node` se estrecha a `>=24.19.0 <25.0.0`** (2026-08-19). Anunciaba
+  `>=22.23.2 <25.0.0` —tres majors— mientras `.nvmrc`, `.node-version`, el `FROM` del `Dockerfile`
+  y `@types/node` estaban ya en 24, y la CI toma la versión de `.nvmrc` sin matriz: se ejercitaba
+  uno de los tres. Quien derive la plantilla necesita **Node 24.19.0**; `engines` sigue sin
+  bloquear la instalación, así que con Node 22 la instalación solo avisa —y el aviso ahora aparece,
+  que antes no— pero nada de lo que hay aquí se prueba contra ese runtime.
+- **El censo de mutación se remidió y quedó fechado** (2026-08-19). La cabecera de
+  `stryker.config.mjs` razonaba sobre 277 mutantes válidos y el número real es **296**: el bump
+  `42ea415` (`@stryker-mutator/core` 9.6.1 → 10.0.0, un MAJOR) no disparó la remedición que ese
+  archivo declara obligatoria por ciclo. Medido: **93.24 %**, 276 killed, 0 timeout, 20 survived,
+  7 error. `thresholds.break` **se queda en 85**, con la aritmética del margen escrita al lado.
+- **La suite E2E mide la cobertura de `data-source.ts`, `seeds/` y `outbox/`** (2026-08-19).
+  `jest.config.mjs` excluía seis grupos de la cobertura unitaria argumentando que «los cubren los
+  E2E», y la lista del config E2E tenía dos: cuatro grupos no los medía ninguna suite mientras tres
+  comentarios publicaban lo contrario. `migrations/` sigue fuera de las dos, ahora dicho en voz
+  alta y con su deuda apuntada (backlog #17).
 
 ### Removed
 
+- **El override de `js-yaml` se retira** (2026-08-19). Parcheaba GHSA-pm4m-ph32-ghv5 y cumplió su
+  propia condición de salida: `@nestjs/swagger@11.4.7` ya pinea `js-yaml@5.3.0`, con el fix. Se
+  retira porque lo único que seguía aportando era el techo `<6.0.0`, que habría retenido a swagger
+  en la línea 5.x sin avisar el día que pase a 6.x. Es seguro **porque
+  `pnpm audit --prod --audit-level=high` corre en CI**: es el gate que cazó este CVE la primera vez.
+  Verificado tras retirarlo — el árbol trae 5.3.0 y el audit responde `No known vulnerabilities`.
 - **`POST /users` desaparece** (2026-08-07, ciclo 4). El alta pública es `POST /auth/register`,
   porque lo que nace en un registro es una **cuenta** —perfil y credencial— y el endpoint
   pertenece al contexto que posee la credencial. `CreateUserUseCase` sobrevive con `{ email, name }`
@@ -143,6 +188,15 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Security
 
+- **El cooldown de paquetes nuevos cambia de sitio, no desaparece** (2026-08-19). pnpm 11 reaplica
+  `minimumReleaseAge` (24 h por defecto) a **cada entrada del lockfile en cada install**, así que
+  cualquier paquete publicado hace menos de un día ponía en rojo los dos jobs de `ci.yml` con un
+  lockfile coherente byte a byte — el fallo que obligó a `b79372b` a llevar un embargo de reloj en
+  el mensaje de commit. Ahora la verificación la hace Renovate aguas arriba
+  (`"minimumReleaseAge": "3 days"` en `renovate.json`, antes de abrir la PR) y CI confía en el
+  lockfile ya verificado (`--trust-lockfile`, el uso que pnpm documenta para el flag). **Son una
+  sola decisión en dos mitades:** quitar el flag devuelve los rojos sin causa; quitar la regla de
+  Renovate deja el cooldown sin verificar en ningún punto.
 - **`enableImplicitConversion` está deliberadamente ausente del `ValidationPipe`** (2026-07-28).
   Convertía cada valor al tipo declarado _antes_ de validar, así que un `{"name": {"$ne": null}}`
   llegaba a `@IsString()`, `@MinLength` y `@MaxLength` como la cadena `"[object Object]"` y pasaba
