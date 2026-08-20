@@ -58,15 +58,33 @@
 /stryker.config.mjs                       @JorgeIPN7
 
 # Overrides de pnpm: cada entrada es una decisión curada a mano con su razonamiento en el
-# comentario, y una de ellas (`@nestjs/swagger>js-yaml`) es el parche de un CVE real
-# (GHSA-pm4m-ph32-ghv5). Renovate tiene este archivo desactivado justo por eso; un humano
-# que lo edite sin leer los comentarios reabriría el CVE en silencio.
+# comentario, y `renovate.json` tiene el archivo desactivado justo por eso — una PR automática
+# que reescribiera una de ellas sin ese contexto sería peor que no tener Renovate ahí.
+#
+# El caso que manda hoy es el override de `typescript`, y lo que hay que leer antes de tocarlo
+# es su SCOPE. Sin scope gana la resolución sobre el devDependency de `package.json`, que sí
+# está en el alcance de Renovate, y hace INERTE todo bump futuro de TypeScript: la PR mergea en
+# verde mientras el manifiesto anuncia una versión que nadie compila. Con scope y los dos
+# literales divergiendo hay dos compiladores validando el mismo código. Ninguna de las dos cosas
+# la caza un test que ya existiera; la caza `src/__tests__/toolchain-pins.spec.ts`, añadido para
+# eso, y por eso va en esta lista.
+#
+# Hasta el 2026-08-19 este párrafo decía que aquí vivía el parche de un CVE real
+# (GHSA-pm4m-ph32-ghv5, vía `@nestjs/swagger>js-yaml`). Ya no: upstream adoptó el fix y el
+# override se retiró, dejando su lápida en el archivo. Lo que vigila ese frente es el gate
+# `pnpm audit --prod --audit-level=high` de `ci.yml`, no este archivo.
 /pnpm-workspace.yaml                      @JorgeIPN7
 
 # Config del escáner de secretos y su contrato. Relajarla no falla nada: simplemente deja
 # de encontrar cosas, que es el modo de fallo más silencioso posible para un gate.
 /.secretlintrc.json                       @JorgeIPN7
 /src/__tests__/secretlint.spec.ts         @JorgeIPN7
+
+# Contrato de los pines del toolchain: afirma que `.nvmrc`, `.node-version`, el `FROM` del
+# Dockerfile y el suelo de `engines.node` dicen la misma versión, y que en el árbol resuelve una
+# sola copia de `typescript`. Es lo único que impide que un bump automático mueva tres de los
+# cuatro pines y quede verde, que es lo que pasó dos veces antes de que existiera.
+/src/__tests__/toolchain-pins.spec.ts     @JorgeIPN7
 
 # Este archivo y la licencia: quién revisa qué, y bajo qué términos se publica el código.
 /.github/CODEOWNERS                       @JorgeIPN7

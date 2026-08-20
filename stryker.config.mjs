@@ -71,6 +71,51 @@
  * `type`, borrados en compilación. El scope sí cambia de forma: `application/` de users pasa
  * a leerse `use-cases/` (29 mutantes, 100 %) + `users.facade.ts` (9, 90 %), que es
  * exactamente la separación que el ciclo quería hacer visible.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Remedición del 2026-08-19. **El censo de arriba estaba caduco y nadie lo había notado**, que
+ * es el defecto que esta entrada arregla: las cuatro remediciones anteriores razonan sobre 277
+ * mutantes válidos y el número real es **296**. La causa es `42ea415`, el bump de
+ * `@stryker-mutator/core` 9.6.1 → 10.0.0 — un MAJOR que tocó solo `package.json` y el lockfile,
+ * sin rehacer la aritmética que este archivo declara obligatoria por ciclo. Un cambio de major
+ * en el instrumentador es exactamente el evento que mueve el censo.
+ *
+ * Medido con `pnpm test:mutation` sobre el scope completo, copiado de la salida de Stryker:
+ * **93.24 %** global — 276 killed, 0 timeout, 20 survived, 0 sin cobertura, 7 error (276/296).
+ * Por módulo, con su peso en mutantes válidos, que es lo que de verdad reparte el margen:
+ *
+ *     auth     100.00 %   47/47     ( 47 válidos, 15.9 % del censo)
+ *     users     93.21 %  151/162    (162 válidos, 54.7 %)
+ *     orders    85.94 %   55/64     ( 64 válidos, 21.6 %)
+ *     shared   100.00 %   23/23     ( 23 válidos,  7.8 %)
+ *
+ * Los +19 mutantes respecto al censo documentado están TODOS matados (killed 257 → 276,
+ * survived 20 → 20), así que caen en código que los casos ya cubrían. La hipótesis es que
+ * Stryker 10 añadió mutadores; no se ha comprobado cuál, y se deja escrito como hipótesis y no
+ * como hecho.
+ *
+ * Los 20 supervivientes siguen siendo los mismos de siempre y con la misma forma —mensajes de
+ * error sin aserción de igualdad y regex a las que se les quita el ancla—, repartidos entre
+ * `users` (11: `users.facade.ts` 5, `user.errors.ts` 3, `email.vo.ts` 1, `user-id.vo.ts` 2) y
+ * `orders` (9: `order.errors.ts` 4, `order-concept.vo.ts` 2, `order-id.vo.ts` 2,
+ * `order-amount.vo.ts` 1).
+ *
+ * ⚠️ Los timeouts: **0 en esta corrida, pero no siempre.** El informe HTML de la corrida
+ * ANTERIOR registraba 4 timeouts en `shared/domain/value-object.base.ts`, y esta corrida los
+ * mata. El score no se mueve un ápice —Stryker cuenta el timeout como detectado, así que los
+ * dos casos dan 276 detectados de 296 y 93.24 %— pero conviene tenerlo escrito: esos mutantes
+ * son sensibles a la carga de la máquina y su estado bascula entre Killed y Timeout entre
+ * corridas. Si un día aparecen como timeout, no es una regresión ni un caso perdido.
+ *
+ * **El umbral se queda en `break: 85`.** Con 93.24 % el margen es de 8.24 puntos y, a diferencia
+ * de lo que se temía, es margen de kills y no de timeouts. Aritmética del margen: hacen falta
+ * ≥252 detectados para no romper (85 % de 296), así que caben 24 kills perdidos antes del rojo.
+ * Ningún módulo puede tumbar el global él solo sin un desplome grande —`orders` tendría que caer
+ * de 85.94 % a ~48 %, `users` de 93.21 % a ~78 %—, pero ya no hay ninguno inofensivo: llevar
+ * `auth` a 0 bastaría, porque sus 47 mutantes superan los 24 de holgura. Subir el techo se sigue
+ * aplazando hasta que los 20 supervivientes conocidos tengan casos aprobados: subirlo antes
+ * premiaría el momento del censo, no la disciplina.
  */
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {
@@ -96,7 +141,6 @@ const config = {
     // al subirlos a `ValueObject` se habrían salido de él. El score habría subido sin que
     // nadie probara nada más, que es exactamente el fallo de un auditor mal apuntado.
     'src/shared/domain/**/*.ts',
-    '!src/modules/**/index.ts',
   ],
   coverageAnalysis: 'perTest',
   reporters: ['clear-text', 'progress', 'html'],

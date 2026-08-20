@@ -170,8 +170,11 @@ scan de trivy se registró el 2026-08-14 (entrada #25), con lo que el DoD «un C
 vulnerable los pone rojos» quedó ejercitado — de hecho salió rojo. Gitleaks también corre ya
 (descartado en local por ser un binario Go que cada dev instalaría aparte, y porque hace de red
 bajo el bypass local: `git commit --no-verify` salta el hook, gitleaks en CI no; ojo con lo que
-cubre de verdad, ver la cabecera de `security.yml`). Lo único que sigue esperando un paso humano es
-**instalar la app de Renovate**.
+cubre de verdad, ver la cabecera de `security.yml`). **Y la app de Renovate también está
+instalada** desde antes del 2026-08-19: `git log --author=renovate main` da 20 commits. Esta frase
+decía «lo único que sigue esperando un paso humano es instalar la app de Renovate» mucho después de
+que estuviera hecho — corregido el 2026-08-19, junto con las otras dos apariciones de lo mismo en
+este archivo y una en `SECURITY.md`. **No queda ningún paso humano pendiente en esta entrada.**
 
 **El gate de audit cazó un CVE real al primer disparo en local, antes de que exista CI que lo
 ejecute.** `pnpm audit --prod --audit-level=high` salió con exit 1: `js-yaml@5.2.1` (High, ReDoS,
@@ -184,6 +187,22 @@ ese mismo override, no se repite aquí. Con el override aplicado, `pnpm audit --
 --audit-level=high` vuelve a exit 0. Es la mejor evidencia posible de que el gate funciona: no se
 quedó config-ready para un CVE hipotético, encontró uno real en el propio árbol el primer día que
 corrió.
+
+**Cierre del override (2026-08-19): retirado, y el criterio lo daba él mismo.** Su comentario
+fijaba la condición de salida —«hasta que `@nestjs/swagger` adopte el fix»— y upstream la cumplió:
+`@nestjs/swagger@11.4.7` declara `js-yaml@5.3.0`, con el fix dentro. Lo que nadie miró al bumpear
+swagger (`868cc65`, que tocó solo `package.json` y el lockfile) es que el override seguía puesto y
+que un override **sustituye la regla de upstream por completo**: `^5.2.2` retenía el árbol en
+5.2.3 y `js-yaml@5.3.0` aparecía 0 veces en el lockfile. No era una vulnerabilidad —5.2.3 lleva el
+parche—, era el techo `<6.0.0` convertido en trampa: el día que swagger pase a js-yaml 6.x por un
+cambio de API, el override lo habría retenido en 5.x sin imprimir nada, con install, typecheck y
+lint en verde y swagger roto en runtime.
+
+Retirarlo es seguro **porque este gate existe**, que es el argumento entero: tras quitarlo,
+`pnpm install` trae `js-yaml@5.3.0` (verificado en el lockfile) y `pnpm audit --prod
+--audit-level=high` responde `No known vulnerabilities found`. Si upstream regresara a una versión
+vulnerable, lo cazaría el mismo comando que lo cazó la primera vez. La lápida con el porqué
+completo se queda en `pnpm-workspace.yaml`, para que nadie lo reintroduzca por costumbre.
 
 **Actualización (2026-08-06) — piezas de archivo dejadas config-ready antes de que existiera
 remoto.** El remoto llegó después; lo que quedaba pendiente de él ya corre.
@@ -244,7 +263,11 @@ remoto.** El remoto llegó después; lo que quedaba pendiente de él ya corre.
   este mismo ticket — es una decisión curada a mano con su razonamiento en el comentario; una
   PR automática que la reescribiera sin ese contexto sería peor que no tener Renovate ahí. Se
   desactiva el archivo entero, no solo la fila de `js-yaml`, porque las tres entradas
-  comparten el mismo criterio. Ese guardado tapa además un acoplamiento que no es específico
+  comparten el mismo criterio. (⚠️ Al 2026-08-19 quedan DOS: el override de `js-yaml` se
+  retiró al adoptar upstream el fix —ver el cierre más arriba en esta entrada— y el de
+  `typescript` pasó a estar scoped. El criterio de desactivar el archivo entero no cambia; de
+  hecho el scope del de `typescript` existe precisamente porque este archivo está desactivado
+  y su literal no se mueve solo.) Ese guardado tapa además un acoplamiento que no es específico
   de Renovate: el override de `typescript` no lleva scope, así que congela también la copia
   que ve `pnpm typecheck` por encima de la `devDependency typescript` de `package.json` —
   esa sí la gestiona Renovate. Sin el guardado, una PR que bumpeara solo la `devDependency`
@@ -265,9 +288,10 @@ remoto.** El remoto llegó después; lo que quedaba pendiente de él ya corre.
   `ghcr.io`, donde el `TOOMANYREQUESTS` en runners compartidos es notorio — v0.36.0 trae
   mitigaciones (`cache`, `TRIVY_DB_REPOSITORY`).
 
-Lo único que de verdad espera al remoto ahora es **activar** lo ya escrito: crear el
+~~Lo único que de verdad espera al remoto ahora es **activar** lo ya escrito: crear el
 repositorio, instalar la app de Renovate, y confirmar que `security.yml` corre en el primer
-push. Cierra el Tier 1 del roadmap.
+push.~~ **Los tres hechos** (2026-08-19): el remoto existe desde agosto de 2026, Renovate lleva
+20 commits en `main`, y `security.yml` corre. Tier 1 del roadmap cerrado.
 
 ---
 
@@ -1047,7 +1071,10 @@ orden de preferencia:
    `:pinAllExceptPeerDependencies`; **era falso** —ese preset fija `rangeStrategy`, no
    `pinDigests`— y hacía este criterio de cierre inalcanzable. `renovate.json` extiende ahora
    `docker:pinDigests`, que es el que de verdad lo produce. Detalle en la entrada #6.
-   Falta el paso humano: **instalar la app de Renovate en el remoto**.
+   **HECHO (2026-08-19).** La app está instalada y esta palanca ya se disparó sola: `bdfe609`
+   —`chore(deps): update node.js to v24`— es exactamente esa PR automática de bump del `FROM`
+   con digest. Así que de los tres requisitos del criterio de cierre de abajo, dos están
+   cumplidos y el que sigue abierto es otro (ver ahí).
 2. **Un `schedule:` semanal que reconstruya y escanee**, para enterarse por un job propio y no por
    el siguiente PR de otra persona. ⚠️ Esta entrada decía que «ambas dependen de que Renovate esté
    instalado»: falso para esta segunda, que solo necesita cron —`security.yml` ya tiene uno— y se
@@ -1058,6 +1085,44 @@ que lo sube cuando la base publica parches, y un rojo de trivy vuelve a signific
 algo» en vez de «pasó el tiempo». Y la comprobación que no puede faltar en ningún bump futuro:
 `node -p "process.versions.openssl"` dentro de la imagen, porque es lo único que dice la verdad
 sobre el OpenSSL que la aplicación usa.
+
+**Estado al 2026-08-19.** Digest: ✅. PR automática del `FROM`: ✅ —`bdfe609` es exactamente eso—.
+La comprobación de OpenSSL, que `bdfe609` se saltó, **hecha**: `v24.19.0 | openssl 3.5.7`, medido
+sobre la imagen construida, el mismo 3.5.7 que cerró el CVE-2026-31789. Lo que sigue abierto de esta
+entrada es solo la segunda palanca: el `schedule:` semanal que reconstruya y escanee, para
+enterarse por un job propio y no por el PR de otra persona.
+
+---
+
+## 26. Un commit del historial de `main` tiene un lockfile que no instala
+
+**Qué pasa.** `9a4b527` —uno de los cinco commits que `a777327` metió en la ascendencia de
+`main`— lleva un `pnpm-lock.yaml` internamente incoherente: referencia el peer-id `(pg@8.22.0)`
+seis veces (dos de ellas en campos `version:` de importadores, más una clave de snapshot) mientras
+la única clave `pg@` de primer nivel es `pg@8.23.0`. Es exactamente el
+`ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY` que `b79372b` se escribió para evitar, colado por la puerta
+de al lado: el merge de una rama de Renovate que se abandonó.
+
+Verificado con `git show 9a4b527:pnpm-lock.yaml`. Consecuencia práctica: cualquier `git bisect`,
+`git checkout` o build reproducible que aterrice en ese commit falla en
+`pnpm install --frozen-lockfile` y **no puede correr ni un gate** — no es que fallen los tests, es
+que no se llega a instalar. El HEAD actual está limpio (el árbol de `a777327` es idéntico al de su
+primer padre, así que el merge no introdujo contenido).
+
+**Decisión: se documenta, no se arregla.** Reescribir historia ya publicada de `main` para sanear un
+commit intermedio cuesta más de lo que vale —invalida clones y referencias existentes— y el daño es
+acotado y ahora conocido. Lo que esta entrada compra es que quien bisecte sepa que el rango
+`ebc29cd..a777327` contiene un commit no instalable y lo salte (`git bisect skip`) en vez de
+diagnosticar un fallo de dependencias inexistente.
+
+**Lo que sí se puede hacer y queda como mejora, no como arreglo.** Un job de CI que corra
+`pnpm install --frozen-lockfile` sobre el lockfile de cada commit de una PR —no solo del HEAD—
+habría cazado esto antes del merge. Hoy la CI valida el HEAD del PR, que es lo normal y lo
+suficiente para el 99 % de los casos; este 1 % son merges de ramas de bump abandonadas. No se hace
+todavía porque el coste (un install por commit) es real y el caso es raro.
+
+**Cómo se sabrá que está hecho.** Esta entrada ya es el entregable: no hay estado que cambiar.
+Se cierra el día que el historial deje de importar, o si se decide implementar el job de arriba.
 
 ---
 

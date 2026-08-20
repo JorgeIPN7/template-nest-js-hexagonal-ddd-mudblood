@@ -25,15 +25,23 @@ permissions:
 # que hay debajo; hay que dar un salto más por `git/tags/<sha>` para obtenerlo. Anotar o no es
 # una decisión POR TAG de quien publica, no una propiedad del repositorio, así que la única
 # respuesta fiable es mirar `object.type` en cada bump — no fiarse de cómo salió la vez anterior
-# ni de esta lista, que es una foto del 2026-08-14 y no una regla:
+# ni de esta lista, que es una foto del 2026-08-19 y no una regla:
 #
-#   anotados (doble salto):  pnpm/action-setup@v6.0.10  ff378ebe → 0977fd99
+#   anotados (doble salto):  pnpm/action-setup@v6.0.10        ff378ebe → 0977fd99
 #                            aquasecurity/trivy-action@v0.36.0  a9c7b0f0 → ed142fd0
-#   ligeros  (salto único):  actions/checkout@v5, actions/setup-node@v5,
+#   ligeros  (salto único):  actions/checkout@v7.0.1, actions/setup-node@v7.0.0,
 #                            actions/upload-artifact@v7.0.1, gitleaks/gitleaks-action@v3.0.0
 #
-# Los seis se reverificaron contra la API el 2026-08-14 y coinciden con lo escrito abajo y en
-# `security.yml`. Equivocarse aquí no da un error legible: el runner no resuelve la action.
+# Los seis se reverificaron contra la API el 2026-08-19 y los seis SHA de abajo y de
+# `security.yml` coinciden. Equivocarse aquí no da un error legible: el runner no resuelve la
+# action.
+#
+# ⚠️ Lo que sí estaba mal hasta esa fecha eran las ETIQUETAS de esta lista, no los pines: decía
+# `checkout@v5` y `setup-node@v5` cuando `93923d3` y `22ae48e` ya los habían movido a v7.0.1 y
+# v7.0.0. No es cosmético — este bloque ES el procedimiento para resolver el SHA siguiente, así
+# que quien siguiera la tabla anotado/ligero equivocada resolvería el objeto que no es, y el
+# síntoma es el que dice la línea de arriba. Cada bump reescribe este bloque, no solo la línea
+# del `uses:`.
 #
 # Bump del 2026-08-14, motivo común: GitHub anunció la retirada de Node 20 en los runners
 # (aviso «Node.js 20 is deprecated … forced to run on Node.js 24»). El runtime lo declara el
@@ -42,8 +50,9 @@ permissions:
 # que el runner arranca una action ajena. Por eso el arreglo solo puede ser subir de versión.
 # `pnpm/action-setup` v4→v6.0.10 (v5 pasó a node24, v6 añadió soporte a pnpm v11, que es
 # justo el que pinea `packageManager`) y `upload-artifact` v4→v7.0.1 (v6 exige runner ≥2.327.1,
-# de sobra en los hosted). `checkout` y `setup-node` siguen en v5 porque ya son node24 — no
-# aparecían en el aviso. `gitleaks-action` v2→v3.0.0 en security.yml, por lo mismo.
+# de sobra en los hosted). `checkout` y `setup-node` no aparecían en aquel aviso porque ya eran
+# node24; se movieron después, por su cuenta, a v7.0.1 y v7.0.0. `gitleaks-action` v2→v3.0.0 en
+# security.yml, por lo mismo.
 
 jobs:
   quality:
@@ -92,8 +101,21 @@ jobs:
           node-version-file: '.nvmrc'
           cache: pnpm
 
+      # ⚠️ `--trust-lockfile` no es una optimización de tiempo. Sin él, pnpm 11 REAPLICA el
+      # cooldown de `minimumReleaseAge` —24 h por defecto, no configurado en ningún archivo de
+      # este repo— a cada entrada del lockfile en CADA install, así que un paquete publicado hace
+      # menos de 24 h pone los DOS jobs de este archivo en rojo con
+      # `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` aunque el lockfile sea coherente byte a byte. Es
+      # el fallo que obligó a `b79372b` a llevar un embargo de reloj en el mensaje de commit y a
+      # fusionar el lockfile a mano. El flag existe exactamente para esto —`pnpm install --help`:
+      # «CI runs against an already-verified lockfile»—.
+      #
+      # El cooldown NO desaparece del proyecto, cambia de sitio: lo aplica Renovate aguas arriba
+      # con `minimumReleaseAge: 3 days` en `renovate.json`, ANTES de abrir la PR. Las dos mitades
+      # son una sola decisión: quitar cualquiera de ellas deja un hueco —sin el flag, la CI se pone
+      # roja sin causa real; sin la regla de Renovate, nadie verifica el cooldown en ningún punto—.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       # Gate de cadena de suministro (backlog #6): CVEs high+ en dependencias de
       # PRODUCCIÓN rompen la CI. Las de dev no llegan a la imagen (--prod).
@@ -226,8 +248,10 @@ jobs:
           node-version-file: '.nvmrc'
           cache: pnpm
 
+      # `--trust-lockfile`: el porqué está en el install del job `quality`. Va aquí también
+      # porque este job empieza por el mismo install y se pondría rojo por su cuenta.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Mutation testing
         run: pnpm test:mutation

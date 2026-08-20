@@ -5,7 +5,7 @@ import {
   type ExecutionContext,
   type NestInterceptor,
 } from '@nestjs/common';
-import { SSE_METADATA } from '@nestjs/common/constants';
+import { SSE_METADATA } from '../nest-metadata.constants';
 import { HttpAdapterHost, Reflector } from '@nestjs/core';
 import { ClsService } from 'nestjs-cls';
 import { map, type Observable } from 'rxjs';

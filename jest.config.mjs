@@ -93,8 +93,11 @@ const config = {
     //   - `*.typeorm.repository.ts`: el skill exige probar repositorios contra una base
     //     real, no con `jest.mock('typeorm')`, y eso es justo lo que hacen los E2E.
     //   - `data-source.ts` y `migrations/`: los ejecuta la CLI (`pnpm migration:run`).
-    // Que eso sea cierto ya no es un acto de fe: `test/jest-e2e.config.mjs` mide
-    // exactamente estos archivos y les aplica su propio umbral.
+    // `test/jest-e2e.config.mjs` mide estos archivos y les aplica su propio umbral —con UNA
+    // excepción, que conviene tener escrita porque el comentario anterior la negaba: hasta el
+    // 2026-08-19 aquella lista tenía dos patrones y esta seis, así que cuatro de los seis
+    // grupos no los medía ninguna suite. Se corrigió allí, salvo `migrations/`, que sigue
+    // fuera de las dos a propósito y con deuda propia (`docs/backlog.md` #17).
     //   - `seeds/`: igual que las migraciones, los ejecuta la CLI (`pnpm seed:admin`), no
     //     Jest. Tendrá su propio E2E dedicado (Task 9 del plan de auth) — mismo patrón que
     //     `data-source.ts`/`migrations/`, no una excepción aparte.
