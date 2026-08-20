@@ -263,7 +263,11 @@ remoto.** El remoto llegó después; lo que quedaba pendiente de él ya corre.
   este mismo ticket — es una decisión curada a mano con su razonamiento en el comentario; una
   PR automática que la reescribiera sin ese contexto sería peor que no tener Renovate ahí. Se
   desactiva el archivo entero, no solo la fila de `js-yaml`, porque las tres entradas
-  comparten el mismo criterio. Ese guardado tapa además un acoplamiento que no es específico
+  comparten el mismo criterio. (⚠️ Al 2026-08-19 quedan DOS: el override de `js-yaml` se
+  retiró al adoptar upstream el fix —ver el cierre más arriba en esta entrada— y el de
+  `typescript` pasó a estar scoped. El criterio de desactivar el archivo entero no cambia; de
+  hecho el scope del de `typescript` existe precisamente porque este archivo está desactivado
+  y su literal no se mueve solo.) Ese guardado tapa además un acoplamiento que no es específico
   de Renovate: el override de `typescript` no lleva scope, así que congela también la copia
   que ve `pnpm typecheck` por encima de la `devDependency typescript` de `package.json` —
   esa sí la gestiona Renovate. Sin el guardado, una PR que bumpeara solo la `devDependency`
