@@ -87,8 +87,13 @@ WORKDIR /app
 # ------------------------------------------------------------------------------------
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# `--trust-lockfile` por el mismo motivo que en los dos installs de `ci.yml`, y hace falta aquí
+# igual: pnpm 11 reaplica `minimumReleaseAge` (24 h) a cada entrada del lockfile en CADA install,
+# así que una dependencia publicada hace poco rompe el `docker build` —que en CI corre justo antes
+# de trivy— con `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` y un lockfile perfectamente coherente. La
+# verificación del cooldown vive aguas arriba, en el `minimumReleaseAge` de `renovate.json`.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile --trust-lockfile
 
 # ------------------------------------------------------------------------------------
 # Build: compila con SWC y copia el bundle de Scalar a public/.
@@ -114,7 +119,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # es devDependency. Sin esto el stage falla con `husky: command not found`. Poner HUSKY=0
 # no sirve — el binario directamente no está instalado.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile --prod --ignore-scripts
+    pnpm install --frozen-lockfile --trust-lockfile --prod --ignore-scripts
 
 COPY --from=build /app/dist ./dist
 # El bundle de Scalar vive fuera de `dist` a propósito: `nest-cli.json` declara
