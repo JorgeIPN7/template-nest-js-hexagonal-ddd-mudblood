@@ -68,12 +68,12 @@ proyecto de aquí, vigila este repositorio o asume el mantenimiento por tu cuent
 
 ### Gates automáticos
 
-| Gate                  | Qué escanea                                                                          | Dónde vive                                                                                                | Cuándo corre                                              |
-| --------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| **secretlint 13.0.4** | Todo archivo _staged_, con `--maskSecrets` para no imprimir el hallazgo              | [`.secretlintrc.json`](./.secretlintrc.json) + entrada catch-all `"*"` de `lint-staged` en `package.json` | `pre-commit` ([`.husky/pre-commit`](./.husky/pre-commit)) |
-| **gitleaks**          | El **historial completo** del repositorio (`fetch-depth: 0`)                         | [`.github/workflows/security.yml`](./.github/workflows/security.yml)                                      | push y PR a `main`, más un cron semanal (`17 4 * * 1`)    |
-| **`pnpm audit`**      | CVEs `high`+ en dependencias de **producción** (`--prod`)                            | [`.github/workflows/ci.yml`](./.github/workflows/ci.yml), justo tras el install                           | push y PR a `main`                                        |
-| **trivy v0.36.0**     | La imagen Docker construida en CI: `HIGH,CRITICAL`, `ignore-unfixed`, `exit-code: 1` | [`.github/workflows/ci.yml`](./.github/workflows/ci.yml), tras el `docker build`                          | push y PR a `main`                                        |
+| Gate                  | Qué escanea                                                                                                                                  | Dónde vive                                                                                                | Cuándo corre                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **secretlint 13.0.4** | Todo archivo _staged_, con `--maskSecrets` para no imprimir el hallazgo                                                                      | [`.secretlintrc.json`](./.secretlintrc.json) + entrada catch-all `"*"` de `lint-staged` en `package.json` | `pre-commit` ([`.husky/pre-commit`](./.husky/pre-commit)) |
+| **gitleaks**          | En `push`/PR, **solo el rango que elige la action** (a menudo un commit); el historial completo **solo** en `schedule` y `workflow_dispatch` | [`.github/workflows/security.yml`](./.github/workflows/security.yml)                                      | push y PR a `main`, más un cron semanal (`17 4 * * 1`)    |
+| **`pnpm audit`**      | CVEs `high`+ en dependencias de **producción** (`--prod`)                                                                                    | [`.github/workflows/ci.yml`](./.github/workflows/ci.yml), justo tras el install                           | push y PR a `main`                                        |
+| **trivy v0.36.0**     | La imagen Docker construida en CI: `HIGH,CRITICAL`, `ignore-unfixed`, `exit-code: 1`                                                         | [`.github/workflows/ci.yml`](./.github/workflows/ci.yml), tras el `docker build`                          | push y PR a `main`                                        |
 
 Detalles que importan y que no se ven en la tabla:
 
@@ -91,8 +91,11 @@ Detalles que importan y que no se ven en la tabla:
   [`docs/backlog.md` §6](./docs/backlog.md).
 - **Todas las actions se referencian por SHA de commit, nunca por tag** — un tag es mutable y se
   puede re-apuntar sin aviso. La política y cómo bumpear están en la cabecera de `ci.yml`.
-- **Renovate está configurado** ([`renovate.json`](./renovate.json)), a la espera de que se instale
-  la app en el remoto. Extiende dos presets que **no son el mismo** y durante un tiempo este
+- **Renovate está configurado y operativo** ([`renovate.json`](./renovate.json)): la app está
+  instalada en el remoto y lleva 20 commits en `main` a fecha del 2026-08-19
+  (`git log --author=renovate main`). Este documento decía «a la espera de que se instale la app»
+  bastante después de que estuviera instalada, y esa frase vivía además en tres puntos de
+  `docs/backlog.md`; se corrigió el 2026-08-19. Extiende dos presets que **no son el mismo** y durante un tiempo este
   documento los confundió: `:pinAllExceptPeerDependencies` fija `rangeStrategy: "pin"` —resuelve
   rangos a versiones exactas— y **no toca digests**; el pin por digest del `FROM` del `Dockerfile`
   es la opción `pinDigests`, que por defecto está en `false` y llega con el preset

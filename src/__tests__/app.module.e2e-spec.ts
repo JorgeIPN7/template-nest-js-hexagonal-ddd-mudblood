@@ -1,4 +1,6 @@
 import { ConfigService } from '@nestjs/config';
+import { ApplicationConfig } from '@nestjs/core';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 
@@ -7,6 +9,7 @@ import type { AppConfig } from '../config/app.config';
 import type { CorsConfig } from '../config/cors.config';
 import type { LogConfig } from '../config/log.config';
 import type { ThrottlerConfigValues } from '../config/throttler.config';
+import { JwtAuthGuard } from '../modules/auth/infrastructure/http/jwt-auth.guard';
 import { HealthController } from '../modules/health/health.controller';
 import { UserRepository } from '../modules/users/domain/ports/user.repository';
 import { UserTypeOrmRepository } from '../modules/users/infrastructure/persistence/user.typeorm.repository';
@@ -95,5 +98,49 @@ describe('AppModule', () => {
     expect(app.globalPrefix).toBeTruthy();
     expect(cors.options).toBeDefined();
     expect(log.level).toBeTruthy();
+  });
+
+  // `APP_GUARD` es multi-provider y aquí hay TRES, repartidos entre módulos distintos, así que
+  // el orden de la cadena no lo decide ninguna lista que alguien pueda leer:
+  //
+  //   [0] `ThrottlerGuard`  — `app.module.ts`, en los `providers` del módulo raíz.
+  //   [1] un objeto anónimo `{ canActivate: () => true }` — el no-op que `nestjs-cls` mete por
+  //       `useFactory` desde `ClsModule.forRoot` cuando `mount` es falsy (`clsGuardFactory` en
+  //       `cls-root.module.js`). No es nuestro y no hace nada; cae en medio porque
+  //       `ClsModule.forRoot` se importa antes de `AuthModule`.
+  //   [2] `JwtAuthGuard` — `auth.module.ts`, que es donde tiene que estar: la regla 3 del gate
+  //       de boundaries prohíbe a app-root importar internals de un módulo.
+  //
+  // Y el orden sale bien por un detalle de implementación de Nest, no por diseño: `scanner.js`
+  // inserta el módulo RAÍZ en el contenedor antes de recursar a sus imports, así que el
+  // throttler queda primero, y `guards-consumer.js` cortocircuita en el primer guard que
+  // devuelve falsy. Si un minor pasara a recolectar enhancers por `calculateModulesDistance`
+  // —que ya gobierna los hooks de ciclo de vida— los módulos importados irían delante,
+  // `JwtAuthGuard` lanzaría el 401 antes de que el throttler contase, y `GET /users`,
+  // `GET /users/:id`, `DELETE /users/:id` y `POST /orders` perderían el límite de peticiones
+  // para todo el tráfico no autenticado. En silencio y en producción.
+  //
+  // La aserción es por POSICIÓN RELATIVA, no por longitud ni por índice absoluto, y es
+  // deliberado: el invariante que protege el 429 es «el throttler antes que el JWT», y no
+  // queremos que aparecer o desaparecer un enhancer de una librería ajena —como el no-op de
+  // arriba— ponga rojo un test que no habla de eso.
+  //
+  // Lo que la hace posible sin arrancar un servidor HTTP: `testing-module.builder` llama a
+  // `applyApplicationProviders()`, e `injector/module.js` registra en el contenedor la MISMA
+  // instancia de `ApplicationConfig` que el scanner rellena. Y `getGlobalGuards()` devuelve
+  // instancias, no clases, porque el scanner le pasa `instanceWrapper.instance`.
+  it('debería ejecutar el ThrottlerGuard antes del JwtAuthGuard en la cadena global', () => {
+    // Arrange
+    const applicationConfig = moduleRef.get(ApplicationConfig, { strict: false });
+
+    // Act
+    const guards = applicationConfig.getGlobalGuards();
+    const throttlerIndex = guards.findIndex((guard) => guard instanceof ThrottlerGuard);
+    const jwtIndex = guards.findIndex((guard) => guard instanceof JwtAuthGuard);
+
+    // Assert — los dos están, y el throttler va antes.
+    expect(throttlerIndex).toBeGreaterThanOrEqual(0);
+    expect(jwtIndex).toBeGreaterThanOrEqual(0);
+    expect(throttlerIndex).toBeLessThan(jwtIndex);
   });
 });

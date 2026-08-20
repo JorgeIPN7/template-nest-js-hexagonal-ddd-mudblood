@@ -78,6 +78,28 @@ export default tseslint.config(
       '@typescript-eslint/require-await': 'error',
       '@typescript-eslint/return-await': ['error', 'in-try-catch'],
       '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
+
+      // `@nestjs/common/constants` es un entrypoint NO declarado: medido sobre
+      // @nestjs/common@11.2.1, el paquete no publica `exports`, ni `main`, ni `types`, así que
+      // resuelve solo por el algoritmo legacy de Node. El día que Nest publique un mapa de
+      // `exports` —minor rutinario y compatible— el proceso muere al arrancar con
+      // `ERR_PACKAGE_PATH_NOT_EXPORTED` con typecheck en verde, porque los tipos viajan por el
+      // mismo camino que se rompe. Y si en vez de desaparecer la clave se RENOMBRA, nada lanza:
+      // `reflector.get(undefined, …)` devuelve `undefined` y el interceptor deja de detectar
+      // SSE en silencio. Las dos claves que hacían falta viven copiadas y ancladas al
+      // decorador público que las escribe en `src/common/nest-metadata.constants.ts`.
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@nestjs/common/constants',
+              message:
+                'Entrypoint no declarado de @nestjs/common. Usa src/common/nest-metadata.constants.ts, cuyos literales están anclados al API público por su spec.',
+            },
+          ],
+        },
+      ],
     },
   },
   {
