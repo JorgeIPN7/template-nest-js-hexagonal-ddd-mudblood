@@ -24,6 +24,7 @@
     "SECURITY.md",
     "docker-compose.yml",
     "docker/initdb/01-create-test-database.sql",
+    "scripts/migrate-test-db.mjs",
     "src/bootstrap/openapi-document.ts",
     "src/bootstrap/openapi.ts",
     "src/common/logger/pino-options.ts",

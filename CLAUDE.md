@@ -32,15 +32,18 @@ pnpm test:e2e       # jest --config ./test/jest-e2e.config.mjs (*.e2e-spec.ts, n
 pnpm build          # nest build (SWC)
 pnpm start:dev      # watch mode
 
-pnpm db:up          # docker compose up -d postgres
+pnpm db:up          # docker compose up -d --wait postgres (blocks until healthy)
 pnpm db:down        # stop it
-pnpm db:reset       # drop the volume and start clean
+pnpm db:reset       # drop the volume, start clean and migrate BOTH databases
+pnpm db:migrate:test     # migrate nest_base_template_test — the E2E suite needs it
 pnpm migration:run       # apply pending migrations
 pnpm migration:revert    # roll back the last one
 pnpm migration:generate src/database/migrations/<Name>   # diff entities vs schema
 ```
 
 **Definition of Done** for any change: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`, all green. The E2E suite needs PostgreSQL running (`pnpm db:up`) and runs against the separate `nest_base_template_test` database, created by `docker/initdb/`.
+
+**`docker/initdb/` creates that database but never migrates it** — the TypeORM CLI reads `DB_DATABASE` from the `.env`, which points at the dev database, and `test/setup-env.ts` redirects only inside the Jest process. So the first `pnpm test:e2e` on a fresh clone needs `pnpm db:migrate:test` first, or it dies with `relation "auth_credentials" does not exist` — measured against a freshly created database: `auth.e2e-spec.ts` runs first and its `beforeEach` truncates that table before any other. It reads like a bug in the code and it is a schema nobody migrated. `pnpm db:reset` does both databases and needs nothing extra. Closed as backlog #18 on 2026-08-20; the entry records why the script is a `.mjs` and not a `VAR=value` prefix (Windows, and no `cross-env` in the tree).
 
 ## Git policy — never commit on the user's behalf
 

@@ -732,6 +732,10 @@ volviendo a poner `now(), now()` en el `INSERT` y comprobando que la prueba lo c
 
 ## 18. Nada documenta que la base de test hay que migrarla
 
+**Resuelto (2026-08-20, dentro de la reordenación del README — misma excepción explícita a la
+cadena `brainstorming → writing-plans` que se aplicó en #9, #12, #13, #14 y #15: el criterio ya
+estaba escrito aquí y lo único que faltaba era ejecutarlo).**
+
 **Qué pasa.** [`docker/initdb/01-create-test-database.sql`](../docker/initdb/01-create-test-database.sql)
 **crea** `nest_base_template_test` y ahí acaba: no aplica migraciones. `pnpm migration:run` lee
 `DB_DATABASE` del `.env`, que apunta a la base de desarrollo, y `test/setup-env.ts` redirige a la de
@@ -765,6 +769,28 @@ prefijo `VAR=valor pnpm …` no funciona en los scripts de `package.json` y el r
 `cross-env`, así que el script es un `.mjs` de dos líneas o entra esa dependencia — decisión de
 quien lo haga, no vale dejar un script que solo corre en Linux cuando el entorno de referencia es
 Windows.
+
+**Qué se implementó.** El criterio, tal cual, sin desviaciones:
+
+| Pieza                                                           | Qué hace                                                                                                   |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| [`scripts/migrate-test-db.mjs`](../scripts/migrate-test-db.mjs) | Fija `DB_DATABASE` desde `DB_DATABASE_TEST` (o el default) y delega en `pnpm migration:run`                |
+| `pnpm db:migrate:test`                                          | El script anterior, como comando                                                                           |
+| `pnpm db:reset`                                                 | Ahora es `down -v` → `up -d --wait` → `migration:run` → `db:migrate:test`: deja **las dos** bases migradas |
+| `pnpm db:up`                                                    | Le entró `--wait`, sin el cual el `&&` encadenaba `migration:run` contra un Postgres todavía inicializando |
+| README                                                          | Paso propio en «Correr los tests», fila en «Qué pasa si te saltas un paso» y §«Base de datos de los tests» |
+
+Sin `cross-env`: el `.mjs` escribe `process.env.DB_DATABASE` antes de delegar, y funciona porque
+`data-source.ts` carga el `.env` con `dotenv`, que por defecto **no pisa** lo que ya está en
+`process.env`. Es la misma técnica que `ci.yml`, en la forma que sí corre en Windows.
+
+**Lo que sigue sin hacer, dicho claro.** `pnpm db:up` crea la base de tests **vacía** y no la migra:
+el paso es explícito (`pnpm db:migrate:test`) o va dentro de `pnpm db:reset`. Meterlo en `db:up`
+convertiría «levanta la base» en «levanta la base y además tócale el esquema», que no es lo que ese
+comando promete. El default `nest_base_template_test` queda duplicado en el `.mjs` y en
+`test/setup-env.ts` — los dos extremos del mismo acuerdo; `scripts/init-project.targets.json` declara
+el archivo nuevo para que `init:project` los renombre a la vez, y el gate de
+`src/__tests__/init-project.spec.ts` es quien lo obliga.
 
 **Cómo se sabrá que está hecho.** Un clon nuevo que ejecute lo que dice el README llega a
 `pnpm test:e2e` en verde sin ningún paso adicional que no esté escrito, y `pnpm db:reset` seguido de
