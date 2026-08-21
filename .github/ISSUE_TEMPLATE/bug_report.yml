@@ -18,7 +18,7 @@ body:
           **con su criterio**, además de lo que se cerró tras verificar que no era un problema.
 
   - type: checkboxes
-    id: previo
+    id: preflight
     attributes:
       label: Antes de abrirlo
       options:
@@ -28,7 +28,7 @@ body:
           required: true
 
   - type: dropdown
-    id: origen
+    id: origin
     attributes:
       label: ¿El fallo es de la plantilla o de un proyecto derivado?
       description: >-
@@ -43,7 +43,7 @@ body:
       required: true
 
   - type: textarea
-    id: descripcion
+    id: description
     attributes:
       label: Qué pasa
       description: >-
@@ -56,7 +56,7 @@ body:
       required: true
 
   - type: textarea
-    id: reproduccion
+    id: reproduction
     attributes:
       label: Cómo reproducirlo
       description: Desde un clon limpio, si es posible. Comandos exactos, no descripciones.
@@ -92,7 +92,7 @@ body:
       required: true
 
   - type: textarea
-    id: salida
+    id: gate-output
     attributes:
       label: Salida del gate que falló
       description: >-

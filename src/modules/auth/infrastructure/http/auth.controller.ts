@@ -94,7 +94,7 @@ export class AuthController {
   @ApiBody({
     type: RegisterAccountDto,
     examples: {
-      completo: {
+      standard: {
         summary: 'Alta estándar',
         value: {
           email: 'maria.gonzalez@empresa.com.mx',
@@ -102,7 +102,7 @@ export class AuthController {
           password: 'una-frase-larga-y-dificil-de-adivinar',
         },
       },
-      nombreMinimo: {
+      minimumName: {
         summary: 'Nombre en el límite inferior (2 caracteres)',
         value: {
           email: 'jl@empresa.com.mx',
@@ -168,7 +168,7 @@ export class AuthController {
   @ApiBody({
     type: LoginDto,
     examples: {
-      válido: {
+      valid: {
         summary: 'Credenciales registradas',
         value: { email: 'maria.gonzalez@empresa.com.mx', password: 'Password-Segura-1' },
       },

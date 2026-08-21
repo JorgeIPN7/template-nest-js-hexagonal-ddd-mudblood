@@ -526,7 +526,7 @@ src/modules/users/
 ```
 
 - **Un spec por archivo de código**, con el mismo nombre base y la misma ruta relativa dentro de `__tests__/`.
-- `describe` con el identificador real del código (en inglés); cada `it` es una frase en español que empieza por **`debería…`**. Código, variables y helpers siguen en inglés.
+- `describe` raíz con el identificador real del código (en inglés); los `describe` anidados agrupan casos y van en español, igual que cada `it`, que es una frase que empieza por **`debería…`**. Código, variables y helpers siguen en inglés.
 - **AAA obligatorio**: cada `it` marca `// Arrange`, `// Act`, `// Assert`.
 - **Mocking por capa**: sin mocks en `domain/`; fakes escritos a mano en `application/` (nunca `jest.mock`); los repositorios se prueban contra PostgreSQL real en los E2E.
 - **Property-based con `fast-check`** en value objects, funciones puras y round-trips de mapeo. Los arbitrarios se **construyen**, nunca se filtran con `.filter()`.
@@ -710,6 +710,7 @@ Cada punto es un fallo que ya ocurrió aquí y que ya no puede volver a ocurrir.
 
 ## Convenciones
 
+- **Idioma**: el **código** en inglés (identificadores, claves de objeto, nombres de archivo y carpeta, variables de entorno, claves de config, columnas SQL, `operationId`, ids de formulario); la **prosa** en español (comentarios, documentación, `summary`/`description` de OpenAPI, mensajes de las reglas de ESLint, mensajes al operador). Lo verifica [`src/__tests__/language-convention.spec.ts`](./src/__tests__/language-convention.spec.ts), que se afirma sobre **identificadores y nunca sobre cadenas** — por eso los `it` en español no necesitan excepción alguna. Hay una excepción escrita: los mensajes de error de `env.schema.ts` y `validate-env.ts` van en inglés porque comparten cadena con los mensajes por defecto de Zod, que no se pueden traducir.
 - **Tipos**: `type`, nunca `interface` (`@typescript-eslint/consistent-type-definitions`). Los puertos son la excepción: `abstract class`.
 - **Type-only imports explícitos**, en estilo inline: `import { ValidationPipe, type INestApplication }`.
 - **Logging**: nunca `console.log` (ESLint lo advierte). Inyectar `PinoLogger` o el logger de contexto.

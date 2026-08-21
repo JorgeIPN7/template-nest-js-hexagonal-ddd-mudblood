@@ -19,7 +19,7 @@ body:
         - `README.md` §«Tecnologías evaluadas y descartadas» — propuestas con veredicto escrito.
 
   - type: checkboxes
-    id: previo
+    id: preflight
     attributes:
       label: Antes de abrirla
       options:
@@ -29,7 +29,7 @@ body:
           required: true
 
   - type: textarea
-    id: problema
+    id: problem
     attributes:
       label: Qué problema resuelve
       description: >-
@@ -42,7 +42,7 @@ body:
       required: true
 
   - type: textarea
-    id: propuesta
+    id: proposal
     attributes:
       label: Qué propones
       description: Qué entraría al repositorio, y qué archivos tocaría si ya lo sabes.
@@ -50,7 +50,7 @@ body:
       required: true
 
   - type: dropdown
-    id: alcance
+    id: scope
     attributes:
       label: Alcance
       description: >-
@@ -68,7 +68,7 @@ body:
       required: true
 
   - type: dropdown
-    id: contrato
+    id: breaking-change
     attributes:
       label: ¿Rompe algo publicado?
       description: >-
@@ -85,7 +85,7 @@ body:
       required: true
 
   - type: textarea
-    id: alternativas
+    id: alternatives
     attributes:
       label: Alternativas que consideraste
       description: >-
@@ -94,7 +94,7 @@ body:
         y se registra como tal.
 
   - type: textarea
-    id: cierre
+    id: done-criteria
     attributes:
       label: Cómo se sabría que está hecho
       description: >-
