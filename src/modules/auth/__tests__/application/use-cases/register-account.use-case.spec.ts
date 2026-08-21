@@ -240,17 +240,17 @@ describe('RegisterAccountUseCase', () => {
    */
   it('debería hashear una sola vez tanto si el email está libre como si está tomado', async () => {
     // Arrange
-    const libre = build();
-    const tomado = build();
-    tomado.directory.createProfileOutcome = { ok: false, reason: 'email-taken' };
+    const free = build();
+    const taken = build();
+    taken.directory.createProfileOutcome = { ok: false, reason: 'email-taken' };
 
     // Act
-    await libre.useCase.execute({
+    await free.useCase.execute({
       email: 'libre@example.com',
       name: 'Usuario Libre',
       password: 'Password-Segura-1',
     });
-    await tomado.useCase
+    await taken.useCase
       .execute({
         email: 'tomado@example.com',
         name: 'Usuario Tomado',
@@ -259,8 +259,8 @@ describe('RegisterAccountUseCase', () => {
       .catch(() => undefined);
 
     // Assert
-    expect(libre.hasher.hashCalls).toEqual(['Password-Segura-1']);
-    expect(tomado.hasher.hashCalls).toEqual(['Password-Segura-1']);
+    expect(free.hasher.hashCalls).toEqual(['Password-Segura-1']);
+    expect(taken.hasher.hashCalls).toEqual(['Password-Segura-1']);
   });
 
   describe('opacidad del hash (property-based)', () => {

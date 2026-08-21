@@ -68,11 +68,11 @@ export class OrdersController {
   @ApiBody({
     type: PlaceOrderDto,
     examples: {
-      estandar: {
+      standard: {
         summary: 'Orden típica',
         value: { concept: 'Suscripción anual plan Pro', amountCents: 149_900 },
       },
-      importeMinimo: {
+      minimumAmount: {
         summary: 'Importe en el límite inferior (1 céntimo)',
         value: { concept: 'Ajuste de saldo', amountCents: 1 },
       },

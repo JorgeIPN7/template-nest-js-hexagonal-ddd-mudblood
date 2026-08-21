@@ -24,7 +24,7 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   const renamed = Object.keys(RENAMED_VARIABLES).filter((key) => key in raw);
   if (renamed.length > 0) {
     const lines = renamed.map(
-      (key) => `  - ${key} ya no se lee: fue renombrada a ${RENAMED_VARIABLES[key] ?? ''}.`,
+      (key) => `  - ${key} is no longer read: it was renamed to ${RENAMED_VARIABLES[key] ?? ''}.`,
     );
     throw new Error(`Invalid environment variables:\n${lines.join('\n')}`);
   }

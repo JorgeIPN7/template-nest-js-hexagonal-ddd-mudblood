@@ -150,9 +150,9 @@ const baseEnvSchema = z.object({
 export const envSchema = baseEnvSchema
   .refine((env) => (env.DOCS_USERNAME === undefined) === (env.DOCS_PASSWORD === undefined), {
     message:
-      'DOCS_USERNAME y DOCS_PASSWORD deben definirse ambas o ninguna: con una sola, el ' +
-      'middleware de Basic Auth no llega a montarse y la documentación sale publicada sin ' +
-      'pedir credenciales.',
+      'DOCS_USERNAME and DOCS_PASSWORD must both be set or both be omitted: with only one, ' +
+      'the Basic Auth middleware never mounts and the docs are published without asking for ' +
+      'credentials.',
     path: ['DOCS_PASSWORD'],
   })
   .refine(
@@ -161,15 +161,15 @@ export const envSchema = baseEnvSchema
       env.JWT_SECRET !== undefined,
     {
       message:
-        'JWT_SECRET es obligatorio en staging/production: sin él el guard firmaría con el ' +
-        'default de desarrollo, que es público en el repositorio.',
+        'JWT_SECRET is required in staging/production: without it the guard would sign with ' +
+        'the development default, which is public in the repository.',
       path: ['JWT_SECRET'],
     },
   )
   .refine((env) => (env.ADMIN_EMAIL === undefined) === (env.ADMIN_PASSWORD === undefined), {
     message:
-      'ADMIN_EMAIL y ADMIN_PASSWORD deben definirse ambas o ninguna: el seed del primer ' +
-      'admin las necesita juntas.',
+      'ADMIN_EMAIL and ADMIN_PASSWORD must both be set or both be omitted: the first-admin ' +
+      'seed needs them together.',
     path: ['ADMIN_PASSWORD'],
   });
 

@@ -32,15 +32,18 @@ pnpm test:e2e       # jest --config ./test/jest-e2e.config.mjs (*.e2e-spec.ts, n
 pnpm build          # nest build (SWC)
 pnpm start:dev      # watch mode
 
-pnpm db:up          # docker compose up -d postgres
+pnpm db:up          # docker compose up -d --wait postgres (blocks until healthy)
 pnpm db:down        # stop it
-pnpm db:reset       # drop the volume and start clean
+pnpm db:reset       # drop the volume, start clean and migrate BOTH databases
+pnpm db:migrate:test     # migrate nest_base_template_test — the E2E suite needs it
 pnpm migration:run       # apply pending migrations
 pnpm migration:revert    # roll back the last one
 pnpm migration:generate src/database/migrations/<Name>   # diff entities vs schema
 ```
 
 **Definition of Done** for any change: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`, all green. The E2E suite needs PostgreSQL running (`pnpm db:up`) and runs against the separate `nest_base_template_test` database, created by `docker/initdb/`.
+
+**`docker/initdb/` creates that database but never migrates it** — the TypeORM CLI reads `DB_DATABASE` from the `.env`, which points at the dev database, and `test/setup-env.ts` redirects only inside the Jest process. So the first `pnpm test:e2e` on a fresh clone needs `pnpm db:migrate:test` first, or it dies with `relation "auth_credentials" does not exist` — measured against a freshly created database: `auth.e2e-spec.ts` runs first and its `beforeEach` truncates that table before any other. It reads like a bug in the code and it is a schema nobody migrated. `pnpm db:reset` does both databases and needs nothing extra. Closed as backlog #18 on 2026-08-20; the entry records why the script is a `.mjs` and not a `VAR=value` prefix (Windows, and no `cross-env` in the tree).
 
 ## Git policy — never commit on the user's behalf
 
@@ -392,6 +395,7 @@ Related: Zod's `.default()` only fires on `undefined`, so a variable that is pre
 
 ## Code conventions
 
+- **Code in English, prose in Spanish.** Identifiers, object keys, file and folder names, env variables, config keys, SQL columns, `operationId` and form ids are English; comments, documentation, OpenAPI `summary`/`description`, ESLint rule messages and operator-facing messages are Spanish. `src/__tests__/language-convention.spec.ts` enforces it by asserting on **identifiers, never on strings** — which is why the Spanish `it` titles need no exemption. One written exception: the error messages in `env.schema.ts` and `validate-env.ts` are English because they share a string with Zod's untranslatable defaults.
 - **`type`, never `interface`.** ESLint enforces `@typescript-eslint/consistent-type-definitions: ['error', 'type']`. Skill reference files use `interface` as language-agnostic pseudocode — translate it before writing real code. Ports are the one place that is neither: they're `abstract class`, because they must survive compilation to act as their own DI token (see Architecture rules).
 - **Path aliases:** `@/` → `src/`, plus `@common/`, `@config/`, `@database/`, `@modules/`, `@shared/`, and `@test/` → `test/`. Shared test helpers are imported via `@test/`, not `@/`. Declared in three places that must stay in sync: `tsconfig.json`, `.swcrc` and `jest.config.mjs` — `test/jest-e2e.config.mjs` inherits from the latter instead of keeping its own copy.
 - **Inside a module, import relatively.** `../../domain/user.entity`, not `@modules/users/domain/user.entity` — a relative path survives the module being moved.
@@ -401,7 +405,7 @@ Related: Zod's `.default()` only fires on `undefined`, so a variable that is pre
   `src/__tests__/eslint-boundaries.spec.ts`) — spec `docs/specs/2026-08-04-module-boundaries-design.md`.
 - **Type-only imports are explicit** — `consistent-type-imports` with inline style: `import { ValidationPipe, type INestApplication }`.
 - **Tests live in a `__tests__/` folder at the root of each module**, replicating the module's internal structure, so moving a module moves its tests with it. Unit specs are `*.spec.ts`, E2E are `*.e2e-spec.ts`, and both ship inside the module. Only shared helpers live outside `src/`, in `test/helpers/` (imported via `@test/`).
-- **`describe` in code, `it` in Spanish.** `describe` keeps the real identifier; every `it` is a Spanish sentence starting with `debería…`. Code, variables and helpers stay in English. AAA comments (`// Arrange`, `// Act`, `// Assert`) are mandatory.
+- **`describe` in code, `it` in Spanish.** The root `describe` keeps the real identifier; nested `describe`s group cases and are Spanish, like every `it` — a Spanish sentence starting with `debería…`. Code, variables and helpers stay in English. AAA comments (`// Arrange`, `// Act`, `// Assert`) are mandatory.
 - **One spec per source file (1:1)**, same base name and same relative path inside `__tests__/`. Don't group several SUTs in one file.
 - **Mocking by layer:** no mocks in `domain/`; hand-written port fakes in `application/` (see `__tests__/helpers/in-memory-user.repository.ts`), never `jest.mock`; repositories are tested against real PostgreSQL in the E2E suite. Modules, TypeORM repositories, `data-source.ts`, seeds, the outbox CLI and migrations are excluded from _unit_ coverage on purpose, and `test/jest-e2e.config.mjs` measures them with its own threshold — **except `src/database/migrations/**`, which no suite measures**. That exception is deliberate and now written down: they are one-shot DDL run by the CLI, and the fact that nothing exercises them directly is open debt with its own entry (`docs/backlog.md` #17), not something the E2E config quietly covers. Until 2026-08-19 this sentence claimed the E2E suite measured "exactly those files" while its list held two of the six patterns, so four groups were measured by neither.
 - **Shared fixtures:** module-wide helpers go in `<module>/__tests__/helpers/` (e.g. `user.factory.ts`, `arbitraries.ts`); cross-cutting ones in `test/helpers/` (e.g. `config.factory.ts`), imported via `@test/`. Never copy a builder into several specs.
