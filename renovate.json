@@ -9,10 +9,74 @@
   "labels": ["dependencies"],
   "lockFileMaintenance": { "enabled": true },
   "minimumReleaseAge": "3 days",
+  "customManagers": [
+    {
+      "description": [
+        "Node.js se declara en SEIS sitios y solo cuatro tienen manager nativo (.nvmrc, .node-version, el FROM del Dockerfile y engines.node).",
+        "Los otros dos son prosa: la tabla de requisitos del README y la plantilla de incidencias, que prerellena la versión para descartar «runtime equivocado» como causa.",
+        "Sin este manager, la versión vieja queda ahí como si fuera la que fija el repo — que es exactamente lo que pasó en `bdfe609`, y lo que src/__tests__/toolchain-pins.spec.ts pone en rojo desde el 2026-08-19."
+      ],
+      "customType": "regex",
+      "managerFilePatterns": ["/^README\\.md$/", "/^\\.github/ISSUE_TEMPLATE/bug_report\\.yml$/"],
+      "matchStrings": [
+        "\\| \\*\\*Node\\.js\\*\\* +\\| `(?<currentValue>\\d+\\.\\d+\\.\\d+)`",
+        "El repo fija `(?<currentValue>\\d+\\.\\d+\\.\\d+)` en `\\.nvmrc`",
+        "placeholder: v(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "node",
+      "datasourceTemplate": "node-version",
+      "versioningTemplate": "node"
+    },
+    {
+      "description": [
+        "Lo mismo para pnpm: `packageManager` en package.json es la única autoridad y tiene manager nativo, pero el README y la plantilla de incidencias citan el literal.",
+        "Ocurrió en `2723d87` (11.17.0 → 11.22.0) sin que nada lo cazara, y en el PR #33 (11.22.0 → 11.24.0) con la CI ya en rojo.",
+        "El `placeholder:` a secas solo puede casar con el de pnpm: el de Node lleva prefijo `v` y los otros tres no empiezan por dígito."
+      ],
+      "customType": "regex",
+      "managerFilePatterns": ["/^README\\.md$/", "/^\\.github/ISSUE_TEMPLATE/bug_report\\.yml$/"],
+      "matchStrings": [
+        "\\| \\*\\*pnpm\\*\\* +\\| `(?<currentValue>\\d+\\.\\d+\\.\\d+)`",
+        "El repo fija `(?<currentValue>\\d+\\.\\d+\\.\\d+)` en `packageManager`",
+        "placeholder: (?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "pnpm",
+      "datasourceTemplate": "npm"
+    }
+  ],
   "packageRules": [
     {
+      "description": [
+        "El override de typescript vive aquí scoped a '@nestjs/cli>typescript' y NO debe moverse solo:",
+        "un override global ganaría la resolución sobre el devDependency de package.json y dejaría inerte cualquier PR de TypeScript, en verde.",
+        "El detalle completo está en el comentario de cabecera del propio pnpm-workspace.yaml."
+      ],
       "matchFileNames": ["pnpm-workspace.yaml"],
       "enabled": false
+    },
+    {
+      "description": [
+        "Los seis sitios de Node viajan en un solo PR. Sin esto dependen de que los cinco managers implicados —nvm, node-version, dockerfile, npm/engines y los dos regex de arriba— coincidan por casualidad en el mismo branchTopic.",
+        "No coincidieron en el PR #38, que movió .nvmrc y .node-version y dejó fuera Dockerfile, engines.node y los dos documentos: cuatro aserciones de toolchain-pins en rojo."
+      ],
+      "matchDepNames": ["node"],
+      "groupName": "toolchain de Node"
+    },
+    {
+      "description": "Mismo motivo para pnpm: packageManager y los dos documentos, en un solo PR.",
+      "matchDepNames": ["pnpm"],
+      "groupName": "toolchain de pnpm"
+    },
+    {
+      "description": [
+        "engines.node tiene la forma `>=<nvmrc> <<major+1>.0.0` y toolchain-pins exige que ese suelo sea EXACTAMENTE la versión de .nvmrc.",
+        "Con la rangeStrategy por defecto Renovate no lo toca: un patch nuevo ya satisface el rango, así que no ve nada que actualizar. `bump` sube el suelo manteniendo la forma del rango.",
+        "Acotado a `node` a propósito: engines.pnpm es `>=11.0.0`, ningún test lo ata a la versión pineada, y bumpearlo sería ruido."
+      ],
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["engines"],
+      "matchDepNames": ["node"],
+      "rangeStrategy": "bump"
     }
   ]
 }

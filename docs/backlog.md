@@ -1152,6 +1152,58 @@ Se cierra el día que el historial deje de importar, o si se decide implementar 
 
 ---
 
+## 27. NestJS 12 es ESM puro y este repo es CJS de arriba abajo
+
+**Qué pasa.** Renovate abrió cuatro PR a la v12 —#44 (monorepo), #43 (`@nestjs/typeorm`), #41
+(`@nestjs/swagger`) y #40 (`@nestjs/jwt`)— y los cuatro están en rojo. Son **dos** bloqueos
+distintos y conviene no confundirlos, porque se levantan por caminos separados y en momentos
+distintos.
+
+**Bloqueo 1 — el ecosistema no ha llegado.** Cuatro dependencias de producción no tienen
+_ninguna_ versión publicada que admita `@nestjs/common@^12`. Medido contra registry.npmjs.org el
+2026-08-30, y en las cuatro `latest` es exactamente la versión que ya está en `main`:
+
+| Paquete             | En `main` | `latest` | peer de `@nestjs/common`                  |
+| ------------------- | --------- | -------- | ----------------------------------------- |
+| `@nestjs/terminus`  | 11.1.1    | 11.1.1   | `^10.0.0 \|\| ^11.0.0`                    |
+| `@nestjs/throttler` | 6.5.0     | 6.5.0    | `^7.0.0 \|\| … \|\| ^11.0.0`              |
+| `nestjs-pino`       | 4.6.1     | 4.6.1    | `^8.0.0 \|\| … \|\| ^11.0.0`              |
+| `nestjs-cls`        | 6.2.2     | 6.2.2    | `>= 10 < 12` — excluye la v12 por escrito |
+
+`nestjs-cls` es el caso explícito: no es una omisión, es un techo puesto a mano. El typecheck del
+PR #44 lo delata sin llegar a runtime — `LoggerModuleAsyncParams` (nestjs-pino) y
+`ThrottlerAsyncOptions` dejan de aceptar la forma que les pasan `logger.module.ts` y
+`app.module.ts`. Esto bloquea **#44** y **#41**, porque `@nestjs/swagger@12` declara peer estricto
+`^12.0.0` y arrastra el core con él.
+
+**Bloqueo 2 — ESM.** `@nestjs/jwt@12.0.1` y `@nestjs/typeorm@12.0.0` sí admiten Nest 11 en su
+rango de peers (`^8 … || ^12` y `^10 || ^11 || ^12`), así que parecían mergeables por separado.
+No lo son. Medido instalándolos de verdad y ejecutando la suite:
+
+    node_modules/@nestjs/jwt/package.json      → "type": "module"
+    node_modules/@nestjs/typeorm/package.json  → "type": "module", y su `exports` no declara
+                                                 condición `require` en absoluto
+
+Cinco suites caen: `SyntaxError: Cannot use import statement outside a module` para jwt, y
+`Cannot find module '@nestjs/typeorm' from 'src/modules/users/users.module.ts'` para typeorm —
+el loader CJS de Jest no resuelve un paquete cuyo `exports` no ofrece `require`. Ampliar
+`transformIgnorePatterns` en `jest.config.mjs` (hoy whitelistea solo `@scalar`) **no basta**: lo
+de typeorm es resolución, no transformación.
+
+**Decisión: esperar los cuatro, no forzar ninguno.** Añadir `@nestjs/*` a los `overrides` de peers
+sería silenciar precisamente la señal que dice que nestjs-pino y throttler no están portados; y
+migrar el repo a ESM para colar #43 y #40 es un proyecto —`extensionsToTreatAsEsm`, salida ESM de
+SWC, `--experimental-vm-modules` en Jest, y el runner de Stryker detrás— que no compra nada
+mientras el bloqueo 1 siga en pie. Los PR se dejan **abiertos**: cerrarlos solo haría que Renovate
+los reabriera, y abiertos son el recordatorio de que el frente existe.
+
+**Cómo se sabrá que está hecho.** Cuando las cuatro filas de la tabla publiquen una versión con
+`^12` en su peer. Entonces, y solo entonces, el salto se hace **en un único PR** con los diez
+paquetes a la vez, y el trabajo real que queda es el ESM: el DoD completo, con
+`pnpm test` y `pnpm test:mutation` en verde, es lo que dirá si el toolchain aguantó.
+
+---
+
 ## Cerrado al verificarlo
 
 - **`operationIdFactory` colisionando entre controllers con métodos homónimos.** No estaba latente:
