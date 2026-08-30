@@ -136,6 +136,23 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
   E2E», y la lista del config E2E tenía dos: cuatro grupos no los medía ninguna suite mientras tres
   comentarios publicaban lo contrario. `migrations/` sigue fuera de las dos, ahora dicho en voz
   alta y con su deuda apuntada (backlog #17).
+- **Node 24.19.0 → 24.20.0, los seis sitios a la vez** (2026-08-30). `.nvmrc`, `.node-version`, el
+  `FROM` del `Dockerfile` con su digest, `engines.node`, la tabla de requisitos del `README.md` y
+  la plantilla de incidencias. El PR automático (#38) movía dos de los seis, que es justo lo que
+  `src/__tests__/toolchain-pins.spec.ts` pone en rojo. **La medición de OpenSSL que el `Dockerfile`
+  declara obligatoria está hecha** y anotada junto a la anterior: `v24.20.0 | openssl 3.5.7`, el
+  mismo 3.5.7 que cerró el CVE-2026-31789, así que el frente sigue cubierto. Se mide sobre la
+  imagen base traída por digest, sin construir el archivo entero: el OpenSSL que usa la aplicación
+  va enlazado estáticamente dentro del binario de Node y `apk upgrade` no lo toca.
+- **Renovate mantiene por sí solo los seis sitios de Node y los tres de pnpm** (2026-08-30). Dos
+  `customManagers` de tipo regex cubren la prosa que ningún manager nativo ve —la tabla del README
+  y la plantilla de incidencias— y dos `groupName` fuerzan a que todos los managers implicados
+  viajen en un único PR en vez de depender de que coincidan por casualidad en el mismo
+  `branchTopic`. Un cuarto `packageRule` pone `rangeStrategy: "bump"` sobre `engines.node`, que
+  con la estrategia por defecto no se movía nunca porque un patch nuevo ya satisface el rango.
+  Acotado a `node`: `engines.pnpm` es `>=11.0.0` y ningún test lo ata a la versión pineada. Las
+  seis regex están probadas contra los archivos reales (una coincidencia cada una, sin ambigüedad)
+  y la config pasa `renovate-config-validator` 44.51.0.
 
 ### Removed
 
