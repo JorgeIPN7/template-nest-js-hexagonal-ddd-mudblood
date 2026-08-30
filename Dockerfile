@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------------------
 # Base: fija la versión de Node del repo (.nvmrc) y habilita el pnpm de `packageManager`.
 # ------------------------------------------------------------------------------------
-FROM node:24.19.0-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS base
+FROM node:24.20.0-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
@@ -26,16 +26,23 @@ ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 #
 # ⚠️ El párrafo de arriba describe el episodio de 22.23.2; `bdfe609` movió después el `FROM` a
 # `24.19.0` —PR automática de Renovate, una sola línea— **sin** rehacer la medición que este mismo
-# archivo declara obligatoria, y así estuvo hasta el 2026-08-19. **Medido ya sobre el pin vigente**,
-# con la imagen construida:
+# archivo declara obligatoria, y así estuvo hasta el 2026-08-19. **Medido sobre el pin vigente**,
+# ejecutando la imagen base traída por digest:
 #
-#     docker run --rm <img> node -p "process.version + ' | openssl ' + process.versions.openssl"
-#     → v24.19.0 | openssl 3.5.7
+#     docker run --rm node:<tag>@sha256:<digest> \
+#       node -p "process.version + ' | openssl ' + process.versions.openssl"
 #
-# Es decir: 24.19.0 empaqueta el mismo 3.5.7 que cerró el CVE-2026-31789, así que el frente sigue
+#     → v24.20.0 | openssl 3.5.7   (2026-08-30, bump 24.19.0 → 24.20.0, este pin)
+#     → v24.19.0 | openssl 3.5.7   (2026-08-19, pin anterior)
+#
+# Es decir: 24.20.0 empaqueta el mismo 3.5.7 que cerró el CVE-2026-31789, así que el frente sigue
 # cubierto — pero eso es una medición, no una deducción del número de versión, y es la única forma
 # de saberlo. Repetir este comando en CADA bump del `FROM`; es requisito escrito en
 # `docs/backlog.md` #25.
+#
+# Basta la imagen BASE, sin construir el resto del archivo: lo que se mide es el OpenSSL enlazado
+# estáticamente dentro del binario de Node, y ese es precisamente el que `apk upgrade` no toca.
+# Medirlo sobre la base cuesta una descarga de ~60 MB en vez de un build completo.
 #
 # `apk upgrade` se queda porque sigue haciendo falta —musl, zlib, ca-certificates,
 # alpine-baselayout: una imagen base se publica con los paquetes del día en que se construyó y los
@@ -169,7 +176,7 @@ RUN if [ -d node_modules/@scalar/api-reference ]; then \
 # CRITICAL), `brace-expansion`, `minimatch`, `glob`, `picomatch`, `ip-address`, `sigstore`—. Ni una
 # venía de `app/node_modules`: las dependencias de este repo salieron limpias, `pnpm audit --prod`
 # ya cubría ese frente. Subir de Node no lo cierra y se midió antes de descartarlo: tanto `22.23.2`
-# —el pin de entonces— como `24.19.0`, que es el de la línea `FROM` desde `bdfe609`, siguen
+# —el pin de entonces— como `24.19.0` —el que `bdfe609` puso en la línea `FROM`— siguen
 # empaquetando el suyo. Mientras npm viaje dentro, el gate volverá a ponerse rojo por él.
 #
 # **corepack y sus shims.** Aquí la versión anterior de este comentario afirmaba que se conservaban

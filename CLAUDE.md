@@ -4,7 +4,7 @@ Production-ready NestJS 11 base template. Hexagonal/DDD layout, SWC builds, Pino
 
 ## Stack
 
-NestJS 11 · TypeScript 6.0 · Node 24.19.0+ · pnpm 11 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.65
+NestJS 11 · TypeScript 6.0 · Node 24.20.0+ · pnpm 11 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.65
 
 **OpenAPI: dos piezas distintas que el nombre «Swagger» confunde.** `@nestjs/swagger` sigue siendo el **generador** del documento a partir de decoradores; Scalar es solo el **renderizador** que lo consume. Por eso los imports de `@nestjs/swagger` se quedan —es el nombre del paquete upstream— mientras que el vocabulario propio del repo (config, variables de entorno, nombres de archivo) dice `docs`/`openapi`.
 

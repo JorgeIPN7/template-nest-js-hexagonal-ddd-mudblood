@@ -93,7 +93,7 @@ Nada de esto requiere darse de alta en ningún servicio. **El proyecto no usa to
 
 | Herramienta             | Versión             | Quién la fija                              | Descarga                                                                                                                             |
 | ----------------------- | ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Node.js**             | `24.19.0`           | `.nvmrc`, `.node-version`, `Dockerfile`    | [nodejs.org](https://nodejs.org/) · [nvm](https://github.com/nvm-sh/nvm) · [nvm-windows](https://github.com/coreybutler/nvm-windows) |
+| **Node.js**             | `24.20.0`           | `.nvmrc`, `.node-version`, `Dockerfile`    | [nodejs.org](https://nodejs.org/) · [nvm](https://github.com/nvm-sh/nvm) · [nvm-windows](https://github.com/coreybutler/nvm-windows) |
 | **pnpm**                | `11.24.0`           | `packageManager` en `package.json`         | Vía Corepack (incluido en Node): `corepack enable`                                                                                   |
 | **Docker** + Compose v2 | cualquiera reciente | los scripts usan `docker compose --wait`   | [Docker Desktop](https://www.docker.com/products/docker-desktop/)                                                                    |
 | **Git**                 | cualquiera          | necesario para que Husky instale los hooks | [git-scm.com](https://git-scm.com/)                                                                                                  |
@@ -115,7 +115,7 @@ Nada de esto requiere darse de alta en ningún servicio. **El proyecto no usa to
 git clone https://github.com/JorgeIPN7/template-nest-js-hexagonal-ddd-mudblood.git mi-api && cd mi-api
 
 # 2 · Fijar el toolchain
-nvm use                  # o instala Node 24.19.0 a mano
+nvm use                  # o instala Node 24.20.0 a mano
 corepack enable          # usa el pnpm que fija el repo
 
 # 3 · Dependencias
