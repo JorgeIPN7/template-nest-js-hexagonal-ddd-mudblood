@@ -205,6 +205,18 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Security
 
+- **Tres avisos high de `multer` cerrados sin salir de Nest 11** (2026-09-25). El gate
+  `pnpm audit --prod --audit-level=high` puso `main` en rojo —y con él cualquier PR, también las
+  ajenas a Nest— por `multer@2.2.0`, que llega a producción a través de
+  `@nestjs/platform-express@11.2.3`: GHSA-wc9g-mqfw-jrwm y GHSA-535w-7cp7-47q4 (DoS, parcheados en
+  2.3.0) y GHSA-qfvm-cv95-jqjf (fuga de descriptores, solo 2.2.0). El repo no usa `multer` —no
+  hay `FileInterceptor`—, pero viaja en el árbol igualmente. Cerrado subiendo el monorepo de Nest a
+  **11.2.6** (dist-tag `legacy`), que fija `multer@2.4.0`; 11.2.4 y 11.2.5 seguían en 2.2.0. **Sin
+  override**: el arreglo ya estaba publicado aguas arriba, y un override sustituye la regla de
+  upstream por completo (la lección de js-yaml, en el tombstone de `pnpm-workspace.yaml`). Entró a
+  mano con dos días de publicación, por debajo de los tres de `minimumReleaseAge` que Renovate
+  verifica: decisión explícita del mantenedor frente a dejar `main` en rojo. Es el primer paso de
+  la migración a NestJS 12 (backlog #27).
 - **El cooldown de paquetes nuevos cambia de sitio, no desaparece** (2026-08-19). pnpm 11 reaplica
   `minimumReleaseAge` (24 h por defecto) a **cada entrada del lockfile en cada install**, así que
   cualquier paquete publicado hace menos de un día ponía en rojo los dos jobs de `ci.yml` con un
