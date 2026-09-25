@@ -32,9 +32,9 @@ For each task:
 2. Re-read the task's **Layer**, **Files**, **Rule codes to honor** and **Casos acordados** subsections.
 3. **Confirmación JIT** (solo tareas con tabla de casos): ask the user «¿Surgió algo que cambie estos casos?» before writing anything, and wait for the updated table if cases changed. A new case gets its row in the plan before it gets a test — never add or reword a case silently.
 4. Follow each step exactly — the plan is decomposed into bite-sized steps for a reason. With a case table: write ALL its tests first (1:1 — the `it` text IS the case; `P` rows become `@fast-check/jest` properties), run them and capture the red output, then implement to green, then refactor.
-5. Run the verifications specified by each step (typically `pnpm jest <file>`).
+5. Run the verifications specified by each step (typically `pnpm test <file>`).
 6. After all steps in the task pass, run the layer-specific check before marking complete:
-   - **Domain task:** `pnpm jest <file>.spec.ts` passes; the file has zero `@nestjs/*` or ORM imports (`grep` to confirm).
+   - **Domain task:** `pnpm test <file>.spec.ts` passes; the file has zero `@nestjs/*` or ORM imports (`grep` to confirm).
    - **Application task:** unit test passes with hand-written port fakes (no `jest.mock`); handler is `@Injectable()` with one public method.
    - **Infrastructure task:** integration / E2E test passes; controller routes through the use case (not the repo).
    - **Module task:** `pnpm typecheck` passes; the module wires every port/adapter pair via tokens.

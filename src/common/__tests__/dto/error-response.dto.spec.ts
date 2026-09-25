@@ -98,7 +98,8 @@ describe('ValidationErrorResponseDto', () => {
 
 // `@nestjs/swagger` acumula los nombres decorados en este array, cada uno prefijado con `:`, y
 // guarda las opciones de cada propiedad bajo la otra clave, indexadas por nombre de propiedad
-// (ver `createPropertyDecorator` en `dist/decorators/helpers.js`). Verificado contra 11.4.6.
+// (ver `createPropertyDecorator` en `dist/decorators/helpers.js`). Verificado contra 11.4.6 y
+// de nuevo contra 12.0.2.
 const KEYS_META = 'swagger/apiModelPropertiesArray';
 const PROPERTY_META = 'swagger/apiModelProperties';
 

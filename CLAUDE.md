@@ -1,10 +1,10 @@
 # _nest-base-template
 
-Production-ready NestJS 11 base template. Hexagonal/DDD layout, SWC builds, Pino logging with request-id via CLS, Zod-validated config, self-hosted Scalar API reference over OpenAPI, Terminus health checks.
+Production-ready NestJS 12 base template. Hexagonal/DDD layout, SWC builds, Pino logging with request-id via CLS, Zod-validated config, self-hosted Scalar API reference over OpenAPI, Terminus health checks.
 
 ## Stack
 
-NestJS 11 · TypeScript 6.0 · Node 24.20.0+ · pnpm 11 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.65
+NestJS 12 · TypeScript 6.0 · Node 24.20.0+ · pnpm 11 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.65
 
 **OpenAPI: dos piezas distintas que el nombre «Swagger» confunde.** `@nestjs/swagger` sigue siendo el **generador** del documento a partir de decoradores; Scalar es solo el **renderizador** que lo consume. Por eso los imports de `@nestjs/swagger` se quedan —es el nombre del paquete upstream— mientras que el vocabulario propio del repo (config, variables de entorno, nombres de archivo) dice `docs`/`openapi`.
 
@@ -18,6 +18,8 @@ The exact version is pinned in `packageManager`. If your global `pnpm` is older,
 
 **The `typescript` override is scoped to `'@nestjs/cli>typescript'`, and that scope is load-bearing.** `renovate.json` has `pnpm-workspace.yaml` `enabled: false`, so nothing bumps the literal automatically; a _global_ override would win resolution over the `typescript` devDependency in `package.json` and make every future TypeScript PR silently inert. Scoping alone would swap that for two diverging compilers (`nest-cli.json` sets `typeCheck: true`), so `src/__tests__/toolchain-pins.spec.ts` asserts exactly one `typescript` resolves and that it matches the manifest. **Bumping TypeScript means editing both lines.**
 
+**NestJS 12 is ESM-only and this repo stays CJS.** Every `@nestjs/*` 12.x package ships as pure ESM (`@nestjs/throttler` 6.x is still CJS); production loads them through Node's `require(esm)` (no flag needed on Node 24). Jest cannot without `--experimental-vm-modules`, so the `test*` scripts run `node --experimental-vm-modules node_modules/jest/bin/jest.js` and `stryker.config.mjs` passes the same flag via `testRunnerNodeArgs`. **Always run tests through the `pnpm test*` scripts** — a bare `npx jest` dies with `Must use import to load ES Module: …/@nestjs/config/dist/index.js` (measured on Jest 30.5.2). The flag needs Jest ≥ 30.5 (30.4 double-evaluates shared modules in mixed CJS/ESM graphs). Nothing in Jest exercises Node's own `require(esm)` over `dist/` (the `migration:run` step only loads `@nestjs/config`): booting the whole app graph is the job of the «Smoke de arranque» step in `ci.yml`. History and measurements in backlog #27.
+
 **Zod 4 gotcha:** `.default()` takes the schema's **output** type and short-circuits parsing. When a schema ends in `.transform()`, use `.prefault()` instead — it substitutes an **input** value and still runs the pipeline. See `src/config/env.schema.ts`.
 
 ## Commands
@@ -27,8 +29,8 @@ pnpm typecheck      # tsc --noEmit
 pnpm lint:check     # eslint, no --fix
 pnpm lint           # eslint --fix
 pnpm format:check   # prettier --check
-pnpm test           # jest (unit, *.spec.ts under src/)
-pnpm test:e2e       # jest --config ./test/jest-e2e.config.mjs (*.e2e-spec.ts, needs the DB up)
+pnpm test           # unit, *.spec.ts under src/ (Jest with --experimental-vm-modules — see above)
+pnpm test:e2e       # *.e2e-spec.ts via ./test/jest-e2e.config.mjs, same flag (needs the DB up)
 pnpm build          # nest build (SWC)
 pnpm start:dev      # watch mode
 

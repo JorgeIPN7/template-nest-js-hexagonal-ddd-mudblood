@@ -12,6 +12,7 @@ import {
   MemoryHealthIndicator,
   TypeOrmHealthIndicator,
   type HealthCheckResult,
+  type HealthIndicatorResult,
 } from '@nestjs/terminus';
 import { SkipThrottle } from '@nestjs/throttler';
 
@@ -37,13 +38,33 @@ import type { AppConfig } from '@config/app.config';
  */
 const HEALTH_CHECK_OPTIONS = { noCache: true, swaggerDocumentation: false } as const;
 
+/**
+ * El único `message` del indicador `database` que llega al cliente: el de timeout, que compone
+ * el propio terminus (`timeout of ${ms}ms exceeded`) y no dice nada de la infraestructura.
+ *
+ * Desde terminus 12, `pingCheck` añade `message: err.message` cuando la query falla, y
+ * `AllExceptionsFilter` publica ese mapa en el 503 de dos sondas `@Public` (`/health` y
+ * `/health/readiness`): el texto crudo del driver —`password authentication failed for user …`,
+ * `connect ECONNREFUSED host:puerto`— llegaría a cualquiera. Medido con la app real y el
+ * `DataSource` destruido (lo que hace el E2E): el 503 publicaba `"message": "Driver not
+ * Connected"`. En v11 ese camino terminaba en `check.down()` sin mensaje, y ese es el contrato
+ * que se conserva. Si terminus cambiara la redacción del timeout, el mensaje se descartaría: el
+ * fallo va hacia el lado seguro. Las anclas `^…$` son parte del control, no estilo: sin ellas
+ * un texto del driver pegado al de timeout pasaría (las fijan dos propiedades del spec).
+ *
+ * ⚠️ Límite conocido: como el saneado ocurre antes de que el resultado llegue a Terminus, la
+ * causa tampoco llega al log —«Health Check has failed!» registra el mapa ya limpio—, igual que
+ * en v11. Distinguir un fallo de credenciales de una conexión rechazada exige mirar la base.
+ */
+const TERMINUS_TIMEOUT_MESSAGE = /^timeout of \d+ms exceeded$/;
+
 const UP = { status: 'up' } as const;
 
 /** Los tres indicadores que ejecutan `check()` y `readiness()`, todos en verde. */
 const ALL_INDICATORS_UP = {
   memory_heap: UP,
   memory_rss: UP,
-  database: UP,
+  database: { ...UP, responseTime: 3 },
 } as const;
 
 /** Mapa `clave del indicador → resultado`, la forma de `info`, `error` y `details`. */
@@ -55,9 +76,18 @@ const indicatorMapSchema = (description: string, statusExample: 'up' | 'down') =
     required: ['status'],
     properties: {
       status: { type: 'string', example: statusExample },
+      responseTime: {
+        type: 'integer',
+        description: 'Solo en `database`: milisegundos que tardó el ping, en verde o en rojo.',
+        example: 3,
+      },
       message: {
         type: 'string',
-        description: 'Solo cuando el indicador aporta motivo; un fallo de query no lo trae.',
+        description:
+          'Motivo del fallo cuando el indicador lo aporta: el de memoria (`Used heap exceeded ' +
+          'the set threshold`) o el timeout del ping a la base (`timeout of 1000ms exceeded`). ' +
+          'El texto de un fallo de query se elimina a propósito: expondría usuario, host o ' +
+          'puerto del driver.',
       },
     },
   },
@@ -192,15 +222,14 @@ export class HealthController {
       description:
         'Uno o más indicadores fallaron, o el proceso está apagándose. El cuerpo es el de ' +
         '`AllExceptionsFilter`, no el de Terminus.',
-      error: { database: { status: 'down', message: 'Timeout of 1000ms exceeded' } },
+      error: {
+        database: { status: 'down', message: 'timeout of 1000ms exceeded', responseTime: 1001 },
+      },
     }),
   )
   @ApiStandardErrors({ throttled: false })
   check(): Promise<HealthCheckResult> {
-    return this.health.check([
-      ...this.memoryIndicators(),
-      () => this.database.pingCheck('database'),
-    ]);
+    return this.health.check([...this.memoryIndicators(), () => this.databaseIndicator()]);
   }
 
   /**
@@ -267,23 +296,34 @@ export class HealthController {
     schema: HEALTH_CHECK_OK_SCHEMA,
     example: okExample(ALL_INDICATORS_UP),
   })
-  // Un fallo de la query no lleva `message`: `TypeOrmHealthIndicator` solo lo añade en el camino
-  // de timeout y en el de MongoDB. Los demás terminan en `check.down()` sin argumento.
+  // Un fallo de la query no lleva `message`, pero ya no porque terminus lo omita: desde la 12
+  // lo añade con el texto del driver, y es `databaseIndicator()` quien lo quita. Solo el
+  // mensaje de timeout sobrevive (ver `TERMINUS_TIMEOUT_MESSAGE`).
   @ApiServiceUnavailableResponse(
     serviceUnavailable({
       path: '/api/v1/health/readiness',
       description:
         'El servicio no puede atender tráfico: falló algún indicador o el proceso se está ' +
         'apagando.',
-      error: { database: { status: 'down' } },
+      error: { database: { status: 'down', responseTime: 4 } },
     }),
   )
   @ApiStandardErrors({ throttled: false })
   readiness(): Promise<HealthCheckResult> {
-    return this.health.check([
-      ...this.memoryIndicators(),
-      () => this.database.pingCheck('database'),
-    ]);
+    return this.health.check([...this.memoryIndicators(), () => this.databaseIndicator()]);
+  }
+
+  /**
+   * El ping a la base de `check()` y `readiness()`, con el `message` del driver eliminado —
+   * salvo el de timeout— antes de que el resultado llegue a Terminus y, desde ahí, al 503.
+   * Vive aquí y no en `AllExceptionsFilter` porque es una decisión sobre QUÉ publica esta sonda,
+   * no sobre cómo se serializan los errores del resto de la API.
+   */
+  private async databaseIndicator(): Promise<HealthIndicatorResult<'database'>> {
+    const { database } = await this.database.pingCheck('database');
+    const { message, ...withoutMessage } = database;
+    const isTimeout = typeof message === 'string' && TERMINUS_TIMEOUT_MESSAGE.test(message);
+    return { database: isTimeout ? database : withoutMessage };
   }
 
   private memoryIndicators() {

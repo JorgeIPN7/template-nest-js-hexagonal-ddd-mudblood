@@ -115,6 +115,20 @@ async function bootstrap(): Promise<void> {
         logger.log('Graceful shutdown completed', 'Bootstrap');
         process.exit(0);
       })
+      // ⚠️ Ni este `.catch` ni el `.then` de arriba corren cuando el apagado llega por señal, y
+      // no es de NestJS 12: medido igual en la 11. `applyGlobals()` llama antes a
+      // `enableShutdownHooks()`, así que el listener de Nest se ejecuta primero, lanza la
+      // secuencia de apagado —`app.close()` de aquí espera esa misma promesa— y al terminar
+      // relanza la señal con `process.kill`: el proceso sale con 143 (SIGTERM) sin llegar a
+      // «Graceful shutdown completed». De este handler solo actúan el log «Received …» y
+      // `forceTimer`.
+      //
+      // Lo que SÍ cambia con NestJS 12 es un hook que falla. `onModuleDestroy`,
+      // `beforeApplicationShutdown` y `onApplicationShutdown` corren con `Promise.allSettled` y
+      // Nest solo registra el rechazo con `Logger.error`; en la 11 era `Promise.all`, el
+      // listener caía en su `catch` y hacía `process.exit(1)`. Ahora un hook roto sale con 143,
+      // el mismo código que un apagado limpio: el fallo solo queda en el log. Aceptado al
+      // migrar (backlog #27).
       .catch((err: unknown) => {
         clearTimeout(forceTimer);
         logger.error({ err }, 'Error during graceful shutdown');

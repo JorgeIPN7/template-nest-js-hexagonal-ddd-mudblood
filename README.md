@@ -1,6 +1,6 @@
 # nest-base-template
 
-Base NestJS 11 lista para producción: arquitectura hexagonal (Clean Architecture + DDD), TypeORM sobre PostgreSQL, SWC, Pino, configuración validada con Zod, documentación OpenAPI servida con Scalar, Terminus, rate limiting y seguridad por defecto.
+Base NestJS 12 lista para producción: arquitectura hexagonal (Clean Architecture + DDD), TypeORM sobre PostgreSQL, SWC, Pino, configuración validada con Zod, documentación OpenAPI servida con Scalar, Terminus, rate limiting y seguridad por defecto.
 
 **Si acabas de clonar esto, ve directo a [Puesta en marcha](#puesta-en-marcha).** Son seis comandos.
 
@@ -801,6 +801,6 @@ brainstorming  →  writing-plans  →  subagent-driven-development   (preferido
 
 [`skills-lock.json`](./skills-lock.json) fija el origen y un hash de contenido de cada una — el equivalente a un `pnpm-lock.yaml` para las skills.
 
-> **⚠️ Tres están adaptadas a este repositorio y no son la versión original:** `clean-ddd-hexagonal` y `javascript-typescript-jest` se reescribieron para este stack y estas convenciones, y `nestjs-best-practices` lleva las reglas alineadas con NestJS 11. Traerse la versión de arriba sin más **pisaría esas adaptaciones**. Compara antes de actualizar.
+> **⚠️ Tres están adaptadas a este repositorio y no son la versión original:** `clean-ddd-hexagonal` y `javascript-typescript-jest` se reescribieron para este stack y estas convenciones, y `nestjs-best-practices` lleva las reglas alineadas con NestJS 11. Traerse la versión de arriba sin más **pisaría esas adaptaciones**. Compara antes de actualizar. El repo ya está en NestJS 12 (backlog #27); revisar las skills para la 12 quedó fuera de esa migración a propósito y está pendiente.
 
 El lint y Prettier ignoran `.claude/` a propósito: son documentación, no código del proyecto.

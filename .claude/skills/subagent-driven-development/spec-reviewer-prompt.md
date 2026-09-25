@@ -62,7 +62,7 @@ Agent({
       - `security-validate-all-input` → DTOs use class-validator decorators
       - `arch-use-repository-pattern` → adapter implements the domain port interface
       - …and so on for the codes the plan lists
-    - Re-run the test command the implementer claims passed (`pnpm jest <file>`).
+    - Re-run the test command the implementer claims passed (`pnpm test <file>`).
 
     ## Your Job
 
@@ -82,7 +82,7 @@ Agent({
     - Did they solve the wrong problem?
 
     **Casos acordados compliance (when the task carries a case table):**
-    - Run `pnpm jest <spec-file> --verbose` and compare the `it` list against the task's
+    - Run `pnpm test <spec-file> --verbose` and compare the `it` list against the task's
       «Casos acordados» table: every row (including `P` rows) must have exactly one `it`
       whose text is the case; no extra `it` without a row or a JIT-registered addition
       noted in the plan.

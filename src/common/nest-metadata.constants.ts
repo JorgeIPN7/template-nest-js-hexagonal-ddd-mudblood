@@ -3,11 +3,18 @@
  * importadas de `@nestjs/common/constants`.
  *
  * ⚠️ Ese import era profundo y a un entrypoint **no declarado**: medido sobre
- * `@nestjs/common@11.2.1`, el paquete no publica `exports`, ni `main`, ni `types`, así que
- * `@nestjs/common/constants` resolvía únicamente por el algoritmo legacy de Node. El día que
- * Nest publique un mapa de `exports` —un cambio de minor rutinario y compatible— la aplicación
- * muere al arrancar con `ERR_PACKAGE_PATH_NOT_EXPORTED` mientras `pnpm typecheck` sigue verde,
- * porque los tipos se resuelven por el mismo camino que se rompe.
+ * `@nestjs/common@11.2.1`, el paquete no publicaba `exports`, ni `main`, ni `types`, así que
+ * `@nestjs/common/constants` resolvía únicamente por el algoritmo legacy de Node. La predicción
+ * era que el día que Nest publicara un mapa de `exports` la aplicación moriría al arrancar con
+ * `ERR_PACKAGE_PATH_NOT_EXPORTED` mientras `pnpm typecheck` seguía verde.
+ *
+ * NestJS 12 publicó ese mapa y la predicción se cumplió solo a medias. Medido sobre
+ * `@nestjs/common@12.1.0`: el mapa es `{".", "./internal", "./*.js", "./*": "./*.js"}`, y el
+ * comodín mantiene resoluble `@nestjs/common/constants`, con las mismas dos claves. Pero sigue
+ * sin ser API: lo interno declarado vive ahora en `./internal`, y las subrutas se pueden cerrar
+ * en cualquier versión: `@nestjs/swagger` lo hizo en 11.4.3, un PATCH, al publicar un mapa sin
+ * comodín (`ERR_PACKAGE_PATH_NOT_EXPORTED` al pedir `@nestjs/swagger/dist/constants.js`). La
+ * copia sigue siendo la opción segura.
  *
  * Y la variante blanda es PEOR que la dura: si la constante se renombra en vez de
  * desaparecer, `reflector.get(undefined, …)` no lanza, devuelve `undefined`. `isSse` se queda

@@ -21,7 +21,7 @@ export function buildOpenApiDocument(app: INestApplication, appCfg: AppConfig): 
     app,
     new DocumentBuilder()
       .setTitle('Nest Base Template API')
-      .setDescription('Production-ready NestJS 11 service')
+      .setDescription('Production-ready NestJS 12 service')
       .setVersion(appCfg.apiVersion)
       .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')
       .build(),

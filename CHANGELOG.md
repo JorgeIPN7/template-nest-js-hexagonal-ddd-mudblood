@@ -87,6 +87,37 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **NestJS 11 → 12** (2026-09-25, backlog #27). `@nestjs/common`, `core`, `platform-express` y
+  `testing` pasan a 12.1.0, además de config 12.0.1, jwt 12.0.2, swagger 12.0.2, terminus 12.1.0,
+  typeorm 12.0.1, cli 12.0.6 y schematics 12.0.5.
+  - **Los paquetes `@nestjs/*` 12.x son ESM puro y el repo sigue siendo CJS.** `@nestjs/throttler`
+    6.x sigue en CJS. En producción Node carga los ESM con `require(esm)`, sin flag en Node 24.
+    Jest necesita `--experimental-vm-modules`: los scripts `test*` lo pasan y Stryker lo recibe
+    por `testRunnerNodeArgs`. Un `npx jest` a secas ya no funciona.
+  - Sobra la excepción de `@scalar` en `transformIgnorePatterns`.
+  - `test:debug` apuntaba al shim de shell `.bin/jest` y no arrancaba; ahora usa `jest/bin/jest.js`.
+  - Nuevo paso de CI «Smoke de arranque», que levanta `node dist/src/main` y pide las sondas. Es el
+    único que carga el grafo completo de la app con el `require(esm)` de Node; las migraciones solo
+    cargan `@nestjs/config`.
+  - Sin cambios en el código de dominio ni de aplicación: el typecheck pasa sobre 12.1.0 sin
+    tocar nada fuera de `health`.
+  - Mutación: 93.24 % con el mismo censo en tres corridas. Entre 14 y 18 mutantes pasan de killed
+    a timeout, según la carga, porque el cargador de VM modules es más lento; la aritmética está en
+    `stryker.config.mjs`.
+  - Nest y terminus 12 traen tres cambios silenciosos de comportamiento:
+    - El `responseTime` del indicador `database`, que se publica (en esta sección).
+    - El `message` con el texto del driver, que se neutraliza (en `Security`).
+    - El código de salida de un apagado con un hook roto, que se acepta (en esta sección).
+- **Un hook de apagado que falla ya no se distingue de un apagado limpio** (2026-09-25). Con Nest
+  12, `onModuleDestroy`, `beforeApplicationShutdown` y `onApplicationShutdown` corren con
+  `Promise.allSettled` y sus rechazos solo se registran con `Logger.error`. El listener de
+  `enableShutdownHooks()` termina entonces relanzando la señal, así que el proceso sale con 143
+  (SIGTERM). En Nest 11 ese mismo fallo acababa en `process.exit(1)`. Aceptado; está anotado en
+  `main.ts`, junto con algo que ya ocurría en la 11: por señal, el `.then`/`.catch` propio de
+  `main.ts` nunca llega a ejecutarse.
+- **El indicador `database` de `/health` y `/health/readiness` trae `responseTime`** (2026-09-25),
+  los milisegundos del ping, en verde y en rojo. Es terminus 12, y el esquema y los ejemplos del
+  contrato ya lo recogen.
 - **El rate limit agrupa los clientes IPv6 por su /64** (2026-09-25). `@nestjs/throttler` 6.7
   cambia el tracker por defecto a `normalizeIp(req.ip, 64)`: todas las direcciones de un mismo
   /64 comparten contador. Es la defensa estándar contra la rotación de IPv6 —un solo equipo
@@ -212,6 +243,19 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Security
 
+- **El 503 de las sondas de health no publica el texto del driver de la base** (2026-09-25).
+  Terminus 12 añade `message: err.message` al indicador `database` cuando la query falla, y
+  `AllExceptionsFilter` publica ese mapa en el 503 de `/health` y `/health/readiness`, dos endpoints
+  `@Public`. El texto crudo (`password authentication failed for user …`,
+  `connect ECONNREFUSED host:puerto`) habría llegado a cualquiera. Medido antes del arreglo con el
+  `DataSource` destruido, que es lo que hace el E2E: `"message": "Driver not Connected"`. Con
+  PostgreSQL parado de verdad, el texto sería el del driver `pg`; ese caso solo se midió después
+  del arreglo, con el 503 ya limpio. `HealthController` lo quita y solo conserva el mensaje de
+  timeout que compone el propio terminus, casado con una regex anclada por los dos extremos; si
+  terminus cambia esa redacción, también se descarta. Así se mantiene el contrato de v11, donde un
+  fallo de query no llevaba mensaje. Lo fijan un E2E con la forma exacta del 503 y cuatro
+  propiedades con `fast-check`, dos de ellas sobre las anclas de la regex. El texto tampoco llega
+  al log: Terminus registra el resultado ya saneado, igual que en v11.
 - **Tres avisos high de `multer` cerrados sin salir de Nest 11** (2026-09-25). El gate
   `pnpm audit --prod --audit-level=high` puso `main` en rojo —y con él cualquier PR, también las
   ajenas a Nest— por `multer@2.2.0`, que llega a producción a través de

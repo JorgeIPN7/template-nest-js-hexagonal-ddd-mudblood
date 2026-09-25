@@ -65,7 +65,7 @@ Agent({
        `@fast-check/jest`), run them and CAPTURE the red output, then implement to green,
        then refactor. Without a case table, classic TDD (failing test → minimal
        implementation → passing test).
-    3. Verify the implementation works with `pnpm jest <file>` (or `pnpm test:e2e` for E2E).
+    3. Verify the implementation works with `pnpm test <file>` (or `pnpm test:e2e` for E2E).
     4. Self-review (see below).
     5. Report back.
 

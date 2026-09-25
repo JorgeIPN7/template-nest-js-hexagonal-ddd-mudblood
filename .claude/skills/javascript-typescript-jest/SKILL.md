@@ -21,7 +21,7 @@ These are the rules the test runner enforces — match them or your tests won't 
 | Auto reset         | `clearMocks: true`, `restoreMocks: true` (no need to reset manually)               |
 | Coverage threshold | branches 50, statements/lines 85, functions 88                                     |
 | Path aliases       | `@/` → `src/`, `@common/`, `@config/`, `@modules/`, `@shared/`, `@test/` → `test/` |
-| Test runner        | `pnpm jest <file>` (unit), `pnpm test:e2e` (E2E)                                   |
+| Test runner        | `pnpm test <file>` (unit), `pnpm test:e2e` (E2E)                                   |
 
 **Naming consequence:** never name a test file `*.test.ts`. The runner won't pick it up. Always `*.spec.ts` or `*.e2e-spec.ts`.
 
@@ -87,7 +87,7 @@ describe('Invoice', () => {
   cada caso puntual produce exactamente un `it` cuyo texto es el caso, y cada fila `P` un `it`
   de propiedad con `@fast-check/jest`. Ningún `it` extra sin fila (o sin adición JIT registrada
   en el plan); ninguna fila sin `it`. La validación humana es cotejar la tabla contra
-  `pnpm jest <file> --verbose` — una comparación de listas, no una lectura de código.
+  `pnpm test <file> --verbose` — una comparación de listas, no una lectura de código.
 - **No implementar sin rojo previo.** Con tabla de casos, los tests se escriben primero y se
   ejecutan para verlos fallar; la salida en rojo es evidencia que el implementador reporta.
   Implementar antes del rojo invalida el ciclo.
@@ -531,7 +531,7 @@ This skill is consulted by other skills in the chain:
 - **`writing-plans`** — every test code block in a plan task uses these conventions: `*.spec.ts`, layer-aware mocking, project path aliases.
 - **`subagent-driven-development` (implementer)** — when writing tests, the implementer follows this skill's mocking-by-layer rules. Tests that violate them fail spec compliance review.
 - **`subagent-driven-development` (code quality reviewer)** — checks that domain tests are pure (no `Test.createTestingModule`), application tests use hand-written fakes (no `jest.mock`), infrastructure tests use realistic doubles or test infra.
-- **`executing-plans`** — runs `pnpm jest <file>` (unit) and `pnpm test:e2e` (E2E) per task.
+- **`executing-plans`** — runs `pnpm test <file>` (unit) and `pnpm test:e2e` (E2E) per task.
 - **`clean-ddd-hexagonal`** — the layer rules here are the operational consequence of that skill's architectural rules.
 - **Modelo «casos primero»** — la tabla «Casos acordados» de cada tarea del plan es el origen de
   los `it`; la sección «Test Structure» de este skill define el mapeo 1:1 y la regla de rojo previo.

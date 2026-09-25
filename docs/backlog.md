@@ -1202,6 +1202,61 @@ los reabriera, y abiertos son el recordatorio de que el frente existe.
 paquetes a la vez, y el trabajo real que queda es el ESM: el DoD completo, con
 `pnpm test` y `pnpm test:mutation` en verde, es lo que dirá si el toolchain aguantó.
 
+**Cerrado el 2026-09-25.** El criterio de salida se cumplió de verdad el 2026-09-24, con la
+última fila. Medido contra registry.npmjs.org:
+
+| Paquete             | Primera que lo cumplía | Adoptada | peer de `@nestjs/common` (adoptada) |
+| ------------------- | ---------------------- | -------- | ----------------------------------- |
+| `@nestjs/terminus`  | 12.0.0 (2026-08-31)    | 12.1.0   | `^11.0.0 \|\| ^12.0.0`              |
+| `@nestjs/throttler` | **6.7.1** (2026-09-24) | 6.7.1    | `… \|\| ^12.0.0`                    |
+| `nestjs-pino`       | 5.0.0 (2026-08-31)     | 5.2.0    | `^11.0.8 \|\| ^12.0.2`              |
+| `nestjs-cls`        | 6.3.0 (2026-09-04)     | 6.3.1    | `>= 10 < 13`                        |
+
+Throttler cumplía el criterio **literal** («una versión con `^12` en su peer») desde la 6.6.0 del
+2026-09-16, pero esa versión no servía (punto 2).
+
+**Cuatro cosas salieron distintas de lo que decía esta entrada:**
+
+1. **No fue un único PR, sino cuatro, por decisión del mantenedor.** `main` estaba además en rojo
+   por tres avisos high de `multer` que llegaban por `platform-express` 11.2.3, y eso tumbaba toda
+   PR. El orden fue:
+   - #54: Nest 11.2.6, que trae multer 2.4.0.
+   - `8bc2746`: Jest 30.5.2 y `allowBuilds` para `@parcel/watcher`, que era por lo que el #47 de
+     Renovate no instalaba.
+   - #56: throttler 6.7.1, nestjs-pino 5.2.0 y nestjs-cls 6.3.1, los tres CJS y compatibles con 11 y 12.
+   - El salto a Nest 12, con `@nestjs/*` 12.x y el cambio del toolchain.
+
+   Escalonar dejó cada riesgo aislado y el último PR sin terceros que depurar.
+
+2. **Throttler necesitaba la 6.7.1 exacta, no «una con `^12`».** La 6.6.0 y la 6.7.0 ya declaraban
+   `^12` pero seguían importando `@nestjs/common/interfaces`, una ruta que el mapa `exports` de Nest
+   12 no resuelve. De ahí salían los dos errores de typecheck del #44: `Pick<any, K>` volvía
+   obligatorias las claves. nestjs-cls bastaba con la 6.3.x, cuyo código es el de la 6.2.2 con el
+   peer ampliado.
+3. **El bloqueo 2 se levantó con `--experimental-vm-modules`, no transpilando.** Es la forma de la
+   plantilla oficial de `@nestjs/schematics` 12, y necesita Jest ≥ 30.5. Detalle en el comentario de
+   `jest.config.mjs` y en `testRunnerNodeArgs` de `stryker.config.mjs`. La excepción de `@scalar`
+   en `transformIgnorePatterns` desapareció: con el flag sobra, medido con la suite completa. Además,
+   lo de typeorm «no es transformación, es resolución» dejó de ser cierto en la 12.0.1, que añadió la
+   condición `default` a su `exports`.
+4. **Tres cambios de comportamiento que el typecheck no ve:**
+   - Terminus 12 añade `message: err.message` al indicador `database` cuando la query falla, y el
+     503 de las dos sondas `@Public` que lo usan lo publicaba. Medido con el `DataSource`
+     destruido: `"Driver not Connected"`; con PostgreSQL parado sería el texto de `pg`.
+     `health.controller.ts` lo quita (salvo el de timeout, con regex anclada), y un E2E y cuatro
+     propiedades fijan el resultado.
+   - El mismo indicador añade `responseTime`: se publica, y el contrato OpenAPI lo documenta.
+   - Los hooks de apagado pasan a `Promise.allSettled`: un hook que falla ya no hace rechazar
+     `close()`, el listener de `enableShutdownHooks()` relanza la señal y el proceso sale con 143,
+     igual que un apagado limpio. En la 11 salía con 1. Se aceptó; el comentario está en `main.ts`.
+     Al medirlo salió además algo que ya pasaba en la 11: por señal, el `.then`/`.catch` propio de
+     `main.ts` no llega a ejecutarse nunca, porque el listener de Nest relanza la señal antes. El
+     log «Graceful shutdown completed» no se ha emitido nunca en un SIGTERM real.
+
+`ci.yml` gana un paso de smoke que arranca `node dist/src/main`. Es el único que carga el grafo
+completo de la app con el `require(esm)` real de Node: Jest usa su propio loader, y el paso de
+migraciones solo carga `@nestjs/config`.
+
 ---
 
 ## Cerrado al verificarlo

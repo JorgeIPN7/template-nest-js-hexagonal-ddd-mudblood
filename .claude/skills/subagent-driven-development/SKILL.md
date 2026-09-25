@@ -183,7 +183,7 @@ Implementer: "Got it. Implementing now…"
 [Later] Implementer report:
   - Status: DONE
   - Implemented Invoice.entity.ts + VOs + InvoiceIssued event
-  - 6/6 unit tests passing (pnpm jest src/modules/billing/domain)
+  - 6/6 unit tests passing (pnpm test src/modules/billing/domain)
   - No @nestjs/* imports in domain/ (verified by grep)
   - No git operations performed
 
