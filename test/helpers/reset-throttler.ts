@@ -17,28 +17,30 @@ import { ThrottlerStorage, ThrottlerStorageService } from '@nestjs/throttler';
  * **No sirve para probar el límite en sí**: los `describe` que miden el 429 usan su propia
  * app y NO llaman a esta función — si lo hicieran, borrarían justo lo que están midiendo.
  *
- * `storage` es un getter público de `ThrottlerStorageService` que devuelve el `Map` real
- * (verificado contra @nestjs/throttler 6.5.0), así que esto no toca nada privado. El
- * `instanceof` cubre el día en que el storage se sustituya por Redis: entonces esta función
- * dejaría de vaciar en silencio, y el guard es preferible a un `as` que fingiría lo contrario.
+ * `storage` es un getter público de `ThrottlerStorageService` que devuelve el `Map` real, así
+ * que esto no toca nada privado. El `instanceof` cubre el día en que el storage se sustituya
+ * por Redis: entonces esta función dejaría de vaciar en silencio, y el guard es preferible a
+ * un `as` que fingiría lo contrario.
  *
- * **Cancelar los temporizadores no es opcional, es la mitad del reset.** `timeoutIds` es un
- * Map SEPARADO de `_storage`: cada petición programa un `setTimeout` que al vencer hace
- * `const { totalHits } = this.storage.get(key)` para descontar su propio hit. Vaciar solo el
- * Map de contadores deja esos temporizadores huérfanos, y al dispararse hacen una de dos
- * cosas, ambas malas: si nadie recreó la clave revientan con
- * `TypeError: Cannot destructure property 'totalHits' of 'this.storage.get(...)' as it is
- * undefined` dentro del worker de Jest —atribuido al test que corriera en ese instante, no al
- * que hizo la petición—, y si alguien la recreó descuentan un hit de la ventana NUEVA.
- * Medido con `THROTTLER_TTL_MS=200` sobre `users.e2e-spec.ts`: 8 tests rojos con ese
- * TypeError antes de cancelar, 0 después. Con el TTL real de 60 s no se ve porque ninguna
- * suite dura tanto y `app.close()` acaba cancelándolos — es una bomba de relojería, no un
- * problema resuelto.
+ * **Vaciar solo `storage` NO reinicia nada** (verificado contra @nestjs/throttler 6.7.1). La
+ * cuenta real vive en `hitExpirations`, un `Map` PRIVADO y separado con la caducidad de cada
+ * hit: en cada petición `pruneExpiredHits()` recalcula `totalHits` a partir de él. Si solo se
+ * vacía `storage`, la siguiente petición recrea el registro a cero y ese mismo paso le
+ * devuelve todos los hits vivos: el contador sale intacto. Medido sobre el paquete instalado:
+ * tres hits, `storage.clear()` y un cuarto dan `totalHits: 4`; con `onApplicationShutdown()`
+ * delante, 1.
  *
- * `onApplicationShutdown()` es el ÚNICO miembro público que los cancela (`timeoutIds` y
- * `clearExpirationTimes` son `private` en el `.d.ts` de 6.5.0). Su cuerpo entero es
- * `this.timeoutIds.forEach((timeouts) => timeouts.forEach(clearTimeout))`: no cierra nada ni
- * deja el servicio inservible, así que llamarlo aquí es exacto y no un abuso del hook.
+ * `onApplicationShutdown()` es el ÚNICO miembro público que vacía `hitExpirations`. Su cuerpo
+ * entero es parar el intervalo de barrido y hacer `clear()` de los dos mapas; `increment()`
+ * rearranca el barrido con `ensureSweep()` en la siguiente petición, así que llamarlo aquí es
+ * exacto y no deja el servicio inservible. El `storage.clear()` de después es redundante
+ * desde 6.7: se queda porque no cuesta nada y no ata el reset a que el hook siga vaciando
+ * ambos mapas en la próxima versión.
+ *
+ * Hasta 6.5.0 el motivo era otro: cada hit programaba un `setTimeout` que descontaba de
+ * `storage` al vencer, y vaciar solo el `Map` dejaba temporizadores huérfanos que reventaban
+ * con `TypeError: Cannot destructure property 'totalHits'` dentro del worker de Jest. 6.7
+ * reescribió el storage sin temporizadores por hit y ese fallo ya no puede ocurrir.
  */
 export const resetThrottler = (app: INestApplication): void => {
   const storage = app.get<ThrottlerStorage>(ThrottlerStorage, { strict: false });
