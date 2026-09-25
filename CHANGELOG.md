@@ -87,6 +87,13 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **El rate limit agrupa los clientes IPv6 por su /64** (2026-09-25). `@nestjs/throttler` 6.7
+  cambia el tracker por defecto a `normalizeIp(req.ip, 64)`: todas las direcciones de un mismo
+  /64 comparten contador. Es la defensa estándar contra la rotación de IPv6 —un solo equipo
+  dispone de 2⁶⁴ direcciones y antes cada una estrenaba cupo—, con el coste de que varios
+  clientes legítimos detrás del mismo prefijo se reparten el límite. IPv4 no cambia. Llega con
+  la subida de throttler 6.5.0 → 6.7.1, nestjs-pino 4.6.1 → 5.2.0 y nestjs-cls 6.2.2 → 6.3.1,
+  las tres versiones que ya admiten Nest 11 y 12 (paso previo de la migración, backlog #27).
 - **La mutación pasó de sugerencia a gate** (2026-08-07, backlog #9). `thresholds.break: 85` en
   `stryker.config.mjs` y job `mutation` propio en `ci.yml`. El umbral sale de un baseline medido
   —90.14 % global— y su aritmética está en la cabecera de la config: bajar el score rompe la CI,
