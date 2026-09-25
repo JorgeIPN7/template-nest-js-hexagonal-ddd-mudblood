@@ -79,12 +79,13 @@ export default tseslint.config(
       '@typescript-eslint/return-await': ['error', 'in-try-catch'],
       '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
 
-      // `@nestjs/common/constants` es un entrypoint NO declarado: medido sobre
-      // @nestjs/common@11.2.1, el paquete no publica `exports`, ni `main`, ni `types`, así que
-      // resuelve solo por el algoritmo legacy de Node. El día que Nest publique un mapa de
-      // `exports` —minor rutinario y compatible— el proceso muere al arrancar con
-      // `ERR_PACKAGE_PATH_NOT_EXPORTED` con typecheck en verde, porque los tipos viajan por el
-      // mismo camino que se rompe. Y si en vez de desaparecer la clave se RENOMBRA, nada lanza:
+      // `@nestjs/common/constants` es un entrypoint interno. Hasta 11.x ni siquiera estaba
+      // declarado (el paquete no publicaba `exports`); NestJS 12 publicó el mapa con un comodín
+      // `./*` que hoy lo mantiene resoluble (medido sobre 12.1.0), pero lo interno declarado
+      // vive en `./internal` y las subrutas se cierran en cualquier versión — `@nestjs/swagger`
+      // cerró las suyas en 11.4.3, un patch, con `ERR_PACKAGE_PATH_NOT_EXPORTED`. Ese fallo llega en runtime con
+      // typecheck en verde, porque los tipos viajan por el mismo camino que se rompe. Y si en
+      // vez de desaparecer la clave se RENOMBRA, nada lanza:
       // `reflector.get(undefined, …)` devuelve `undefined` y el interceptor deja de detectar
       // SSE en silencio. Las dos claves que hacían falta viven copiadas y ancladas al
       // decorador público que las escribe en `src/common/nest-metadata.constants.ts`.

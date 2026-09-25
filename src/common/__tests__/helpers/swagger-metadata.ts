@@ -3,7 +3,9 @@
  * OpenAPI de `common/`. `ApiResponse` guarda las respuestas bajo `RESPONSE_META`, indexadas por
  * status code, y `ApiSecurity` (base de `ApiBearerAuth`) guarda los security requirements bajo
  * `SECURITY_META` — ambas sobre la propia función del método (`descriptor.value`) o sobre el
- * constructor cuando el decorador se aplica a la clase. Verificado contra @nestjs/swagger 11.4.6.
+ * constructor cuando el decorador se aplica a la clase. Verificado contra @nestjs/swagger 11.4.6
+ * y de nuevo contra 12.0.2, que mantiene las cuatro claves de este archivo (`DECORATORS` en
+ * `dist/constants.js`).
  *
  * Vivía triplicado en `api-standard-errors.decorator.spec.ts`, `api-envelope.dto.spec.ts` y
  * `auth.decorator.spec.ts` — CLAUDE.md: «Nunca copiar un builder en varios specs».

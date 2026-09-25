@@ -49,22 +49,27 @@ export const baseConfig = {
     '^@database/(.*)$': '<rootDir>/src/database/$1',
     '^@test/(.*)$': '<rootDir>/test/$1',
   },
-  // `@scalar/*` se publica como ESM puro. En producción no hace falta transformarlo: Node lo
-  // carga con `require(esm)`, sin flag desde 22.12, que es el motivo del pin de `engines`.
+  // Sin `transformIgnorePatterns` propio, y es a propósito. Desde NestJS 12 los `@nestjs/*` 12.x
+  // (y `@scalar/*`) se publican como ESM puro —`@nestjs/throttler` 6.x sigue en CJS— y el repo
+  // sigue siendo CJS: en producción Node los carga con `require(esm)`, sin flag desde 22.12.
+  // Jest no usa ese `require` sino su loader
+  // propio, que solo sabe hacer `require()` de un ESM cuando existe `vm.SourceTextModule` — y en
+  // Node 24 eso exige arrancar con `--experimental-vm-modules`. Por eso los scripts `test*` de
+  // `package.json` lanzan `node --experimental-vm-modules node_modules/jest/bin/jest.js` (la
+  // forma de la plantilla oficial de `@nestjs/schematics` 12; no es un prefijo `VAR=value`, así
+  // que funciona igual en Windows) y `stryker.config.mjs` pasa el mismo flag al runner.
   //
-  // Jest **no** usa el `require` de Node — tiene su propio loader CJS, que no implementa
-  // `require(esm)` — así que sin esta excepción falla con `Unexpected token 'export'` en cuanto
-  // un spec importa `bootstrap/openapi.ts`.
+  // Hasta Nest 11 aquí vivía `['node_modules/(?!.*@scalar)']`: sin el flag, la única salida era
+  // transpilar `@scalar` a CJS. Con el flag sobra — medido: 586 unit y 133 E2E en verde sin la
+  // excepción — y quitarla tiene una ventaja real: los paquetes ESM se evalúan como ESM nativo,
+  // igual que en producción, en vez de una traducción a CJS con otra semántica de class fields.
   //
-  // Consecuencia que conviene tener presente: la suite transpila ese paquete a CJS, de modo que
-  // **ninguna prueba ejercita la ruta de carga real de producción**. Un `ERR_REQUIRE_ESM` o un
-  // `ERR_REQUIRE_ASYNC_MODULE` no aparecería aquí. Eso lo cubre arrancar el proceso de verdad:
-  // `pnpm build && node -e "require('@scalar/nestjs-api-reference')"`.
+  // Lo que la suite sigue sin ejercitar es el `require(esm)` de NODE sobre `dist/`: eso lo
+  // cubre el paso de smoke de `ci.yml` que arranca `node dist/src/main`.
   //
-  // La negación mira el resto de la ruta y no solo el segmento siguiente: con pnpm, un paquete
-  // aparece como `node_modules/.pnpm/@scalar+x@v/node_modules/@scalar/x/…`, con **dos** tramos
-  // `node_modules`, y un patrón anclado al primero deja que el segundo lo vuelva a ignorar.
-  transformIgnorePatterns: ['node_modules/(?!.*@scalar)'],
+  // ⚠️ El flag exige Jest ≥ 30.5: la 30.4 evaluaba dos veces los módulos compartidos cuando un
+  // CJS hacía `require()` de un ESM a medio cargar (jest #16375), lo que daría dos copias de
+  // `@nestjs/common` y rompería la inyección por clase.
 
   // Fija NODE_ENV=test y la base de datos de tests antes de que arranque el AppModule.
   setupFiles: ['<rootDir>/test/setup-env.ts'],

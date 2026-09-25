@@ -177,7 +177,7 @@ describe('AllExceptionsFilter', () => {
       // Arrange
       const { filter, reply } = buildFilter();
       const downIndicators = {
-        database: { status: 'down', message: 'Timeout of 1000ms exceeded' },
+        database: { status: 'down', message: 'timeout of 1000ms exceeded', responseTime: 1001 },
       };
 
       // Act
@@ -208,7 +208,7 @@ describe('AllExceptionsFilter', () => {
       // Arrange
       const { filter, reply } = buildFilter();
       const downIndicators = {
-        database: { status: 'down', message: 'Timeout of 1000ms exceeded' },
+        database: { status: 'down', message: 'timeout of 1000ms exceeded', responseTime: 1001 },
       };
 
       // Act

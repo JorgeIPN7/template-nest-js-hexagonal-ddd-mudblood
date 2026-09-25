@@ -179,6 +179,33 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # Desde NestJS 12 los `@nestjs/*` 12.x son ESM puro y este repo es CJS: en producción Node
+      # los carga con `require(esm)`. Ningún paso anterior arranca el grafo completo de la app
+      # con ese loader —Jest usa el suyo (con `--experimental-vm-modules`), «Run migrations» solo
+      # carga `@nestjs/config` vía ts-node y el Docker build compila pero no arranca la app—, así
+      # que un `ERR_REQUIRE_ESM` o un `ERR_REQUIRE_ASYNC_MODULE` de una dependencia solo
+      # aparecería al desplegar. Este paso arranca `dist/` de verdad y pide las dos sondas.
+      # Apunta a la base de tests porque es la que tiene el esquema migrado.
+      #
+      # El apagado no se asierta aquí: con SIGTERM el proceso sale con 143, porque el listener
+      # de `enableShutdownHooks()` vuelve a lanzar la señal al terminar, y eso ya era así en
+      # Nest 11 (medido). El `|| true` del `wait` es por eso, no para tapar fallos de arranque:
+      # esos rompen antes, en los `curl -f`.
+      - name: Smoke de arranque (dist con require(esm))
+        env:
+          DB_DATABASE: nest_base_template_test
+        run: |
+          node dist/src/main > /tmp/smoke.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:8888/api/v1/health/liveness && break
+            sleep 1
+          done
+          curl -sf http://localhost:8888/api/v1/health/liveness || { cat /tmp/smoke.log; exit 1; }
+          curl -sf http://localhost:8888/api/v1/health/readiness || { cat /tmp/smoke.log; exit 1; }
+          kill -TERM "$PID"
+          wait "$PID" || true
+
       # Nadie construía la imagen, así que un fallo del stage de producción —como el hook
       # `prepare: husky` corriendo bajo `--prod`— solo aparecía al desplegar.
       #

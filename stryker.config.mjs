@@ -116,6 +116,34 @@
  * `auth` a 0 bastaría, porque sus 47 mutantes superan los 24 de holgura. Subir el techo se sigue
  * aplazando hasta que los 20 supervivientes conocidos tengan casos aprobados: subirlo antes
  * premiaría el momento del censo, no la disciplina.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Remedición del 2026-09-25 (NestJS 11 → 12, que obliga a correr Jest con
+ * `--experimental-vm-modules` — ver `testRunnerNodeArgs` abajo). Cambia el runtime de cada
+ * corrida, que es justo el evento que esta cabecera manda remedir. Tres corridas, copiadas de la
+ * salida de Stryker:
+ *
+ *     corrida 1   93.24 %   258 killed, 18 timeout, 20 survived, 0 sin cobertura, 7 error
+ *     corrida 2   93.24 %   259 killed, 17 timeout, 20 survived, 0 sin cobertura, 7 error
+ *     corrida 3   93.24 %   262 killed, 14 timeout, 20 survived, 0 sin cobertura, 7 error
+ *
+ * (la tercera, ya con todo el PR aplicado: el reparto killed/timeout baila con la carga).
+ *
+ * **Censo y score idénticos a la medición del 2026-08-19** (276 detectados de 296, los MISMOS
+ * 20 supervivientes, mismos scores por módulo). Lo que cambia es el reparto entre killed y
+ * timeout: 14-18 mutantes que antes morían por aserción ahora agotan el timeout, en los mismos
+ * archivos en las dos primeras corridas (`user.entity.ts` 6, `email.vo.ts` 3, `shared/domain` 8-9). Stryker los
+ * cuenta como detectados, así que no mueven el score. Solo los de `shared/domain`
+ * (`value-object.base.ts`) son la familia que ya basculaba entre Killed y Timeout (⚠️ de
+ * arriba, que registraba 4); los 9 de `user.entity.ts` y `email.vo.ts` salen como timeout por
+ * primera vez con el cambio a VM modules. La causa medida es de coste, no de casos: el dry run
+ * pasa de 1.4 s a 2.5-2.7 s de overhead y la corrida entera de ~40 s a ~1 min 30 s — el
+ * cargador de VM modules es más lento que el CJS de antes.
+ *
+ * El umbral y su aritmética no cambian (≥252 detectados de 296). Si un día esos timeouts se
+ * volvieran «survived», eso sí sería una regresión: significaría que el test dejó de detectar
+ * el mutante, no que tardó más.
  */
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {
@@ -127,6 +155,12 @@ const config = {
   // TestRunner plugin "jest"».
   plugins: ['@stryker-mutator/jest-runner'],
   testRunner: 'jest',
+  // Mismo flag que los scripts `test*` de `package.json`, y por el mismo motivo: desde NestJS
+  // 12 los `@nestjs/*` 12.x son ESM puro, y el loader de Jest solo hace `require()` de un ESM si
+  // Node arranca con `--experimental-vm-modules` (ver el comentario de `jest.config.mjs`). El
+  // runner vive en un proceso hijo que NO hereda los flags del `node` que lanza `stryker run`,
+  // así que hay que pasárselo aquí; sin él, el dry run inicial aborta al cargar el primer spec.
+  testRunnerNodeArgs: ['--experimental-vm-modules'],
   jest: {
     projectType: 'custom',
     configFile: 'jest.config.mjs',

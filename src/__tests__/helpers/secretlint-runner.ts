@@ -18,8 +18,10 @@ const CONFIG_PATH = path.join(ROOT, '.secretlintrc.json');
  * Fallback CLI (plan `2026-08-06-supply-chain.md`, Task 1 Step 2, activado en Task 2 Step 2):
  * la API en memoria (`createEngine` del paquete `@secretlint/node`) se probó desde `ts-node`
  * en el spike de la Task 1 y cargó sin problema — Node 22.12+ resuelve `require(esm)` de forma
- * nativa. Pero Jest **no** usa el `require` de Node: tiene su propio loader CJS (ver el mismo
- * comentario en `jest.config.mjs` sobre `@scalar/*`), y `@secretlint/config-loader` usa
+ * nativa. Pero Jest **no** usa el `require` de Node: tiene su propio loader CJS (así era cuando
+ * se escribió esto; desde NestJS 12 la suite corre con `--experimental-vm-modules` —ver
+ * `jest.config.mjs`— y ese loader sí hace `require()` de ESM, pero la API en memoria no se ha
+ * vuelto a probar con él), y `@secretlint/config-loader` usa
  * `import.meta` a secas (no solo `import.meta.url`) en un punto que `@swc/jest` no reescribe al
  * transformar a CommonJS — deja el token `import.meta` literal en el JS emitido, y Node lo
  * rechaza fuera de un módulo ES. Ampliar `transformIgnorePatterns` no lo resuelve: no es un

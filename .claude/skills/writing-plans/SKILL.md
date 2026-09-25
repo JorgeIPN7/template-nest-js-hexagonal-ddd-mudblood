@@ -136,7 +136,7 @@ describe('Invoice', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm jest src/modules/billing/domain/invoice.entity.spec.ts`
+Run: `pnpm test src/modules/billing/domain/invoice.entity.spec.ts`
 Expected: FAIL — `Cannot find module './invoice.entity'`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -174,7 +174,7 @@ export class Invoice {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm jest src/modules/billing/domain/invoice.entity.spec.ts`
+Run: `pnpm test src/modules/billing/domain/invoice.entity.spec.ts`
 Expected: PASS — 1 passed
 ````
 

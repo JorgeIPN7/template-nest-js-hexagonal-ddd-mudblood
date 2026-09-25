@@ -4,8 +4,8 @@
 packages:
   - '.'
 
-# @nestjs/cli ships its own `typescript` as a direct dependency (5.9.3 at the time of
-# writing) and `nest-cli.json` sets `typeCheck: true`, so without this override `nest build`
+# @nestjs/cli ships its own `typescript` as a direct dependency (5.9.3 in the late 11.x
+# releases, `~6.0.2` since @nestjs/cli 12) and `nest-cli.json` sets `typeCheck: true`, so without this override `nest build`
 # would type-check with that copy while `pnpm typecheck` used the root TypeScript 6 — two
 # compilers validating the same code. That is the entry's whole job, and the reason it cannot
 # just be deleted.

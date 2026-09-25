@@ -111,7 +111,8 @@ describe('toolchain pins', () => {
     // equivocarse quedan cubiertas: una copia, y que sea la que anuncia el manifiesto.
     it('debería resolver una sola copia de typescript en el árbol', () => {
       // Arrange — layout aislado de pnpm. Ya es dependencia asumida en el comentario de
-      // `stryker.config.mjs` y en `transformIgnorePatterns` de `jest.config.mjs`. El `@` del
+      // `stryker.config.mjs` y en el gate de swagger-ui-dist de `ci.yml`
+      // (`node_modules/.pnpm/@nestjs+swagger@*`). El `@` del
       // patrón no es opcional: sin él, `typescript-eslint@…` entraría en la cuenta.
       const store = readdirSync(path.join(ROOT, 'node_modules/.pnpm'));
 

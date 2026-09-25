@@ -102,7 +102,7 @@ Agent({
     ## Verification commands you may run (read-only)
 
     ```bash
-    pnpm jest <path-to-changed-spec> --silent
+    pnpm test <path-to-changed-spec> --silent
     pnpm typecheck
     pnpm lint:check
     grep -R "@nestjs" src/modules/<context>/domain/   # must be empty

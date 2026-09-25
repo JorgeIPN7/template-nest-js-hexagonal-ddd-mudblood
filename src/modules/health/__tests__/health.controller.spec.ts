@@ -1,3 +1,4 @@
+import { fc, it as itProp } from '@fast-check/jest';
 import { ConfigService } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
 import {
@@ -93,6 +94,145 @@ describe('HealthController', () => {
 
       // Act + Assert
       await expect(invoke(controller)).rejects.toThrow('OOM');
+    });
+
+    // Terminus 12 añade `message: err.message` cuando la query falla, y `AllExceptionsFilter`
+    // publica ese mapa en el 503 de sondas `@Public`: el texto crudo del driver (usuario, host,
+    // puerto) llegaría a cualquiera. El contrato de v11 no lo traía y se mantiene.
+    describe('saneado del indicador database', () => {
+      const databaseResult = async (): Promise<unknown> => {
+        await invoke(controller);
+        const indicators = healthCheck.check.mock.calls.at(-1)?.[0] as (() => Promise<
+          Record<string, unknown>
+        >)[];
+        const results = await Promise.all(indicators.map((fn) => fn()));
+        return results.find((result) => 'database' in result)?.database;
+      };
+
+      it('debería quitar el mensaje del driver cuando la query falla', async () => {
+        // Arrange
+        database.pingCheck.mockResolvedValueOnce({
+          database: {
+            status: 'down',
+            responseTime: 4,
+            message: 'password authentication failed for user "app"',
+          },
+        });
+
+        // Act
+        const result = await databaseResult();
+
+        // Assert
+        expect(result).toEqual({ status: 'down', responseTime: 4 });
+      });
+
+      it('debería conservar el mensaje de timeout que genera terminus', async () => {
+        // Arrange
+        const timedOut = {
+          status: 'down',
+          responseTime: 1001,
+          message: 'timeout of 1000ms exceeded',
+        };
+        database.pingCheck.mockResolvedValueOnce({ database: timedOut });
+
+        // Act
+        const result = await databaseResult();
+
+        // Assert
+        expect(result).toEqual(timedOut);
+      });
+
+      it('debería dejar intacto un resultado en verde, responseTime incluido', async () => {
+        // Arrange
+        database.pingCheck.mockResolvedValueOnce({ database: { status: 'up', responseTime: 2 } });
+
+        // Act
+        const result = await databaseResult();
+
+        // Assert
+        expect(result).toEqual({ status: 'up', responseTime: 2 });
+      });
+
+      itProp.prop([fc.string()])(
+        'debería quitar el mensaje del driver sea cual sea su detalle',
+        async (detail) => {
+          // Arrange
+          database.pingCheck.mockResolvedValueOnce({
+            database: {
+              status: 'down',
+              responseTime: 1,
+              message: `connect ECONNREFUSED ${detail}`,
+            },
+          });
+
+          // Act
+          const result = await databaseResult();
+
+          // Assert
+          expect(result).toEqual({ status: 'down', responseTime: 1 });
+        },
+      );
+
+      itProp.prop([fc.integer({ min: 0, max: 2 ** 32 - 1 })])(
+        'debería conservar el mensaje de timeout sea cual sea el límite configurado',
+        async (timeoutMs) => {
+          // Arrange
+          const message = `timeout of ${timeoutMs}ms exceeded`;
+          database.pingCheck.mockResolvedValueOnce({
+            database: { status: 'down', responseTime: timeoutMs, message },
+          });
+
+          // Act
+          const result = await databaseResult();
+
+          // Assert
+          expect(result).toEqual({ status: 'down', responseTime: timeoutMs, message });
+        },
+      );
+
+      // Las anclas `^…$` de la regex son lo único que impide que un texto del driver viaje
+      // pegado al de timeout. Estas dos propiedades las fijan: sin `$` cae la primera, sin `^`
+      // la segunda. Un prefijo o sufijo NO vacío nunca puede casar con la regex anclada, así que
+      // el arbitrario se construye con `minLength: 1` en vez de filtrarse.
+      itProp.prop([fc.integer({ min: 0, max: 60_000 }), fc.string({ minLength: 1 })])(
+        'debería quitar el mensaje cuando el texto de timeout lleva algo detrás',
+        async (timeoutMs, suffix) => {
+          // Arrange
+          database.pingCheck.mockResolvedValueOnce({
+            database: {
+              status: 'down',
+              responseTime: 1,
+              message: `timeout of ${timeoutMs}ms exceeded${suffix}`,
+            },
+          });
+
+          // Act
+          const result = await databaseResult();
+
+          // Assert
+          expect(result).toEqual({ status: 'down', responseTime: 1 });
+        },
+      );
+
+      itProp.prop([fc.integer({ min: 0, max: 60_000 }), fc.string({ minLength: 1 })])(
+        'debería quitar el mensaje cuando el texto de timeout lleva algo delante',
+        async (timeoutMs, prefix) => {
+          // Arrange
+          database.pingCheck.mockResolvedValueOnce({
+            database: {
+              status: 'down',
+              responseTime: 1,
+              message: `${prefix}timeout of ${timeoutMs}ms exceeded`,
+            },
+          });
+
+          // Act
+          const result = await databaseResult();
+
+          // Assert
+          expect(result).toEqual({ status: 'down', responseTime: 1 });
+        },
+      );
     });
   });
 });
