@@ -66,3 +66,10 @@ allowBuilds:
   # time, which only matters when the package is imported. We never import it: the build only
   # reads the prebuilt `dist/browser/standalone.js` out of the tarball.
   vue-demi: false
+  # Dependencia transitiva de jest-haste-map desde jest 30.5 (watcher nativo). Su `install` es
+  # `scripts/build-from-source.js`, que solo compila si `npm_config_build_from_source=true`: en
+  # cualquier otro caso sale sin hacer nada, porque el binario llega precompilado en la
+  # `optionalDependency` de cada plataforma (`@parcel/watcher-<os>-<arch>`). Bloquearlo no cambia
+  # nada, y jest-haste-map solo lo carga en modo `--watch`, con un `require` dentro de la función.
+  # Sin esta entrada pnpm 11 corta el install con ERR_PNPM_IGNORED_BUILDS (PR #47 de Renovate).
+  '@parcel/watcher': false
