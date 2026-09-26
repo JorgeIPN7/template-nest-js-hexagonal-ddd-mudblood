@@ -93,7 +93,7 @@
     "@commitlint/config-conventional": "21.2.3",
     "@eslint/js": "10.0.1",
     "@faker-js/faker": "10.6.0",
-    "@fast-check/jest": "2.2.0",
+    "@fast-check/jest": "2.3.0",
     "@nestjs/cli": "12.0.6",
     "@nestjs/schematics": "12.0.5",
     "@nestjs/testing": "12.1.0",
