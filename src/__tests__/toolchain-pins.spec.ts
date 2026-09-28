@@ -61,15 +61,21 @@ describe('toolchain pins', () => {
       expect(from?.[1]).toBe(nvmrc);
     });
 
+    // La forma es `^<nvmrc>` y no `>=<nvmrc> <<major+1>.0.0`, aunque para versiones estables son
+    // equivalentes: el manager npm de Renovate degrada `rangeStrategy: bump` a `widen` en cualquier
+    // rango compuesto (`isComplexRange`), y con `widen` un patch nuevo ya cabe en el rango y el
+    // suelo no se mueve nunca. Con la forma compuesta, la PR de Node 24.21.0 (#72) llegó sin tocar
+    // engines.node y este mismo test la puso en rojo. `^` es un rango de un solo elemento y ya
+    // lleva el techo en el major siguiente.
     it('debería usar esa versión como suelo de engines.node, con techo en el major siguiente', () => {
       // Arrange
-      const nextMajor = Number(nvmrc.split('.')[0]) + 1;
+      const expected = `^${nvmrc}`;
 
       // Act
       const range = packageJson.engines.node;
 
       // Assert
-      expect(range).toBe(`>=${nvmrc} <${nextMajor}.0.0`);
+      expect(range).toBe(expected);
     });
 
     it.each(DOCS_THAT_CITE_VERSIONS)('debería citar esa versión en %s', (doc) => {

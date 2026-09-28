@@ -69,8 +69,9 @@
     },
     {
       "description": [
-        "engines.node tiene la forma `>=<nvmrc> <<major+1>.0.0` y toolchain-pins exige que ese suelo sea EXACTAMENTE la versión de .nvmrc.",
+        "engines.node tiene la forma `^<nvmrc>` y toolchain-pins exige que ese suelo sea EXACTAMENTE la versión de .nvmrc.",
         "Con la rangeStrategy por defecto Renovate no lo toca: un patch nuevo ya satisface el rango, así que no ve nada que actualizar. `bump` sube el suelo manteniendo la forma del rango.",
+        "⚠️ La forma `^` NO es estética: hasta el 2026-09-28 era `>=<nvmrc> <<major+1>.0.0`, y el manager npm de Renovate degrada `bump` a `widen` en cualquier rango compuesto (lib/modules/manager/npm/range.ts, `isComplexRange`). Con `widen` el suelo no se movía nunca, y la PR de Node 24.21.0 (#72) llegó sin tocar engines.node y con toolchain-pins en rojo. Para versiones estables `^X` y `>=X <major+1.0.0` son equivalentes.",
         "Acotado a `node` a propósito: engines.pnpm es `>=11.0.0`, ningún test lo ata a la versión pineada, y bumpearlo sería ruido."
       ],
       "matchManagers": ["npm"],

@@ -115,7 +115,7 @@ Nada de esto requiere darse de alta en ningún servicio. **El proyecto no usa to
 git clone https://github.com/JorgeIPN7/template-nest-js-hexagonal-ddd-mudblood.git mi-api && cd mi-api
 
 # 2 · Fijar el toolchain
-nvm use                  # o instala Node 24.20.0 a mano
+nvm use                  # o instala a mano la versión que fija .nvmrc
 corepack enable          # usa el pnpm que fija el repo
 
 # 3 · Dependencias
