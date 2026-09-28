@@ -32,13 +32,15 @@ ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 #     docker run --rm node:<tag>@sha256:<digest> \
 #       node -p "process.version + ' | openssl ' + process.versions.openssl"
 #
-#     → v24.20.0 | openssl 3.5.7   (2026-08-30, bump 24.19.0 → 24.20.0, este pin)
-#     → v24.19.0 | openssl 3.5.7   (2026-08-19, pin anterior)
+#     → v24.21.0 | openssl 3.5.8   (2026-09-28, bump 24.20.0 → 24.21.0 de la PR #72, este pin)
+#     → v24.20.0 | openssl 3.5.7   (2026-08-30, bump 24.19.0 → 24.20.0)
+#     → v24.19.0 | openssl 3.5.7   (2026-08-19)
 #
-# Es decir: 24.20.0 empaqueta el mismo 3.5.7 que cerró el CVE-2026-31789, así que el frente sigue
-# cubierto — pero eso es una medición, no una deducción del número de versión, y es la única forma
-# de saberlo. Repetir este comando en CADA bump del `FROM`; es requisito escrito en
-# `docs/backlog.md` #25.
+# Es decir: 24.21.0 empaqueta 3.5.8, posterior al 3.5.7 que cerró el CVE-2026-31789, así que el
+# frente sigue cubierto — pero eso es una medición, no una deducción del número de versión, y es la
+# única forma de saberlo. Repetir este comando en CADA bump del `FROM`; es requisito escrito en
+# `docs/backlog.md` #25. Renovate no puede hacerlo: la PR de Node mueve el `FROM` y esta tabla se
+# queda atrás hasta que alguien la mide (la #72 entró así y se midió después).
 #
 # Basta la imagen BASE, sin construir el resto del archivo: lo que se mide es el OpenSSL enlazado
 # estáticamente dentro del binario de Node, y ese es precisamente el que `apk upgrade` no toca.
