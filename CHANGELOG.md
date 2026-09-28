@@ -174,6 +174,11 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
   E2E», y la lista del config E2E tenía dos: cuatro grupos no los medía ninguna suite mientras tres
   comentarios publicaban lo contrario. `migrations/` sigue fuera de las dos, ahora dicho en voz
   alta y con su deuda apuntada (backlog #17).
+- **Node 24.20.0 → 24.21.0** (2026-09-28, PR #72). Primera PR de Node que Renovate completa por
+  sí sola, `engines.node` incluido, tras el arreglo de la forma del rango (ver `Fixed`). No es
+  security release de Node; sube OpenSSL de 3.5.7 a **3.5.8**, que corrige 10 CVE moderados o
+  bajos (QUIC, CMS, CMP, DTLS). **Medido** sobre la imagen base por digest, como exige el
+  `Dockerfile`: `v24.21.0 | openssl 3.5.8`, anotado en su tabla junto a los pins anteriores.
 - **Node 24.19.0 → 24.20.0, los seis sitios a la vez** (2026-08-30). `.nvmrc`, `.node-version`, el
   `FROM` del `Dockerfile` con su digest, `engines.node`, la tabla de requisitos del `README.md` y
   la plantilla de incidencias. El PR automático (#38) movía dos de los seis, que es justo lo que
