@@ -94,7 +94,7 @@
     "@eslint/js": "10.0.1",
     "@faker-js/faker": "10.6.0",
     "@fast-check/jest": "2.3.0",
-    "@nestjs/cli": "12.0.6",
+    "@nestjs/cli": "12.0.7",
     "@nestjs/schematics": "12.0.5",
     "@nestjs/testing": "12.1.0",
     "@scalar/api-reference": "1.67.0",
