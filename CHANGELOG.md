@@ -231,6 +231,16 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **La regla de Renovate que debía mover `engines.node` no hacía nada** (2026-09-28). La entrada
+  del 2026-08-30 de más abajo afirma que un `packageRule` con `rangeStrategy: "bump"` sube el suelo
+  de `engines.node` en cada PR de Node. No era cierto con la forma del rango, `>=24.20.0 <25.0.0`:
+  el manager npm de Renovate degrada `bump` a `widen` en cualquier rango compuesto, y con `widen`
+  un patch nuevo ya cabe, así que el suelo no se movía nunca. Se vio en la primera PR que ejercitó
+  la regla, Node 24.21.0 (#72), que llegó sin tocar `engines.node` y con `toolchain-pins.spec.ts`
+  en rojo. El rango pasa a `^24.20.0`: equivalente para toda versión estable (solo excluye además
+  las prerelease de Node 25) y de un solo elemento, así que `bump` funciona. El test exige ahora
+  esa forma, la descripción de la regla en `renovate.json` cuenta por qué, y el paso `nvm use` del
+  README deja de citar un literal de versión que ningún manager mantenía.
 - **`TRUST_PROXY` se valida con la semántica real de Express** (2026-09-25). Antes el schema
   aceptaba cualquier cadena no vacía (`.env.example` lo reconocía como límite), y una errata como
   `loopbak`, un `true` o un `-1` no se detectaba hasta `main.ts`: el arranque moría con
