@@ -1,11 +1,15 @@
-import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
+
+import { publishScalarBundle } from './scalar-bundle.mjs';
 
 /**
  * Copia el bundle de Scalar a `public/`, hasheado por contenido y precomprimido.
+ *
+ * No es una copia literal: lleva `ZOD_JITLESS_PRELUDE` delante, una línea nuestra que evita que
+ * el Zod empaquetado en Scalar provoque una violación de CSP en cada carga. El porqué está en
+ * `scalar-bundle.mjs`, que es quien publica; este script solo localiza y valida el bundle.
  *
  * **`public/` en la raíz, no `dist/public/`.** `nest-cli.json` tiene `deleteOutDir: true`, y eso
  * no solo afecta a `nest build`: `nest start --watch` también vacía `dist` al arrancar. Con el
@@ -45,27 +49,7 @@ if (bundle.byteLength < MIN_BYTES) {
   );
 }
 
-const hash = createHash('sha256').update(bundle).digest('hex').slice(0, 12);
-const fileName = `scalar.${hash}.js`;
+const asset = publishScalarBundle({ vendorBundle: bundle, version: manifest.version, outDir });
 
-// Se limpia el directorio entero: el nombre lleva hash, así que sin esto cada actualización
-// dejaría el bundle anterior acumulándose y servible.
-rmSync(outDir, { recursive: true, force: true });
-mkdirSync(outDir, { recursive: true });
-
-writeFileSync(join(outDir, fileName), bundle);
-writeFileSync(join(outDir, `${fileName}.gz`), gzipSync(bundle, { level: 9 }));
-writeFileSync(
-  join(outDir, `${fileName}.br`),
-  brotliCompressSync(bundle, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }),
-);
-
-// El runtime lee este manifiesto para saber qué nombre servir. Sin él tendría que escanear el
-// directorio, que es más frágil y no distingue restos de una build anterior.
-writeFileSync(
-  join(outDir, 'scalar-asset.json'),
-  `${JSON.stringify({ fileName, version: manifest.version, bytes: bundle.byteLength }, null, 2)}\n`,
-);
-
-const megabytes = (bundle.byteLength / 1024 / 1024).toFixed(1);
-console.log(`[scalar] public/${fileName} (${megabytes} MB) + .gz + .br`);
+const megabytes = (asset.bytes / 1024 / 1024).toFixed(1);
+console.log(`[scalar] public/${asset.fileName} (${megabytes} MB) + .gz + .br`);

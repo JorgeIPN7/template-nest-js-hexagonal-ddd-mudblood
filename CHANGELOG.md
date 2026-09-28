@@ -247,6 +247,28 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **La documentación ya no provoca una violación de CSP en cada carga, y la checklist de Scalar
+  mira donde de verdad aparecen** (2026-09-28). El Zod 4 que Scalar empaqueta prueba
+  `Function('')` al cargar para decidir si compila el parser rápido de `z.object`; nuestra
+  `script-src` sin `'unsafe-eval'` lo bloquea. Era inocuo —Zod lo captura y valida por el camino
+  interpretado—, pero Chrome lo anotaba en cada carga en el panel Issues («Content Security Policy
+  of your site blocks the use of `eval` in JavaScript»). Estaba ya en la 1.67.0 (A/B medido contra
+  la 1.72.1: la misma violación, solo cambia la línea) y nadie lo vio porque Chrome no lo escribe en
+  la consola, y la checklist mandaba buscar `Refused to`, un prefijo que Chromium dejó de usar en
+  septiembre de 2025: de 10 violaciones provocadas en una página de prueba (Chrome 154 headless), ese
+  filtro encontró 1. `scripts/scalar-bundle.mjs` antepone ahora al bundle servido una línea,
+  `ZOD_JITLESS_PRELUDE`, que activa `jitless` —el interruptor que Zod prevé para entornos sin
+  `eval`— antes de que Zod cargue, y la sonda no llega a ejecutarse. La lógica de publicar salió de
+  `copy-scalar-asset.mjs` a ese módulo para poder testearla (salida idéntica byte a byte antes del
+  prelude, comprobado con `diff -r`). `scalar-bundle.spec.ts` (12 casos) ejecuta lo publicado —un
+  prelude sin `;` final dejaba la documentación en blanco con los demás casos en verde— y hace de
+  gate sobre el bundle **instalado**: toda sonda de eval debe ir detrás de la guarda `jitless`, o
+  la PR de Renovate se pone en rojo. Un caso nuevo de `openapi.e2e-spec.ts` comprueba que el bundle
+  servido empieza por el prelude. Medido en la app real: cero violaciones en los cinco pasos, y los
+  controles positivos (eval, script inline, `connect-src`) se siguen detectando. La checklist de
+  `CLAUDE.md` pasa a leerse en el panel Issues con criterio **cero**, en un perfil sin extensiones
+  (Dark Reader imitaba el síntoma del paso 2), y el comentario de `docs-csp.ts` deja de afirmar que
+  el bundle no evalúa código.
 - **La regla de Renovate que debía mover `engines.node` no hacía nada** (2026-09-28). La entrada
   del 2026-08-30 de más abajo afirma que un `packageRule` con `rangeStrategy: "bump"` sube el suelo
   de `engines.node` en cada PR de Node. No era cierto con la forma del rango, `>=24.20.0 <25.0.0`:

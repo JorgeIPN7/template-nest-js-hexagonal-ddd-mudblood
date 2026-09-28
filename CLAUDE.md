@@ -4,7 +4,7 @@ Production-ready NestJS 12 base template. Hexagonal/DDD layout, SWC builds, Pino
 
 ## Stack
 
-NestJS 12 · TypeScript 6.0 · Node 24.20.0+ · pnpm 11 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.67
+NestJS 12 · TypeScript 6.0 · Node 24.20.0+ · pnpm 11 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.72
 
 **OpenAPI: dos piezas distintas que el nombre «Swagger» confunde.** `@nestjs/swagger` sigue siendo el **generador** del documento a partir de decoradores; Scalar es solo el **renderizador** que lo consume. Por eso los imports de `@nestjs/swagger` se quedan —es el nombre del paquete upstream— mientras que el vocabulario propio del repo (config, variables de entorno, nombres de archivo) dice `docs`/`openapi`.
 
@@ -296,26 +296,54 @@ Verified by measurement — deleting one because "another covers it" leaves a ho
 ### Maintaining the Scalar bundle
 
 The UI is served from our own origin (`scripts/copy-scalar-asset.mjs` → `public/`), which trades
-the CDN's continuous updates for knowing exactly what JavaScript runs. **Review
-`@scalar/api-reference` quarterly.** Bumping the version regenerates the content hash
-automatically; nothing is edited by hand.
+the CDN's continuous updates for knowing exactly what JavaScript runs: the package's bundle plus
+**one line of ours** in front of it (see below). **Review `@scalar/api-reference` quarterly.**
+Bumping the version regenerates the content hash automatically; nothing is edited by hand.
 
-**Bumping the bundle is the only moment a new CSP violation can appear**, since the JavaScript
-only changes then. Run this list against `DOCS_ENABLED=true pnpm start:dev` after every bump,
-with a forced reload and cache disabled — `immutable` plus a year of `max-age` means the second
-visit never touches the network:
+**A new CSP violation can only appear when the served JavaScript changes**: on a bump, or on an
+edit to `scripts/scalar-bundle.mjs`. Run this list against `DOCS_ENABLED=true pnpm start:dev` after
+either, with a forced reload and cache disabled — `immutable` plus a year of `max-age` means the
+second visit never touches the network:
 
-| #   | Interaction                                     | What it exercises                                                            |
-| --- | ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| 1   | Initial load, both `/api/docs` and `/api/docs/` | Mount order; the no-slash form is the one people type                        |
-| 2   | Light/dark toggle                               | `style-src` — a broken layout with no JS errors is the tell                  |
-| 3   | Download the document                           | With `documentDownloadType: 'direct'` it must link to `/json`, never `blob:` |
-| 4   | Expand an endpoint, view code samples           | The syntax highlighter, sole candidate for `WebAssembly`                     |
-| 5   | Open the API client and send a request          | `connect-src`, and that `proxyUrl` really is empty                           |
+| #   | Interaction                                     | What it exercises                                                                      |
+| --- | ----------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 1   | Initial load, both `/api/docs` and `/api/docs/` | Mount order; the no-slash form is the one people type                                  |
+| 2   | Light/dark toggle                               | `style-src` — a broken layout with no JS errors is the tell                            |
+| 3   | Download the document                           | With `documentDownloadType: 'direct'` it must link to `/json`, never `blob:`           |
+| 4   | Expand an endpoint, view code samples           | The syntax highlighter — highlight.js in 1.72.1, no `WebAssembly`; a bump could add it |
+| 5   | Open the API client and send a request          | `connect-src`, and that `proxyUrl` really is empty                                     |
 
-In the console look for `Refused to` (how Chrome prefixes CSP violations); in the network tab
-filter to anything that is **not** localhost. Do not add `'wasm-unsafe-eval'` pre-emptively —
-only if step 4 actually breaks.
+**Read the result in the Issues tab, not the console — and expect zero.** Use a clean profile (a
+guest window): extensions such as Dark Reader repaint the page and fake the step-2 symptom. The
+pass criterion is **zero** entries titled `Content Security Policy…` in DevTools' **Issues** tab
+(or the `N issues` counter in the console toolbar). Issues is the primary check because it is the
+only place a violation the page _catches_ shows up: a `Function('')` or a `WebAssembly` compile
+inside a try/catch leaves nothing in the console (measured on headless Chrome 154, over ten
+violations provoked on a test page). The console is secondary — filter it by `Content Security
+Policy`, **not** `Refused to`: since Chromium main@{#1509550} (September 2025; ≈ Chrome 142 by
+branch position, not confirmed in release notes) messages read `<Action> violates the following
+Content Security Policy directive … The action has been blocked.`, and `Refused to` only matches
+the secondary `Fetch API cannot load …` line. In the network tab filter to anything that is
+**not** the page's own origin.
+
+**Any entry is a finding, even one that breaks nothing.** Relax the CSP only for a step that
+functionally breaks — never `'unsafe-eval'` (`docs-csp.ts` explains why), and `'wasm-unsafe-eval'`
+only if step 4 actually fails. A caught violation that breaks nothing is neutralised at its
+source, as `ZOD_JITLESS_PRELUDE` does, or recorded in `docs/backlog.md` — never left as an
+"expected" entry, because Issues groups entries by type and the next one would hide behind it.
+
+**Zero is reachable only because of that one line of ours.** The Zod 4 that Scalar bundles (4.4.3
+in 1.72.1) probes `Function('')` on every load to decide whether to compile its `z.object` fast
+path. The CSP blocks it — harmless, Zod falls back to interpreted parsing — but Chrome listed it
+in Issues on every load ("Content Security Policy of your site blocks the use of `eval` in
+JavaScript"). `scripts/scalar-bundle.mjs` prepends `ZOD_JITLESS_PRELUDE` —
+`(globalThis.__zod_globalConfig ??= {}).jitless = true;`— so the probe never runs: `jitless` is
+the switch Zod documents for environments that disallow `eval`, and pre-populating that global
+before Zod loads is how Zod's own source says to set it from outside. Two tests keep it honest:
+`src/__tests__/scalar-bundle.spec.ts` gates the **installed** bundle — every eval probe must sit
+behind the `jitless` guard, so a bump that breaks it turns the Renovate PR red instead of the
+violation silently returning — and `openapi.e2e-spec.ts` checks that the bundle actually served
+starts with the prelude.
 
 ## Database
 

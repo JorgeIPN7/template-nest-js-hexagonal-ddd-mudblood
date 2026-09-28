@@ -141,7 +141,8 @@ const fakeDocument =
   };
 
 /**
- * Manifiesto del bundle escrito a mano, con la forma que produce `scripts/copy-scalar-asset.mjs`.
+ * Manifiesto del bundle escrito a mano, con la forma que escribe `publishScalarBundle`
+ * (`scripts/scalar-bundle.mjs`, al que llama `copy-scalar-asset.mjs`).
  *
  * El real vive en `public/`, que git ignora y que solo generan `prebuild`, `prestart:dev`,
  * `pretest:e2e` y `pretest:e2e:ci`: leerlo aquí hacía depender la suite unitaria de un paso que ella no

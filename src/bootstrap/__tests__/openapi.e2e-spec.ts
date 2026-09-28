@@ -4,6 +4,8 @@ import type { App } from 'supertest/types';
 
 import { createTestApp } from '@test/helpers/create-test-app';
 
+import { ZOD_JITLESS_PRELUDE } from '../../../scripts/scalar-bundle.mjs';
+
 describe('OpenAPI docs (e2e)', () => {
   describe('con la documentación habilitada y sin credenciales', () => {
     let app: INestApplication<App>;
@@ -101,6 +103,23 @@ describe('OpenAPI docs (e2e)', () => {
       expect(response.status).toBe(200);
       expect(cacheControl).toContain('immutable');
       expect(cacheControl).toContain('private');
+    });
+
+    // `scalar-bundle.spec.ts` prueba `publishScalarBundle` aislado; esto prueba la cadena entera
+    // —`copy-scalar-asset.mjs` → `public/` → `express.static`— sobre el bundle que genera el hook
+    // `pretest:e2e`. Sin él, un `copy-scalar-asset.mjs` que volviera a escribir el bundle en crudo
+    // dejaría ambas suites en verde y la violación de CSP volvería a cada carga.
+    it('debería servir el bundle con el prelude jitless de Zod delante', async () => {
+      // Arrange
+      const html = await request(app.getHttpServer()).get(docsPath);
+      const bundleUrl = /src="([^"]*scalar\.[^"]+\.js)"/.exec(html.text)?.[1] ?? '';
+
+      // Act
+      const response = await request(app.getHttpServer()).get(bundleUrl);
+
+      // Assert
+      expect(response.status).toBe(200);
+      expect(response.text.slice(0, ZOD_JITLESS_PRELUDE.length)).toBe(ZOD_JITLESS_PRELUDE);
     });
 
     it('debería servir una configuración sin dependencias de terceros', async () => {
