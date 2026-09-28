@@ -194,6 +194,22 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Removed
 
+- **`details` desaparece del sobre de error** (2026-09-25). Estaba declarado en
+  `ErrorResponseDto` —el esquema de los 401, 403, 404, 409, 429 y 500 de todo el contrato— pero
+  **ningún camino HTTP lo producía**. La rama `ZodError` de `AllExceptionsFilter` era
+  inalcanzable: el único esquema Zod del repo es la config, que falla en el arranque (y
+  `validate-env` la convierte en un `Error` plano), antes de que exista una petición que el filtro
+  pueda formatear. Y ninguna `HttpException` real —`ValidationPipe`, Throttler, Terminus, los filtros de dominio— lleva las
+  claves que `extractDetails` reenviaba. Se verificó pasando por el filtro cada excepción que la
+  app puede producir. Era una respuesta declarada pero imposible, el defecto que el contrato
+  bidireccional prohíbe. El sobre queda en sus 6 claves, y el test del filtro las ata a
+  `ErrorPayload` con `satisfies`. Una `ZodError` fuera del arranque pasa a ser un 500, porque
+  sería un fallo del servidor y no del cliente. ⚠️ Al regenerar un SDK con el documento nuevo
+  desaparece el campo tipado `details?`, y el código que lo lea deja de compilar; no se pierden
+  datos, porque el servidor nunca lo envió. Si algún día
+  hacen falta errores de validación estructurados, el camino nativo de Nest 12 es
+  `ValidationPipe({ errorFormat: 'grouped' })`, que los manda en `message` como objeto: exigirá
+  revisar la normalización de `message` del filtro, no resucitar `details`.
 - **El override de `js-yaml` se retira** (2026-08-19). Parcheaba GHSA-pm4m-ph32-ghv5 y cumplió su
   propia condición de salida: `@nestjs/swagger@11.4.7` ya pinea `js-yaml@5.3.0`, con el fix. Se
   retira porque lo único que seguía aportando era el techo `<6.0.0`, que habría retenido a swagger
@@ -215,6 +231,20 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **`TRUST_PROXY` se valida con la semántica real de Express** (2026-09-25). Antes el schema
+  aceptaba cualquier cadena no vacía (`.env.example` lo reconocía como límite), y una errata como
+  `loopbak`, un `true` o un `-1` no se detectaba hasta `main.ts`: el arranque moría con
+  `TypeError: invalid IP address: …`, fuera del canal de errores de configuración. Ahora la última
+  palabra la tiene el mismo `app.set('trust proxy', …)` de Express, dentro del schema, y el error
+  llega por `validate-env` nombrando la entrada culpable, también en las listas separadas por
+  comas. `true` se rechaza con una explicación: en Express confía en todos los saltos y haría
+  falsificable `req.ip`. `false` también se rechaza —como cadena nunca fue válido para Express—:
+  su equivalente es `0`. Hay **formas que Express aceptaba y ahora no**, a propósito: la IPv4 en
+  notación no estándar —ceros a la izquierda, hexadecimal o un entero de 32 bits dentro de una
+  lista; `192.168.001.010` se leía en octal y confiaba en 192.168.1.8— y las subredes
+  IPv4-mapeadas con prefijo menor que /96 (`::ffff:10.0.0.0/8`, GHSA-jqcg-44mw-7w3h), que no
+  casan con ningún cliente IPv4. Límite escrito: se valida que la spec sea válida, no que sea
+  prudente; un número de saltos exagerado o `::ffff:0:0/96` siguen aceptándose.
 - **Las variables de tipo lista del `.env` dejaron de descartarse en silencio** (2026-07-28).
   `@nestjs/config` solo devuelve a `process.env` los valores validados que son
   `string | number | boolean`; arrays y objetos los tira sin decir nada. `CORS_ORIGINS` y

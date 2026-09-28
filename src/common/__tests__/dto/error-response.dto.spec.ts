@@ -12,7 +12,6 @@ describe('ErrorResponseDto', () => {
       statusCode: 404,
       message: 'User not found',
       error: 'UserNotFoundError',
-      details: undefined,
       timestamp: '2026-08-01T10:15:00.000Z',
       path: '/api/v1/users/1',
       requestId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
@@ -23,19 +22,6 @@ describe('ErrorResponseDto', () => {
 
     // Assert
     expect(new Set(declared)).toEqual(new Set(Object.keys(payload)));
-  });
-
-  it('debería documentar details como objeto o array, las dos formas que el filtro emite', () => {
-    // Arrange
-    const metadata = propertyMetadata(ErrorResponseDto, 'details');
-
-    // Act
-    const branches = metadata?.oneOf?.map((branch) => branch.type);
-
-    // Assert
-    // La rama de `ZodError` devuelve un array de issues y `extractDetails` un objeto: publicar
-    // solo `type: 'object'` dejaría fuera la mitad de lo que el servidor puede responder.
-    expect(branches).toEqual(['object', 'array']);
   });
 });
 
@@ -65,21 +51,6 @@ describe('ValidationErrorResponseDto', () => {
     expect(published).toEqual(expected);
   });
 
-  it('debería omitir details, que un fallo del ValidationPipe nunca lleva', () => {
-    // Arrange
-    const declared = declaredKeys(ValidationErrorResponseDto);
-
-    // Act
-    const declaresDetails = declared.includes('details');
-
-    // Assert
-    // El `exceptionFactory` por defecto del pipe lanza `{ message: string[], error, statusCode }`
-    // y ninguna de esas claves está en el `SAFE_DETAIL_KEYS` del filtro, así que `extractDetails`
-    // devuelve `undefined` y el cuerpo sale sin `details`. Anunciarlo sería publicar un contrato
-    // que el servidor no cumple.
-    expect(declaresDetails).toBe(false);
-  });
-
   it('debería conservar las claves que no redeclara', () => {
     // Arrange
     const declared = declaredKeys(ValidationErrorResponseDto);
@@ -107,7 +78,7 @@ const PROPERTY_META = 'swagger/apiModelProperties';
 // y `Reflect.getMetadata` dispara `no-unsafe-argument`.
 type DtoClass = { prototype: object };
 
-type PropertyMetadata = { example?: unknown; oneOf?: { type?: string }[] };
+type PropertyMetadata = { example?: unknown };
 
 /** Nombres de propiedad que `@ApiProperty` registró en el DTO. */
 const declaredKeys = (dto: DtoClass): string[] =>

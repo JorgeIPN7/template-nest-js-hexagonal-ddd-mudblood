@@ -425,13 +425,12 @@ describe('contrato OpenAPI', () => {
         statusCode: 0,
         message: '',
         error: '',
-        details: undefined,
         timestamp: '',
         path: '',
         requestId: '',
       };
       const allowed = new Set(Object.keys(reference));
-      const required = new Set(Object.keys(reference).filter((key) => key !== 'details'));
+      const required = allowed;
       const offenders: string[] = [];
 
       // Act

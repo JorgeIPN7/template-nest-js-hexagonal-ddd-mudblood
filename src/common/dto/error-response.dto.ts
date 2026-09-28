@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
+import { ApiProperty, OmitType } from '@nestjs/swagger';
 
 /**
  * Contrato de error que realmente devuelve `AllExceptionsFilter`. Antes no existía en el
@@ -35,27 +35,6 @@ export class ErrorResponseDto {
   })
   error!: string;
 
-  /**
-   * Solo `oneOf`, sin `type`: hoy el único productor real de `details` es la rama de `ZodError`
-   * de `AllExceptionsFilter`, que emite un **array** de issues. `extractDetails` puede además
-   * producir un objeto si alguna excepción lleva una de las `SAFE_DETAIL_KEYS` en el cuerpo, así
-   * que las dos formas son posibles. Añadir `type: 'object'` arrastraba un `additionalProperties`
-   * suelto al nivel superior del esquema, y hay generadores que lo leen como «objeto libre» y
-   * colapsan la rama de array que este `oneOf` existe para preservar.
-   */
-  @ApiPropertyOptional({
-    oneOf: [
-      { type: 'object', additionalProperties: true },
-      { type: 'array', items: { type: 'object', additionalProperties: true } },
-    ],
-    description:
-      'Presente solo cuando el error aporta contexto estructurado. `extractDetails` lo rellena ' +
-      'con las claves seguras del cuerpo de la excepción; una `ZodError` lo rellena con un ' +
-      'array de issues.',
-    example: [{ path: ['email'], message: 'Invalid email address', code: 'invalid_format' }],
-  })
-  details?: unknown;
-
   @ApiProperty({ example: '2026-08-01T10:15:00.000Z', format: 'date-time' })
   timestamp!: string;
 
@@ -73,22 +52,17 @@ export class ErrorResponseDto {
 /**
  * La forma concreta que produce un fallo del `ValidationPipe` global de `main.ts`.
  *
- * **Las violaciones viajan en `message`, no en `details`.** Es contraintuitivo y está verificado
- * contra el pipe real: su `exceptionFactory` por defecto lanza
- * `{ message: string[], error: 'Bad Request', statusCode: 400 }`, y ninguna de esas claves está
- * en el `SAFE_DETAIL_KEYS` de `AllExceptionsFilter`, así que `extractDetails` devuelve
- * `undefined` y el filtro omite `details` del cuerpo por completo. Documentar aquí un
- * `details.errors` habría publicado un contrato que el servidor no cumple — exactamente el
- * defecto que este DTO existe para corregir.
+ * **Las violaciones viajan en `message`.** Verificado contra el pipe real: su `exceptionFactory`
+ * por defecto lanza `{ message: string[], error: 'Bad Request', statusCode: 400 }`, y
+ * `AllExceptionsFilter` une el array en una sola cadena.
  *
- * `OmitType` es lo que permite las dos cosas que hacen falta: quitar `details` del esquema y
- * sustituir los `example` heredados, que hablan de un 404 y desorientarían en una respuesta 400.
+ * `OmitType` es lo que permite sustituir los `example` heredados, que hablan de un 404 y
+ * desorientarían en una respuesta 400.
  */
 export class ValidationErrorResponseDto extends OmitType(ErrorResponseDto, [
   'statusCode',
   'message',
   'error',
-  'details',
 ] as const) {
   @ApiProperty({ example: 400, description: 'Código HTTP de la respuesta.' })
   statusCode!: number;
