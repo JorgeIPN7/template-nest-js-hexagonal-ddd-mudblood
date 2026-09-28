@@ -91,6 +91,9 @@ Lo que **no** hace: tocar git, ajustar el `scope-enum` de `commitlint.config.cjs
 
 Nada de esto requiere darse de alta en ningún servicio. **El proyecto no usa tokens, ni registries privados, ni APIs de terceros**: todo sale de npm público y Docker Hub. Lo único que se descarga de un tercero es el bundle de CA de AWS, y solo si vas a conectar a RDS verificando el certificado ([ver más abajo](#conexión-y-tls-rds)).
 
+<!-- Renovate reescribe las versiones de Node y pnpm de esta tabla (customManagers de renovate.json) sin recalcular el relleno de las celdas: una versión de otra longitud dejaba la tabla desalineada y el format:check de su propia PR en rojo (#74, pnpm 11.28.0 → 12.6.0). Por eso Prettier no la toca. Si se edita a mano, alinearla es cosmético: se renderiza igual. -->
+
+<!-- prettier-ignore -->
 | Herramienta             | Versión             | Quién la fija                              | Descarga                                                                                                                             |
 | ----------------------- | ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | **Node.js**             | `24.21.0`           | `.nvmrc`, `.node-version`, `Dockerfile`    | [nodejs.org](https://nodejs.org/) · [nvm](https://github.com/nvm-sh/nvm) · [nvm-windows](https://github.com/coreybutler/nvm-windows) |

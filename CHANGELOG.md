@@ -247,6 +247,14 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **Las PR de Renovate que cambian la longitud de una versión ya no rompen el `format:check`**
+  (2026-09-28). Los `customManagers` de `renovate.json` reescriben las versiones de Node y pnpm de
+  la tabla de requisitos del README sin recalcular el relleno de las celdas, y Prettier exige la
+  tabla alineada: la #74 (pnpm 11.28.0 → 12.6.0) se quedó en rojo en Format check y la CI se saltó
+  todo lo que va detrás —typecheck, tests, build, Docker y trivy—. La tabla va ahora tras un
+  `<!-- prettier-ignore -->`. Medido simulando la edición de Renovate: con pnpm 12.6.0, pnpm
+  11.100.0 o Node 24.100.0, `prettier --check` fallaba sobre el README de `main` y pasa con el
+  cambio; las expresiones de Renovate siguen encontrando las dos filas.
 - **La documentación ya no provoca una violación de CSP en cada carga, y la checklist de Scalar
   mira donde de verdad aparecen** (2026-09-28). El Zod 4 que Scalar empaqueta prueba
   `Function('')` al cargar para decidir si compila el parser rápido de `z.object`; nuestra
