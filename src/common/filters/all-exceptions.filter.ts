@@ -11,17 +11,13 @@ import { ConfigService } from '@nestjs/config';
 import { HttpAdapterHost } from '@nestjs/core';
 import { PinoLogger } from 'nestjs-pino';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { ZodError } from 'zod';
 
 import type { AppConfig } from '@config/app.config';
-
-const SAFE_DETAIL_KEYS = ['errors', 'validation', 'fields', 'code', 'issues'] as const;
 
 export type ErrorPayload = {
   statusCode: number;
   message: string;
   error: string;
-  details?: unknown;
   timestamp: string;
   path: string;
   requestId: string;
@@ -31,7 +27,6 @@ type NormalizedException = {
   statusCode: number;
   message: string;
   errorName: string;
-  details?: unknown;
 };
 
 @Catch()
@@ -74,7 +69,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: normalized.statusCode,
       message: normalized.message,
       error: normalized.errorName,
-      ...(normalized.details !== undefined ? { details: normalized.details } : {}),
       timestamp: new Date().toISOString(),
       path: resolvedPath,
       requestId,
@@ -117,20 +111,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
         statusCode: status,
         message,
         errorName: body.error ?? exception.name,
-        details: this.extractDetails(body),
-      };
-    }
-
-    if (exception instanceof ZodError) {
-      return {
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: 'Validation failed',
-        errorName: 'ValidationError',
-        details: exception.issues.map((issue) => ({
-          path: issue.path,
-          message: issue.message,
-          code: issue.code,
-        })),
       };
     }
 
@@ -154,15 +134,5 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message: 'Internal server error',
       errorName: 'InternalServerError',
     };
-  }
-
-  private extractDetails(body: Record<string, unknown>): unknown {
-    const out: Record<string, unknown> = {};
-    for (const key of SAFE_DETAIL_KEYS) {
-      if (key in body && body[key] !== undefined) {
-        out[key] = body[key];
-      }
-    }
-    return Object.keys(out).length > 0 ? out : undefined;
   }
 }

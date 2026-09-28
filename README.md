@@ -340,7 +340,7 @@ La columna **¿Tocarla?** responde lo único que se suele preguntar: `No` = el d
 | `PORT` / `HOST` | `8888` / `0.0.0.0` | No        | Puerto y bind del servidor HTTP.                                                                  |
 | `GLOBAL_PREFIX` | `api`              | No        | Prefijo de todas las rutas.                                                                       |
 | `API_VERSION`   | `1`                | No        | Versión del versioning por URI: las rutas quedan en `/<prefix>/v<versión>/…`.                     |
-| `TRUST_PROXY`   | `0`                | **Prod**  | Confianza en cabeceras `X-Forwarded-*`. Acepta un entero o una spec de Express.                   |
+| `TRUST_PROXY`   | `0`                | **Prod**  | Saltos (entero ≥ 0) o IPs/subredes de Express. `true`/`false` y specs inválidas impiden arrancar. |
 | `BODY_LIMIT`    | `1mb`              | No        | Límite del body parser.                                                                           |
 
 ### CORS

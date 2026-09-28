@@ -54,8 +54,6 @@ export type ErrorExampleOptions = {
   path: string;
   /** El `message` que el servidor produce en este caso concreto. */
   message: string;
-  /** Solo para los errores que sí adjuntan contexto estructurado (hoy, la rama de `ZodError`). */
-  details?: unknown;
 };
 
 /**
@@ -73,12 +71,11 @@ export type ErrorExampleOptions = {
  */
 export const buildErrorExample = (
   status: number,
-  { path, message, details }: ErrorExampleOptions,
+  { path, message }: ErrorExampleOptions,
 ): ErrorPayload => ({
   statusCode: status,
   message,
   error: expectedErrorName(status),
-  ...(details !== undefined ? { details } : {}),
   timestamp: TIMESTAMP,
   path,
   requestId: REQUEST_ID,
