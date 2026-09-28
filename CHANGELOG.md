@@ -87,6 +87,17 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **dotenv 17 → 18 para las herramientas de línea de comandos** (2026-09-28, sustituye a la PR #80
+  de Renovate). La única consumidora directa es `src/database/data-source.ts`: CLI de TypeORM,
+  `seed:admin`, `outbox:relay` y los E2E que los importan. La aplicación ya cargaba su `.env` con
+  dotenv 18 a través de `@nestjs/config` 12. El cambio de la major que sí importa aquí: `config()`
+  toma sus valores por defecto de variables del entorno como `DOTENV_OVERRIDE`, y con ella
+  exportada el `.env` pisaba lo que ya estaba en `process.env`. Eso rompía la redirección a la base
+  de tests (los E2E del seed y del relay harían TRUNCATE sobre la base de desarrollo) e invertía
+  la precedencia `.env.local` > `.env`. `data-source.ts` pasa ahora `override: false` explícito, y
+  `data-source.spec.ts` lo fija con los dos casos, que salieron en rojo con dotenv 18 sin el
+  arreglo. Quedan tres copias de dotenv en el árbol (17.4.2 por `dotenv-expand`, 18.0.3 por
+  `@nestjs/config` y 18.0.4 directa); no se pueden deduplicar y es cosmético.
 - **NestJS 11 → 12** (2026-09-25, backlog #27). `@nestjs/common`, `core`, `platform-express` y
   `testing` pasan a 12.1.0, además de config 12.0.1, jwt 12.0.2, swagger 12.0.2, terminus 12.1.0,
   typeorm 12.0.1, cli 12.0.6 y schematics 12.0.5.

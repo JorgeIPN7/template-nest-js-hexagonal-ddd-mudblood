@@ -17,8 +17,9 @@ import { spawnSync } from 'node:child_process';
  * variable en `process.env` antes de delegar funciona en los dos sistemas sin añadir una
  * dependencia.
  *
- * Funciona porque `data-source.ts` carga el `.env` con `dotenv`, que por defecto **no pisa** lo
- * que ya está en `process.env`.
+ * Funciona porque `data-source.ts` carga el `.env` con `dotenv` y `override: false` explícito, así
+ * que **no pisa** lo que ya está en `process.env`. Explícito y no por defecto: desde dotenv 18 el
+ * default lo puede cambiar `DOTENV_OVERRIDE` en el entorno (lo fija `data-source.spec.ts`).
  *
  * El default duplica el de `test/setup-env.ts` a propósito: son los dos extremos del mismo
  * acuerdo, y `scripts/init-project.targets.json` declara este archivo para que `init:project`

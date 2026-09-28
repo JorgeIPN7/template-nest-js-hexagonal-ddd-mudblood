@@ -781,8 +781,10 @@ Windows.
 | README                                                          | Paso propio en «Correr los tests», fila en «Qué pasa si te saltas un paso» y §«Base de datos de los tests» |
 
 Sin `cross-env`: el `.mjs` escribe `process.env.DB_DATABASE` antes de delegar, y funciona porque
-`data-source.ts` carga el `.env` con `dotenv`, que por defecto **no pisa** lo que ya está en
-`process.env`. Es la misma técnica que `ci.yml`, en la forma que sí corre en Windows.
+`data-source.ts` carga el `.env` con `dotenv`, que **no pisa** lo que ya está en `process.env`. Es
+la misma técnica que `ci.yml`, en la forma que sí corre en Windows. _(Nota del 2026-09-28: desde
+dotenv 18 eso deja de ser un default fiable —`DOTENV_OVERRIDE` en el entorno lo cambia—, así que
+`data-source.ts` pasa `override: false` explícito y `data-source.spec.ts` lo fija.)_
 
 **Lo que sigue sin hacer, dicho claro.** `pnpm db:up` crea la base de tests **vacía** y no la migra:
 el paso es explícito (`pnpm db:migrate:test`) o va dentro de `pnpm db:reset`. Meterlo en `db:up`
