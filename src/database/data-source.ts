@@ -14,8 +14,15 @@ import { buildTypeOrmOptions } from './typeorm-options';
  * Vive fuera del contenedor de Nest, así que carga el `.env` por su cuenta y reutiliza
  * el mismo schema de Zod y el mismo builder de opciones que la aplicación, para que la
  * CLI y el runtime no puedan divergir.
+ *
+ * `override: false` parece redundante —es el valor por defecto documentado— y NO lo es: desde
+ * dotenv 18, `config()` toma sus defaults de variables del entorno como `DOTENV_OVERRIDE`, y con
+ * ella exportada el `.env` pisaría lo que ya está en `process.env`. Eso rompería la redirección a
+ * la base de tests de `scripts/migrate-test-db.mjs` y `test/setup-env.ts` —los E2E del seed y
+ * del relay harían TRUNCATE sobre la base de desarrollo— e invertiría además la precedencia
+ * `.env.local` > `.env`. Una opción explícita gana a la variable. Lo fija `data-source.spec.ts`.
  */
-loadEnv({ path: ['.env.local', '.env'], quiet: true });
+loadEnv({ path: ['.env.local', '.env'], quiet: true, override: false });
 
 const databaseConfig = buildDatabaseConfig(envSchema.parse(process.env));
 
