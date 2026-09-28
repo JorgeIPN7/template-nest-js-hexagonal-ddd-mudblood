@@ -1,3 +1,6 @@
+import { BlockList, isIP } from 'node:net';
+
+import express from 'express';
 import { z } from 'zod';
 
 // Zod 4: `.default()` takes the OUTPUT type and short-circuits parsing, so it cannot
@@ -27,7 +30,116 @@ const rejectEmpty = <T extends z.ZodType>(schema: T) =>
 /** Entero coercionado desde string, que es como llega todo en `process.env`. */
 const int = () => z.coerce.number().int();
 
-const trustProxyValue = rejectEmpty(z.union([int().nonnegative(), z.string().min(1)])).default(0);
+/** Los tres nombres que `proxy-addr` expande a rangos. Distingue mayúsculas, igual que él. */
+const TRUST_PROXY_PRESETS = new Set(['loopback', 'linklocal', 'uniquelocal']);
+
+/** `::ffff:0:0/96`: toda IPv6 que sea una IPv4 mapeada, se escriba como se escriba. */
+const IPV4_MAPPED = new BlockList();
+IPV4_MAPPED.addSubnet('::ffff:0.0.0.0', 96, 'ipv6');
+
+/**
+ * Número de saltos o spec de direcciones, con la misma coerción que el resto de enteros del
+ * schema (`Number()`), para no cambiar qué cuenta como número. La cadena en blanco se deja
+ * pasar tal cual: `Number('')` es 0 y la validación tiene que verla vacía.
+ */
+const toTrustProxySetting = (raw: string | number): string | number => {
+  if (typeof raw === 'number' || raw.trim() === '') {
+    return raw;
+  }
+  const hops = Number(raw);
+  return Number.isNaN(hops) ? raw : hops;
+};
+
+const trustProxyEntryProblem = (entry: string): string | undefined => {
+  if (entry === '') {
+    return 'has an empty entry in its comma-separated list';
+  }
+  if (TRUST_PROXY_PRESETS.has(entry)) {
+    return undefined;
+  }
+  const slash = entry.lastIndexOf('/');
+  const address = slash === -1 ? entry : entry.slice(0, slash);
+  // Más estricto que Express a propósito: `ipaddr.js` lee `192.168.001.010` como 192.168.1.8
+  // (octal) y `0x7f.0.0.1` en hexadecimal, así que confiaría en otra red. `isIP` solo admite la
+  // notación estándar.
+  if (isIP(address) === 0) {
+    return (
+      `has an unknown entry "${entry}": expected loopback, linklocal, uniquelocal or an IP ` +
+      'address in standard notation, optionally with a /prefix'
+    );
+  }
+  // GHSA-jqcg-44mw-7w3h: antes de proxy-addr 2.0.8 esta forma confiaba en todo IPv4; desde
+  // entonces no confía en nadie. Ninguna de las dos cosas es lo que el operador escribió.
+  const prefix = slash === -1 ? undefined : Number(entry.slice(slash + 1));
+  if (prefix !== undefined && IPV4_MAPPED.check(address, 'ipv6') && prefix < 96) {
+    // Sumar 96 solo da un prefijo válido (≤ /128) si el original era de /0 a /32.
+    const addHint = prefix <= 32 ? ' or add 96 to the prefix' : '';
+    return (
+      `has "${entry}", an IPv4-mapped IPv6 subnet with a prefix shorter than /96, which matches ` +
+      'no IPv4 client: write the IPv4 subnet itself (e.g. 10.0.0.0/8 instead of ' +
+      `::ffff:10.0.0.0/8)${addHint}`
+    );
+  }
+  return undefined;
+};
+
+/**
+ * Valida contra la semántica real de Express 5 y no contra una copia: la última palabra la
+ * tiene el mismo `app.set('trust proxy', …)` que ejecuta `main.ts`. Reimplementar la gramática
+ * de `ipaddr.js` no cierra el hueco —`node:net` acepta `::1.2.3.4` y Express no—, y
+ * `proxy-addr` no es importable desde `src/`: es transitiva y pnpm no la hoistea.
+ */
+const trustProxyProblem = (value: string | number): string | undefined => {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) && value >= 0
+      ? undefined
+      : `hop count must be a non-negative integer, got ${value}`;
+  }
+  if (value.trim() === '') {
+    return 'is set but empty: remove it to get the default (0)';
+  }
+  // En este repo '1' y 'true' son sinónimos en los flags, pero aquí '1' es un salto. Y `true`
+  // en Express confía en todos los saltos, que es tanto como dejar que el cliente elija req.ip.
+  // Hoy 'true' ya tumbaba el arranque; rechazarlo aquí da un mensaje legible. OJO: no es una
+  // barrera contra confiar en todo — `::ffff:0:0/96`, `0.0.0.0/1,128.0.0.0/1` o un número de
+  // saltos enorme siguen siendo specs válidas y equivalen a lo mismo para IPv4.
+  if (/^(true|false)$/i.test(value.trim())) {
+    return (
+      'does not accept true/false: true trusts every X-Forwarded-For hop, so any client can ' +
+      'spoof req.ip and dodge the rate limiters. Use the number of proxies in front of the ' +
+      'app (0 = none) or their addresses'
+    );
+  }
+  for (const entry of value.split(',').map((item) => item.trim())) {
+    const problem = trustProxyEntryProblem(entry);
+    if (problem !== undefined) {
+      return problem;
+    }
+  }
+  try {
+    express().set('trust proxy', value);
+    return undefined;
+  } catch (error) {
+    return `is not a valid Express trust proxy value: ${(error as Error).message}`;
+  }
+};
+
+/**
+ * Un único pipeline, no `z.union` de ramas refinadas: con Zod 4 una unión cuyas dos ramas fallan
+ * por algo que no es el tipo colapsa en `Invalid input` y se pierde el mensaje propio (medido con
+ * '-1'). `.prefault('0')` y no `.default(0)`, porque el schema termina en `.transform()` (ver el
+ * «Zod 4 gotcha» de CLAUDE.md). Emite `number | string`: sigue siendo escalar.
+ */
+const trustProxyValue = z
+  .union([z.string(), z.number()])
+  .transform(toTrustProxySetting)
+  .superRefine((value, ctx) => {
+    const problem = trustProxyProblem(value);
+    if (problem !== undefined) {
+      ctx.addIssue({ code: 'custom', message: problem });
+    }
+  })
+  .prefault('0');
 
 /**
  * Trocea una lista separada por comas. Vive aquí y no dentro del schema a propósito:

@@ -63,8 +63,8 @@ describe('ApiStandardErrors', () => {
   });
 
   // Sin `type` el generador de SDK no tiene nada que deserializar: el `example` documenta,
-  // el DTO es lo que tipa. Y el 400 no puede reutilizar `ErrorResponseDto`, que declara
-  // `details` y trae ejemplos de un 404.
+  // el DTO es lo que tipa. Y el 400 no puede reutilizar `ErrorResponseDto`, que trae ejemplos
+  // de un 404.
   it.each([
     [429, ErrorResponseDto],
     [500, ErrorResponseDto],

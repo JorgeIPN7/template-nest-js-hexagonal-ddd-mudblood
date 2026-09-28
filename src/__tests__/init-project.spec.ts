@@ -1,5 +1,15 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 
 /**
  * Gate del manifiesto de `scripts/init-project.mjs`.
@@ -27,9 +37,24 @@ const TEMPLATE_TOKENS = [
   'Nest Base Template',
 ];
 
+/**
+ * Los metadatos de git se excluyen por NOMBRE, sea directorio o archivo. En un clon, `.git` es
+ * un directorio; en un `git worktree` es un ARCHIVO de una línea, `gitdir: <clon>/.git/worktrees/…`,
+ * y esa ruta lleva el nombre de la carpeta del clon —uno de los tokens, si se clonó con el nombre
+ * por defecto—. Excluirlo solo como directorio ponía el gate rojo en cualquier worktree.
+ *
+ * Un `.git` dentro de un SUBdirectorio marca además otro checkout (un worktree de
+ * `.claude/worktrees/`, un clon anidado), y `collectRepositoryFiles` no desciende a él. Sin esa
+ * poda, mientras exista un worktree de Claude Code dentro del repo, el gate del checkout
+ * principal ve una copia entera del proyecto sin declarar. La regla es más amplia que la de git
+ * —git solo se detiene ante un repo válido sin rastrear; aquí basta cualquier entrada `.git`—,
+ * pero como git no versiona rutas llamadas `.git`, en un clon limpio nunca poda contenido
+ * versionado: lo peor que puede hacer es ocultar en local algo que tampoco estaría en la CI.
+ */
+const GIT_METADATA = '.git';
+
 /** Directorios que nunca contienen fuente versionada: artefactos, dependencias o caches. */
 const SKIPPED_DIRECTORIES = new Set([
-  '.git',
   '.stryker-tmp',
   '.swc',
   '.temp',
@@ -104,7 +129,99 @@ describe('scripts/init-project.targets.json', () => {
   });
 });
 
+/**
+ * El recorrido del gate, probado sobre un árbol temporal. El gate de arriba solo ve el `.git`
+ * del checkout en el que corre, y la CI hace un clon normal (directorio): sin este bloque, ni la
+ * forma de ARCHIVO que tiene `.git` en un `git worktree` ni un checkout anidado dentro del repo
+ * los ejercitaría ninguna ejecución.
+ */
+describe('collectRepositoryFiles', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'init-project-'));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('debería ignorar el archivo .git de un worktree aunque su gitdir contenga el nombre del repositorio', () => {
+    // Arrange — el contenido literal que `git worktree add` escribe en `.git`.
+    writeTree(root, {
+      '.git': 'gitdir: /home/dev/template-nest-js-hexagonal-ddd-mudblood/.git/worktrees/wt\n',
+      'README.md': '# proyecto\n',
+    });
+
+    // Act
+    const files = collectRepositoryFiles(root);
+
+    // Assert
+    expect(files.sort()).toEqual(['README.md']);
+  });
+
+  // No nace en rojo: es la guarda de la otra mitad del arreglo. Si `.git` sale de
+  // SKIPPED_DIRECTORIES sin la exclusión por nombre, o si se quita la condición `prefix !== ''`
+  // de la poda de checkouts anidados, este caso cae y el gate de arriba pasaría en vacío.
+  it('debería ignorar el directorio .git de un clon normal', () => {
+    // Arrange — en un clon, la URL del remoto lleva el nombre del repositorio.
+    writeTree(root, {
+      '.git/config':
+        '[remote "origin"]\n\turl = https://github.com/JorgeIPN7/template-nest-js-hexagonal-ddd-mudblood.git\n',
+      'src/main.ts': 'export {};\n',
+    });
+
+    // Act
+    const files = collectRepositoryFiles(root);
+
+    // Assert
+    expect(files.sort()).toEqual(['src/main.ts']);
+  });
+
+  it('debería saltarse un checkout anidado, como los worktrees de .claude/worktrees', () => {
+    // Arrange — Claude Code crea sus worktrees DENTRO del repo, en `.claude/worktrees/<nombre>/`,
+    // y `.gitignore` no los excluye. `.claude/settings.json` demuestra que la poda es por checkout
+    // anidado, no por carpeta `.claude`.
+    writeTree(root, {
+      '.claude/settings.json': '{}\n',
+      '.claude/worktrees/agent-x/.git': 'gitdir: /elsewhere/.git/worktrees/agent-x\n',
+      '.claude/worktrees/agent-x/README.md': '# copia del repo\n',
+      'README.md': '# proyecto\n',
+    });
+
+    // Act
+    const files = collectRepositoryFiles(root);
+
+    // Assert
+    expect(files.sort()).toEqual(['.claude/settings.json', 'README.md']);
+  });
+
+  it('debería saltarse un clon anidado cuyo .git es un directorio', () => {
+    // Arrange — la otra forma de checkout anidado: un `git clone` dentro de una subcarpeta.
+    writeTree(root, {
+      'vendor/lib/.git/HEAD': 'ref: refs/heads/main\n',
+      'vendor/lib/README.md': '# clon anidado\n',
+      'README.md': '# proyecto\n',
+    });
+
+    // Act
+    const files = collectRepositoryFiles(root);
+
+    // Assert
+    expect(files.sort()).toEqual(['README.md']);
+  });
+});
+
 // Helpers
+
+/** Crea `files` bajo `root`; las claves son rutas relativas con `/`. */
+const writeTree = (root: string, files: Record<string, string>): void => {
+  for (const [relativePath, content] of Object.entries(files)) {
+    const absolute = join(root, relativePath);
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, content);
+  }
+};
 
 const declaredPaths = (manifest: Manifest): string[] => [
   ...manifest.replace,
@@ -126,9 +243,17 @@ const isVersioned = (fileName: string): boolean =>
 
 const collectRepositoryFiles = (directory: string, prefix = ''): string[] => {
   const entries = readdirSync(directory, { withFileTypes: true });
+  // Un subdirectorio con su propio `.git` —archivo o directorio— es OTRO checkout: sus archivos
+  // no son de este repositorio. La raíz (`prefix === ''`) sí lo tiene y sí se recorre.
+  if (prefix !== '' && entries.some((entry) => entry.name === GIT_METADATA)) {
+    return [];
+  }
   const files: string[] = [];
 
   for (const entry of entries) {
+    if (entry.name === GIT_METADATA) {
+      continue;
+    }
     if (entry.isDirectory()) {
       if (!SKIPPED_DIRECTORIES.has(entry.name)) {
         files.push(

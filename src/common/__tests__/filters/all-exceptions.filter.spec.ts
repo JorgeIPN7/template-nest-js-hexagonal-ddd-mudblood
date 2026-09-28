@@ -9,7 +9,7 @@ import type { HttpAdapterHost } from '@nestjs/core';
 import type { PinoLogger } from 'nestjs-pino';
 import { z } from 'zod';
 
-import { AllExceptionsFilter } from '../../filters/all-exceptions.filter';
+import { AllExceptionsFilter, type ErrorPayload } from '../../filters/all-exceptions.filter';
 
 describe('AllExceptionsFilter', () => {
   describe('catch() with HttpException', () => {
@@ -45,6 +45,33 @@ describe('AllExceptionsFilter', () => {
       expect(logger.error).toHaveBeenCalled();
       expect(logger.fatal).not.toHaveBeenCalled();
     });
+
+    // Ningún productor real mete estas claves en el cuerpo de una `HttpException`: ni el
+    // `ValidationPipe` (`{ message: string[], error, statusCode }`), ni Throttler, ni Terminus, ni
+    // los filtros de dominio, que construyen con un string. Reenviarlas publicaba un campo que el
+    // servidor nunca emite, y dejaba la puerta abierta a filtrar lo que una librería futura meta ahí.
+    it.each(['errors', 'validation', 'fields', 'code', 'issues'])(
+      'debería responder solo el sobre estándar aunque el cuerpo traiga %s',
+      (key) => {
+        // Arrange
+        const { filter, reply } = buildFilter();
+
+        // Act
+        filter.catch(
+          new BadRequestException({
+            message: 'invalid',
+            error: 'Bad Request',
+            statusCode: 400,
+            [key]: [{ field: 'email' }],
+          }),
+          buildHost(),
+        );
+
+        // Assert
+        const [, payload] = reply.mock.calls[0];
+        expect(Object.keys(payload as object).sort()).toEqual(ENVELOPE_KEYS);
+      },
+    );
   });
 
   describe('catch() with native Error', () => {
@@ -75,6 +102,30 @@ describe('AllExceptionsFilter', () => {
       expect(payload.message).toBe('actual cause');
       expect(logger.fatal).toHaveBeenCalled();
     });
+
+    // Zod valida configuración, no entrada HTTP (README, «División de responsabilidades»): el
+    // único esquema del repo es `env.schema.ts`, que se ejecuta al arrancar y en los CLI. Una
+    // `ZodError` que llegue a este filtro es un fallo del servidor, y responder 400 culparía al
+    // cliente de algo que no envió.
+    it('debería tratar una ZodError como cualquier Error no-HTTP: 500 y registro fatal', () => {
+      // Arrange
+      const { filter, reply, logger } = buildFilter();
+      const schema = z.object({ name: z.string().min(3) });
+      const result = schema.safeParse({ name: 'a' });
+      if (result.success) {
+        throw new Error('expected zod failure');
+      }
+
+      // Act
+      filter.catch(result.error, buildHost());
+
+      // Assert
+      const [, payload, status] = reply.mock.calls[0];
+      expect(status).toBe(500);
+      expect(payload.error).toBe('ZodError');
+      expect(Object.keys(payload as object).sort()).toEqual(ENVELOPE_KEYS);
+      expect(logger.fatal).toHaveBeenCalled();
+    });
   });
 
   // Lo que se lanza en un incidente real no siempre es un Error: una librería puede
@@ -97,27 +148,6 @@ describe('AllExceptionsFilter', () => {
       expect(status).toBe(500);
       expect(payload.message).toBe('Internal server error');
       expect(payload.error).toBe('InternalServerError');
-    });
-  });
-
-  describe('catch() with ZodError', () => {
-    it('debería responder 400 ValidationError incluyendo el detalle de los issues', () => {
-      // Arrange
-      const { filter, reply } = buildFilter();
-      const schema = z.object({ name: z.string().min(3) });
-      const result = schema.safeParse({ name: 'a' });
-      if (result.success) {
-        throw new Error('expected zod failure');
-      }
-
-      // Act
-      filter.catch(result.error, buildHost());
-
-      // Assert
-      const [, payload, status] = reply.mock.calls[0];
-      expect(status).toBe(400);
-      expect(payload.error).toBe('ValidationError');
-      expect(Array.isArray(payload.details)).toBe(true);
     });
   });
 
@@ -261,35 +291,23 @@ describe('AllExceptionsFilter', () => {
       expect(payload.path).toBe('/api/v1/health/liveness');
     });
   });
-
-  describe('extractDetails()', () => {
-    it('debería exponer solo las claves permitidas del payload de la excepción', () => {
-      // Arrange
-      const { filter, reply } = buildFilter();
-
-      // Act
-      filter.catch(
-        new BadRequestException({
-          message: 'invalid',
-          error: 'BadRequestException',
-          statusCode: 400,
-          errors: [{ field: 'email' }],
-          cause: 'should-be-hidden',
-          stack: 'should-be-hidden',
-        }),
-        buildHost(),
-      );
-
-      // Assert
-      const [, payload] = reply.mock.calls[0];
-      expect(payload.details).toEqual({ errors: [{ field: 'email' }] });
-      expect(payload.details.cause).toBeUndefined();
-      expect(payload.details.stack).toBeUndefined();
-    });
-  });
 });
 
 // Helpers
+
+/**
+ * Las claves del sobre de error, ordenadas: todo lo que el filtro emite, nada más. Sale de un
+ * literal con `satisfies Required<ErrorPayload>`, así que si alguien vuelve a añadir un campo al
+ * tipo el test deja de compilar en vez de quedarse desfasado.
+ */
+const ENVELOPE_KEYS = Object.keys({
+  statusCode: 0,
+  message: '',
+  error: '',
+  timestamp: '',
+  path: '',
+  requestId: '',
+} satisfies Required<ErrorPayload>).sort();
 
 const buildHost = (request: Record<string, unknown> = {}, response: unknown = {}): ArgumentsHost =>
   ({
