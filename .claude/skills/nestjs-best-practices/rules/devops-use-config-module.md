@@ -2,12 +2,14 @@
 title: Use ConfigModule for Environment Configuration
 impact: LOW-MEDIUM
 impactDescription: Proper configuration prevents deployment failures
-tags: devops, configuration, environment, validation
+tags: devops, configuration, environment, validation, v12, standard-schema
 ---
 
 ## Use ConfigModule for Environment Configuration
 
 Use `@nestjs/config` for environment-based configuration. Validate configuration at startup to fail fast on misconfigurations. Use namespaced configuration for organization and type safety.
+
+> **NestJS 12 note:** `@nestjs/config` 12 moves from Joi-specific validation to **Standard Schema**. `validationSchema` accepts any Standard Schema-compatible schema (Zod, Valibot, ArkType, …). Joi still works but needs **Joi v18 or later**, which implements the spec, and Joi's own settings move from `validationOptions` to `validationOptions.libraryOptions` — the v11 shape `validationOptions: { abortEarly, allowUnknown }` no longer compiles (TS2353). For Joi, `@nestjs/config` keeps its historical defaults `allowUnknown: true` and `abortEarly: false` and merges yours on top.
 
 **Incorrect (accessing process.env directly):**
 
@@ -40,8 +42,8 @@ export class EmailService {
 
 ```typescript
 // Setup validated configuration
-import { ConfigModule, ConfigService, registerAs } from '@nestjs/config';
-import * as Joi from 'joi';
+import { ConfigModule, ConfigService, registerAs, type ConfigType } from '@nestjs/config';
+import { z } from 'zod';
 
 // config/database.config.ts
 export const databaseConfig = registerAs('database', () => ({
@@ -59,20 +61,20 @@ export const appConfig = registerAs('app', () => ({
   apiPrefix: process.env.API_PREFIX || 'api',
 }));
 
-// config/validation.schema.ts
-export const validationSchema = Joi.object({
-  NODE_ENV: Joi.string()
-    .valid('development', 'production', 'test')
-    .default('development'),
-  PORT: Joi.number().default(3000),
-  DB_HOST: Joi.string().required(),
-  DB_PORT: Joi.number().default(5432),
-  DB_USERNAME: Joi.string().required(),
-  DB_PASSWORD: Joi.string().required(),
-  DB_NAME: Joi.string().required(),
-  JWT_SECRET: Joi.string().min(32).required(),
-  REDIS_URL: Joi.string().uri().required(),
+// config/validation.schema.ts — any Standard Schema library (Zod shown)
+export const validationSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.coerce.number().int().positive().default(3000),
+  DB_HOST: z.string().min(1),
+  DB_PORT: z.coerce.number().int().default(5432),
+  DB_USERNAME: z.string().min(1),
+  DB_PASSWORD: z.string().min(1),
+  DB_NAME: z.string().min(1),
+  JWT_SECRET: z.string().min(32),
+  REDIS_URL: z.url(),
 });
+// A missing JWT_SECRET aborts bootstrap:
+// Error: Config validation error: JWT_SECRET: Invalid input: expected string, received undefined
 
 // app.module.ts
 @Module({
@@ -81,10 +83,7 @@ export const validationSchema = Joi.object({
       isGlobal: true, // Available everywhere without importing
       load: [databaseConfig, appConfig],
       validationSchema,
-      validationOptions: {
-        abortEarly: true, // Stop on first error
-        allowUnknown: true, // Allow other env vars
-      },
+      // Undeclared variables stay available: @nestjs/config merges them back after validation
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -144,6 +143,14 @@ export class DatabaseService {
     const port = this.dbConfig.port; // number
   }
 }
+
+// Joi (v18+ only): library-specific options go under libraryOptions
+ConfigModule.forRoot({
+  validationSchema: Joi.object({ PORT: Joi.number().default(3000) }),
+  validationOptions: {
+    libraryOptions: { abortEarly: true }, // v11 put this directly under validationOptions
+  },
+});
 
 // Environment files support
 ConfigModule.forRoot({

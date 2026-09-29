@@ -2,14 +2,16 @@
 title: Use Structured Logging
 impact: MEDIUM-HIGH
 impactDescription: Structured logging enables effective debugging and monitoring
-tags: devops, logging, structured-logs, pino, v11
+tags: devops, logging, structured-logs, pino, v11, v12
 ---
 
 ## Use Structured Logging
 
 Use NestJS Logger with structured JSON output in production. Include contextual information (request ID, user ID, operation) to trace requests across services. Avoid `console.log` and implement proper log levels.
 
-> **NestJS 11 note:** the framework added a **`fatal` log level** (above `error`) and the built-in `ConsoleLogger` now natively supports **JSON output** plus knobs for `colors`, `compact`, `breakLength`, and `depth`. For many services this removes the need to ship Pino purely for JSON output — reach for Pino when you also need very low overhead, redaction, or HTTP request logging.
+> **Since v11:** the framework has a **`fatal` log level** (above `error`) and the built-in `ConsoleLogger` natively supports **JSON output** plus knobs for `colors`, `compact`, `breakLength`, and `depth`. For many services this removes the need to ship Pino purely for JSON output — reach for Pino when you also need very low overhead, redaction, or HTTP request logging.
+
+> **NestJS 12 note:** `ConsoleLogger` treats **plain objects passed after the message as structured params** of the same entry (`structuredParams`, default `true`) instead of printing each one as a separate record. In JSON mode they are nested under `params`, or spread into the root object with `flattenParams: true` (framework fields such as `message` or `level` win on key collisions). Only `error()` recognises a stack-trace string argument; `fatal()` does not, so pass the error inside an object there (`logger.fatal('Out of memory', { error })`).
 
 **Incorrect (using console.log in production):**
 
@@ -44,7 +46,7 @@ logger.log('User ' + userId + ' created at ' + new Date());
 
 ```typescript
 // Configure logger in main.ts
-// NestJS 11: 'fatal' is now a real level (above 'error'), include it in production
+// Since v11: 'fatal' is a real level (above 'error'), include it in production
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger:
@@ -54,7 +56,7 @@ async function bootstrap() {
   });
 }
 
-// Built-in JSON output with ConsoleLogger (NestJS 11+)
+// Built-in JSON output with ConsoleLogger (v11+)
 // Replaces ad-hoc JsonLogger implementations for most use cases
 import { ConsoleLogger } from '@nestjs/common';
 
@@ -71,19 +73,29 @@ async function bootstrap() {
   // {"level":"log","pid":1,"timestamp":1735689600000,"message":"Listening","context":"NestApplication"}
 }
 
+// v12: plain objects after the message become structured params of the same entry
+const logger = new ConsoleLogger('UsersService', { json: true });
+logger.log('User created', { userId: 'u-1' });
+// {"level":"log",…,"message":"User created","context":"UsersService","params":{"userId":"u-1"}}
+
+const flat = new ConsoleLogger('UsersService', { json: true, flattenParams: true });
+flat.log('User created', { userId: 'u-1' });
+// {"level":"log",…,"message":"User created","context":"UsersService","userId":"u-1"}
+
 // Use NestJS Logger with context
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
   async createUser(dto: CreateUserDto): Promise<User> {
-    this.logger.log('Creating user', { email: dto.email });
+    this.logger.log('Creating user', { email: dto.email }); // v12: → "params": { "email": … }
 
     try {
       const user = await this.repo.save(dto);
       this.logger.log('User created', { userId: user.id });
       return user;
     } catch (error) {
+      // error(): the stack string goes to "stack", the object to "params"
       this.logger.error('Failed to create user', error.stack, {
         email: dto.email,
       });
@@ -92,7 +104,7 @@ export class UsersService {
   }
 }
 
-// Custom logger for JSON output
+// Custom logger for JSON output — only if you need a shape ConsoleLogger cannot produce
 @Injectable()
 export class JsonLogger implements LoggerService {
   log(message: string, context?: object): void {
@@ -207,6 +219,9 @@ export class ContextLogger {
 }
 
 // Pino integration for high-performance logging
+// Transports (pino-pretty, file, …) flush on the process 'exit' event: end the process
+// with process.exit() on shutdown — see devops-graceful-shutdown (plain
+// enableShutdownHooks() re-raises the signal and 'exit' never fires).
 import { LoggerModule } from 'nestjs-pino';
 
 @Module({

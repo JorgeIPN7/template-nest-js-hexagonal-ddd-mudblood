@@ -1,6 +1,6 @@
 ---
 name: clean-ddd-hexagonal
-description: Proactively apply when designing APIs, microservices, or scalable backend structure. Triggers on DDD, Clean Architecture, Hexagonal, ports and adapters, entities, value objects, domain events, CQRS, event sourcing, repository pattern, use cases, onion architecture, outbox pattern, aggregate root, anti-corruption layer. Use when working with domain models, aggregates, repositories, or bounded contexts. Tailored to NestJS 11 + TypeScript 6.0 in this repo; conceptual references stay language-agnostic.
+description: Proactively apply when designing APIs, microservices, or scalable backend structure. Triggers on DDD, Clean Architecture, Hexagonal, ports and adapters, entities, value objects, domain events, CQRS, event sourcing, repository pattern, use cases, onion architecture, outbox pattern, aggregate root, anti-corruption layer. Use when working with domain models, aggregates, repositories, or bounded contexts. Tailored to NestJS 12 + TypeScript 6.0 in this repo; conceptual references stay language-agnostic.
 allowed-tools: Read, Grep, Glob
 ---
 
@@ -10,11 +10,12 @@ Backend architecture combining DDD tactical patterns, Clean Architecture depende
 
 ## Stack-Specific Anchor
 
-This skill is applied in a **NestJS 11 + TypeScript 6.0 + Node 22 + pnpm 11** codebase (SWC, Pino, Zod, class-validator, Jest). Whenever a section below presents a concept generically, use [`references/NESTJS-MAPPING.md`](references/NESTJS-MAPPING.md) for the concrete pattern, file layout, DI tokens, and code idioms expected in this project. The other reference files remain language-agnostic for theory; `NESTJS-MAPPING.md` is the source of truth for code shape.
+This skill is applied in a **NestJS 12 + TypeScript 6.0 + Node 24 + pnpm 11** codebase (SWC, Pino, Zod, class-validator, TypeORM, Jest); exact versions live in the «Stack» line of `CLAUDE.md`, `package.json`, `.nvmrc` and `packageManager`. NestJS 12 ships ESM-only packages and this repo stays CommonJS, loading them through Node's `require(esm)` — `NESTJS-MAPPING.md` §0 lists what that changes and what it doesn't. Whenever a section below presents a concept generically, use [`references/NESTJS-MAPPING.md`](references/NESTJS-MAPPING.md) for the concrete pattern, file layout, port-as-token DI, and code idioms expected in this project. The other reference files remain language-agnostic for theory; `NESTJS-MAPPING.md` is the source of truth for code shape, and `src/modules/users/` is the reference implementation.
 
-**Two repo conventions that override the generic examples:**
+**Three repo conventions that override the generic examples:**
 
 - **`type`, never `interface`.** ESLint enforces `@typescript-eslint/consistent-type-definitions: ['error', 'type']`. The `references/*.md` files use `interface` as language-agnostic pseudocode — writing that in real code fails `pnpm lint:check`.
+- **Ports are `abstract class`, not `interface` + `Symbol` token.** The class is both the contract's type and its injection token, so adapters `implements` it, modules wire `{ provide: Port, useClass: Adapter }` and no consumer needs `@Inject`.
 - **Layers live per bounded context** under `src/modules/<context>/`, never at the root of `src/`.
 
 ## When to Use (and When NOT to)
@@ -88,35 +89,36 @@ Aggregate boundaries?
 
 ```
 src/
-├── main.ts                              # Bootstrap (composition root)
-├── app.module.ts                        # Root module
-├── bootstrap/                           # Global setup (helmet, swagger, pipes…)
-├── common/                              # Cross-cutting (filters, interceptors, decorators)
+├── main.ts                              # Process: applyGlobals(), listen, shutdown
+├── app.module.ts                        # Root module: imports context modules + global config
+├── bootstrap/                           # OpenAPI document and Scalar UI
+├── common/                              # Cross-cutting (filters, interceptors, decorators, dto)
 ├── config/                              # Zod-validated config
+├── database/                            # DataSource, migrations, seeds, outbox relay
+├── shared/domain/                       # Shared kernel: AggregateRoot, ValueObject
 └── modules/
-    └── <bounded-context>/               # e.g. billing, identity, catalog
-        ├── domain/                      # NO @nestjs/* imports
-        │   ├── <aggregate>.entity.ts
-        │   ├── <value-object>.vo.ts
+    └── <bounded-context>/               # e.g. users, auth, orders
+        ├── domain/                      # NO @nestjs/*, ORM, HTTP-client, class-validator, pino
+        │   ├── entities/<aggregate>.entity.ts
+        │   ├── value-objects/<name>.vo.ts
         │   ├── events/<event-name>.event.ts
-        │   ├── ports/<repo-name>.repository.ts   # driven port
-        │   ├── services/<service>.domain-service.ts
-        │   └── errors/<error>.error.ts
+        │   ├── ports/<name>.repository.ts        # driven port — abstract class
+        │   └── errors/<aggregate>.errors.ts
         ├── application/                 # @Injectable OK; no ORM / HTTP clients
-        │   ├── ports/<port>.port.ts
-        │   ├── commands/<use-case>.command.ts
-        │   ├── queries/<use-case>.query.ts
-        │   ├── handlers/<use-case>.handler.ts    # use case
-        │   └── dto/<dto>.dto.ts
+        │   ├── use-cases/<verb-noun>.use-case.ts # one use case + its `…Input` type
+        │   └── <context>.facade.ts               # only if another context consumes this one
         ├── infrastructure/              # adapters — the only layer touching external libs
-        │   ├── persistence/<repo>.<orm>.repository.ts
         │   ├── http/<resource>.controller.ts     # driver adapter
-        │   ├── messaging/<event>.subscriber.ts
-        │   └── mappers/<entity>.mapper.ts
-        └── <context>.module.ts          # wires everything with tokens
+        │   ├── http/<aggregate>-domain-exception.filter.ts
+        │   ├── http/dto/<name>.dto.ts
+        │   ├── persistence/<name>.orm-entity.ts
+        │   ├── persistence/<name>.mapper.ts
+        │   └── persistence/<name>.typeorm.repository.ts
+        ├── __tests__/                   # mirrors the layers above, 1:1 with source files
+        └── <context>.module.ts          # composition root: binds each port to its adapter
 ```
 
-Controllers belong in `infrastructure/http/` because they are driver adapters — never in a parallel folder.
+Controllers belong in `infrastructure/http/` because they are driver adapters — never in a parallel folder. There is no `commands/`, `queries/` or `handlers/`: one use case per file, its input a plain `type` in the same file (`NESTJS-MAPPING.md` §4).
 
 ## DDD Building Blocks
 
@@ -155,16 +157,16 @@ Controllers belong in `infrastructure/http/` because they are driver adapters �
 
 ## Reference Documentation
 
-| File                                                             | Purpose                                                                                                                         |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **[references/NESTJS-MAPPING.md](references/NESTJS-MAPPING.md)** | **Concrete NestJS 11 + TS 6.0 patterns (folder layout, DI tokens, controller/repo idioms). Read this first when writing code.** |
-| [references/LAYERS.md](references/LAYERS.md)                     | Complete layer specifications (conceptual)                                                                                      |
-| [references/DDD-STRATEGIC.md](references/DDD-STRATEGIC.md)       | Bounded contexts, context mapping                                                                                               |
-| [references/DDD-TACTICAL.md](references/DDD-TACTICAL.md)         | Entities, value objects, aggregates (pseudocode)                                                                                |
-| [references/HEXAGONAL.md](references/HEXAGONAL.md)               | Ports, adapters, naming                                                                                                         |
-| [references/CQRS-EVENTS.md](references/CQRS-EVENTS.md)           | Command/query separation, events                                                                                                |
-| [references/TESTING.md](references/TESTING.md)                   | Unit, integration, architecture tests                                                                                           |
-| [references/CHEATSHEET.md](references/CHEATSHEET.md)             | Quick decision guide                                                                                                            |
+| File                                                             | Purpose                                                                                                                                |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **[references/NESTJS-MAPPING.md](references/NESTJS-MAPPING.md)** | **Concrete NestJS 12 + TS 6.0 patterns (folder layout, port-as-token DI, controller/repo idioms). Read this first when writing code.** |
+| [references/LAYERS.md](references/LAYERS.md)                     | Complete layer specifications (conceptual)                                                                                             |
+| [references/DDD-STRATEGIC.md](references/DDD-STRATEGIC.md)       | Bounded contexts, context mapping                                                                                                      |
+| [references/DDD-TACTICAL.md](references/DDD-TACTICAL.md)         | Entities, value objects, aggregates (pseudocode)                                                                                       |
+| [references/HEXAGONAL.md](references/HEXAGONAL.md)               | Ports, adapters, naming                                                                                                                |
+| [references/CQRS-EVENTS.md](references/CQRS-EVENTS.md)           | Command/query separation, events                                                                                                       |
+| [references/TESTING.md](references/TESTING.md)                   | Unit, integration, architecture tests                                                                                                  |
+| [references/CHEATSHEET.md](references/CHEATSHEET.md)             | Quick decision guide                                                                                                                   |
 
 ## Workflow Integration
 

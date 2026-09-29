@@ -255,9 +255,14 @@ export class HealthController {
   /**
    * Sí declara 503, pese a no consultar dependencias externas. Con cero indicadores
    * `errors.length` es siempre 0, pero `HealthCheckExecutor` implementa
-   * `beforeApplicationShutdown` y `main.ts` llama a `enableShutdownHooks()`: entre el SIGTERM y
-   * el cierre del servidor el resultado pasa a `shutting_down` y `check()` lanza el 503 con
-   * `error` vacío. Verificado sobre la app real. Es exactamente lo que saca el pod de rotación
+   * `beforeApplicationShutdown`, que `app.close(signal)` ejecuta cuando `main.ts` recibe SIGTERM:
+   * entre ese hook y el cierre del servidor el resultado pasa a `shutting_down` y `check()` lanza
+   * el 503 con `error` vacío. Verificado sobre `dist` (2026-09-28) alargando ese hook 2 s, que es
+   * lo que hace `gracefulShutdownTimeoutMs`: 503 JSON con el sobre y `x-request-id`. Sin esa
+   * opción —hoy no se configura— la ventana dura lo que tarden los hooks que quedan, casi nada.
+   * Solo llega así porque `NEST_APP_OPTIONS` deja `return503OnClosing` apagado: con él,
+   * platform-express contestaría antes un 503 `text/html` sin sobre (medido igual). Es
+   * exactamente lo que saca el pod de rotación
    * en un despliegue, así que omitirlo dejaría sin documentar la única respuesta distinta de
    * 200 que esta sonda emite.
    */

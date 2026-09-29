@@ -2,22 +2,30 @@
 title: Use Async Lifecycle Hooks Correctly
 impact: HIGH
 impactDescription: Improper async handling blocks application startup
-tags: performance, lifecycle, async, hooks, v11
+tags: performance, lifecycle, async, hooks, v11, v12
 ---
 
 ## Use Async Lifecycle Hooks Correctly
 
 NestJS lifecycle hooks (`onModuleInit`, `onApplicationBootstrap`, etc.) support async operations. However, misusing them can block application startup or cause race conditions. Understand the lifecycle order and use hooks appropriately.
 
-> **NestJS 11 note:** termination hooks (`onModuleDestroy`, `beforeApplicationShutdown`, `onApplicationShutdown`) now run in **reverse order** of their initialization counterparts. A module that initialized first will tear down last. This makes "destroy after my consumers" guarantees explicit: a database module imported by a feature module is destroyed *after* the feature, so feature-module destroy hooks can still issue queries.
+> **Since v11:** termination hooks (`onModuleDestroy`, `beforeApplicationShutdown`, `onApplicationShutdown`) run in **reverse order** of their initialization counterparts. A module that initialized first will tear down last. This makes "destroy after my consumers" guarantees explicit: a database module imported by a feature module is destroyed *after* the feature, so feature-module destroy hooks can still issue queries.
 
-**Initialization order (still oldest → newest dependency):**
+> **NestJS 12 notes:**
+>
+> - **Hooks run by hierarchy level, also inside a module.** A provider's `onModuleInit` starts only after the `onModuleInit` of the providers it depends on has finished; providers on the same level run concurrently. Termination hooks walk the levels in reverse (consumers first). This can change the order you relied on in v11 — review hooks whose order matters.
+> - **Termination hooks settle with `Promise.allSettled`.** A rejecting `onModuleDestroy`, `beforeApplicationShutdown` or `onApplicationShutdown` is logged with `Logger.error`, the sequence continues and `app.close()` **resolves** (in v11 the rejection failed the shutdown). Handle errors inside the hook; throwing no longer signals anything to your caller.
+> - **Initialization hooks still use `Promise.all`:** a rejecting `onModuleInit` aborts bootstrap — fail fast is preserved.
+
+**Initialization order (deepest dependency first):**
 `onModuleInit` → `onApplicationBootstrap` (after every module is initialized)
 
-**Termination order (NEW in v11 — reversed):**
-`onModuleDestroy` → `beforeApplicationShutdown` → `onApplicationShutdown` (newest dependency tears down first)
+**Termination order (reversed since v11):**
+`onModuleDestroy` → `beforeApplicationShutdown` → *(HTTP server closes, waiting for in-flight requests)* → `onApplicationShutdown` (consumers tear down before their dependencies)
 
-Termination hooks only fire if you call `app.close()` or you've called `app.enableShutdownHooks()` and the process receives `SIGTERM`/`SIGINT`. Shutdown hooks are off by default (they consume memory).
+`onModuleDestroy` fires while requests are still being served: release pools and connections in `onApplicationShutdown`, which runs after the HTTP server has closed.
+
+Termination hooks only fire if you call `app.close()` or the process receives a signal you are listening to — through `app.enableShutdownHooks()` or your own handler, never both (see `devops-graceful-shutdown`). Shutdown hook listeners are off by default because they consume system resources.
 
 **Incorrect (fire-and-forget async without await):**
 
@@ -53,7 +61,7 @@ export class ConfigService {
 ```typescript
 // Return promise from async hooks
 @Injectable()
-export class DatabaseService implements OnModuleInit {
+export class DatabaseService implements OnModuleInit, OnApplicationShutdown {
   private pool: Pool;
 
   async onModuleInit(): Promise<void> {
@@ -62,8 +70,9 @@ export class DatabaseService implements OnModuleInit {
     console.log('Database connected');
   }
 
-  async onModuleDestroy(): Promise<void> {
-    // Clean up resources on shutdown
+  async onApplicationShutdown(): Promise<void> {
+    // Not onModuleDestroy: that one runs while in-flight requests may still query the pool.
+    // A rejection here is only logged (allSettled) — log with context yourself.
     await this.pool.end();
     console.log('Database disconnected');
   }
@@ -108,10 +117,11 @@ export class ConfigService implements OnModuleInit {
   }
 }
 
-// Enable shutdown hooks in main.ts
+// Enable shutdown hooks in main.ts — the only listener for those signals
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableShutdownHooks(); // Enable SIGTERM/SIGINT handling
+  // useProcessExit: exit via process.exit(0) so 'exit' fires; without it Nest re-raises the signal
+  app.enableShutdownHooks(['SIGTERM', 'SIGINT'], { useProcessExit: true });
   await app.listen(3000);
 }
 ```

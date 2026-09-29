@@ -428,9 +428,12 @@ describe('contrato OpenAPI', () => {
         timestamp: '',
         path: '',
         requestId: '',
+        errorCode: '',
       };
       const allowed = new Set(Object.keys(reference));
-      const required = allowed;
+      // `errorCode` es opcional de verdad: el filtro solo lo emite cuando la `HttpException` lo
+      // trae, así que un ejemplo puede omitirlo, pero nunca inventar una clave fuera del sobre.
+      const required = new Set([...allowed].filter((key) => key !== 'errorCode'));
       const offenders: string[] = [];
 
       // Act

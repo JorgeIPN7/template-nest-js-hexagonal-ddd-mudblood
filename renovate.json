@@ -12,16 +12,22 @@
   "customManagers": [
     {
       "description": [
-        "Node.js se declara en SEIS sitios y solo cuatro tienen manager nativo (.nvmrc, .node-version, el FROM del Dockerfile y engines.node).",
-        "Los otros dos son prosa: la tabla de requisitos del README y la plantilla de incidencias, que prerellena la versión para descartar «runtime equivocado» como causa.",
-        "Sin este manager, la versión vieja queda ahí como si fuera la que fija el repo — que es exactamente lo que pasó en `bdfe609`, y lo que src/__tests__/toolchain-pins.spec.ts pone en rojo desde el 2026-08-19."
+        "Node.js se declara en SIETE sitios y solo cuatro tienen manager nativo (.nvmrc, .node-version, el FROM del Dockerfile y engines.node).",
+        "Los otros tres son prosa: la tabla de requisitos del README, la plantilla de incidencias, que prerellena la versión para descartar «runtime equivocado» como causa, y la línea de Stack de CLAUDE.md, que es lo primero que lee un agente.",
+        "La expresión de CLAUDE.md va anclada al encabezado `## Stack`: es la única cita de versión de Node de ese archivo que el repo fija, y el ancla impide que otra mención de «Node X+» se cuele.",
+        "Sin este manager, la versión vieja queda ahí como si fuera la que fija el repo — que es exactamente lo que pasó en `bdfe609`. src/__tests__/toolchain-pins.spec.ts lee estas mismas expresiones y exige que todo lo que capturan sea la versión de .nvmrc."
       ],
       "customType": "regex",
-      "managerFilePatterns": ["/^README\\.md$/", "/^\\.github/ISSUE_TEMPLATE/bug_report\\.yml$/"],
+      "managerFilePatterns": [
+        "/^README\\.md$/",
+        "/^\\.github/ISSUE_TEMPLATE/bug_report\\.yml$/",
+        "/^CLAUDE\\.md$/"
+      ],
       "matchStrings": [
         "\\| \\*\\*Node\\.js\\*\\* +\\| `(?<currentValue>\\d+\\.\\d+\\.\\d+)`",
         "El repo fija `(?<currentValue>\\d+\\.\\d+\\.\\d+)` en `\\.nvmrc`",
-        "placeholder: v(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "placeholder: v(?<currentValue>\\d+\\.\\d+\\.\\d+)",
+        "## Stack\\s+[^\\n]*\\bNode (?<currentValue>\\d+\\.\\d+\\.\\d+)\\+"
       ],
       "depNameTemplate": "node",
       "datasourceTemplate": "node-version",
@@ -56,7 +62,7 @@
     },
     {
       "description": [
-        "Los seis sitios de Node viajan en un solo PR. Sin esto dependen de que los cinco managers implicados —nvm, node-version, dockerfile, npm/engines y los dos regex de arriba— coincidan por casualidad en el mismo branchTopic.",
+        "Los siete sitios de Node viajan en un solo PR. Sin esto dependen de que los cinco managers implicados —nvm, node-version, dockerfile, npm/engines y el regex de arriba— coincidan por casualidad en el mismo branchTopic.",
         "No coincidieron en el PR #38, que movió .nvmrc y .node-version y dejó fuera Dockerfile, engines.node y los dos documentos: cuatro aserciones de toolchain-pins en rojo."
       ],
       "matchDepNames": ["node"],
@@ -78,6 +84,18 @@
       "matchDepTypes": ["engines"],
       "matchDepNames": ["node"],
       "rangeStrategy": "bump"
+    },
+    {
+      "description": [
+        "Los MAJOR del ecosistema NestJS viajan en un solo PR. El preset de monorepo de config:recommended (`group:nestMonorepo`) agrupa por repositorio de origen, y su lista no incluye `@nestjs/jwt`, `swagger`, `typeorm` ni `throttler`, ni a `nestjs-pino` o `nestjs-cls`: cada uno llegaba en su PR.",
+        "Con Nest 12 eso fueron cuatro PR en rojo, cada una por su lado (#44 monorepo, #43 typeorm, #41 swagger, #40 jwt; backlog #27): `@nestjs/swagger@12` exige el core 12 por peer estricto, y jwt y typeorm, ya ESM, pedían el mismo cambio de toolchain que el core. La migración acabó entrando de una vez (2026-09-25).",
+        "Agrupar no adelanta lo que no se ha publicado: si falta una pieza por portar el PR sigue en rojo, pero es UNO, y Renovate le va sumando cada major a medida que sale.",
+        "Quién entra lo decide un criterio, no una lista: toda dependencia directa que sea @nestjs/* o declare peerDependencies sobre @nestjs/common o @nestjs/core. src/__tests__/renovate.spec.ts lo recorre sobre package.json y node_modules, así que una dependencia acoplada nueva pone el spec en rojo hasta que se añada aquí. `@scalar/nestjs-api-reference` queda fuera a propósito: no declara peers ni importa @nestjs.",
+        "Solo `major`: minor y patch siguen como hasta ahora, los del monorepo agrupados por el preset y el resto en PR sueltas. Va detrás del preset porque las packageRules posteriores pisan a las anteriores, y su groupName sustituye al `nest monorepo` en los major."
+      ],
+      "matchPackageNames": ["@nestjs/**", "nestjs-cls", "nestjs-pino"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "ecosistema NestJS"
     }
   ]
 }

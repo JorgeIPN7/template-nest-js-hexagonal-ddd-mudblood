@@ -2,7 +2,7 @@
 
 Use this template when dispatching a spec document reviewer subagent.
 
-**Purpose:** Verify the spec is complete, consistent, and ready for implementation planning in a NestJS 11 + TS 6.0 hexagonal codebase.
+**Purpose:** Verify the spec is complete, consistent, and ready for implementation planning in a NestJS 12 + TS 6.0 hexagonal codebase.
 
 **Dispatch with the Agent tool, `subagent_type: "general-purpose"`, after the spec document is written to `docs/specs/`.**
 
@@ -14,7 +14,8 @@ Agent({
     You are a spec document reviewer. Verify this spec is complete and ready for planning.
 
     **Spec to review:** [SPEC_FILE_PATH]
-    **Stack:** NestJS 11 + TypeScript 6.0, hexagonal/DDD layout under src/modules/<context>/.
+    **Stack:** NestJS 12 + TypeScript 6.0, hexagonal/DDD layout under src/modules/<context>/
+    (concrete shape: `clean-ddd-hexagonal/references/NESTJS-MAPPING.md`).
 
     ## What to Check
 
@@ -26,7 +27,7 @@ Agent({
     | Scope | Focused enough for a single plan — not covering multiple independent subsystems |
     | YAGNI | Unrequested features, over-engineering |
     | Layer placement | Each piece of behavior assigned to domain / application / infrastructure correctly |
-    | Ports declared | Every external dependency expressed as a port with a token name |
+    | Ports declared | Every external dependency expressed as a port, named as its `abstract class` (the class is its own injection token — no `Symbol`) |
     | Rule-code coverage | Cross-cutting concerns (auth, validation, errors, logging, throttling, caching) tagged with `nestjs-best-practices` rule codes |
 
     ## Calibration

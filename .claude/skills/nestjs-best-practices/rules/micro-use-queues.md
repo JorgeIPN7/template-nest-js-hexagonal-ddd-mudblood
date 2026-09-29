@@ -2,14 +2,16 @@
 title: Use Message Queues for Background Jobs
 impact: MEDIUM-HIGH
 impactDescription: Queues enable reliable background processing
-tags: microservices, queues, bullmq, background-jobs, v11
+tags: microservices, queues, bullmq, background-jobs, v11+, v12
 ---
 
 ## Use Message Queues for Background Jobs
 
 Use `@nestjs/bullmq` for background job processing. Queues decouple long-running tasks from HTTP requests, enable retry logic, and distribute workload across workers. Use them for emails, file processing, notifications, and any task that shouldn't block user requests.
 
-> **NestJS 11 note:** the legacy `@nestjs/bull` package wraps Bull (v3, deprecated). For new projects in NestJS 11 use `@nestjs/bullmq` (BullMQ). The BullMQ processor model is **class-based** — extend `WorkerHost` and implement a single `process(job)` method. The `@Process('name')` decorator from Bull does **not** exist in BullMQ; dispatch by `job.name` inside `process()` instead.
+> **Since NestJS 11 (still true in 12):** the legacy `@nestjs/bull` package wraps Bull (v3/v4), which is in maintenance mode — bug fixes only. For new projects use `@nestjs/bullmq` (BullMQ). The BullMQ processor model is **class-based** — extend `WorkerHost` and implement a single `process(job)` method. The `@Process('name')` decorator from Bull does **not** exist in BullMQ; dispatch by `job.name` inside `process()` instead.
+
+> **NestJS 12 note:** install `@nestjs/bullmq` **12.x** — 11.0.5 declares peers `@nestjs/common`/`@nestjs/core` `^10 || ^11` only, so it conflicts with Nest 12. The 12.x line accepts `bullmq` `^3`–`^6` and, like every `@nestjs/*` 12 package, ships as ESM only: a CommonJS app loads it through Node's `require(esm)` (Node 20.19+, 22.12+ or 24+), and Jest needs `--experimental-vm-modules` to load it in tests. **BullMQ 6 removed `repeat` from `Queue.add()`** — schedule repeating jobs with `Queue.upsertJobScheduler()`, which recent BullMQ 5 releases already have, so the same code works on both.
 
 **Incorrect (long-running tasks in HTTP handlers):**
 
@@ -218,29 +220,24 @@ export class NotificationService {
   }
 }
 
-// Scheduled / repeatable jobs
+// Scheduled / repeatable jobs — job schedulers, not `add(..., { repeat })`:
+// BullMQ 6 removed `repeat` from Queue.add(); recent BullMQ 5 releases have upsertJobScheduler() too
 @Injectable()
 export class ScheduledJobsService implements OnModuleInit {
   constructor(@InjectQueue('maintenance') private queue: Queue) {}
 
   async onModuleInit(): Promise<void> {
-    // Idempotent registration — `jobId` prevents duplicate repeatables
-    await this.queue.add(
-      'cleanup',
-      {},
-      {
-        repeat: { pattern: '0 0 * * *' }, // BullMQ uses `pattern` (cron) or `every` (ms)
-        jobId: 'daily-cleanup',
-      },
+    // Idempotent registration — upserting an existing scheduler id updates it, never duplicates it
+    await this.queue.upsertJobScheduler(
+      'daily-cleanup', // scheduler id
+      { pattern: '0 0 * * *' }, // `pattern` (cron) or `every` (ms)
+      { name: 'cleanup', data: {} }, // template for every job it produces
     );
 
-    await this.queue.add(
-      'digest',
-      {},
-      {
-        repeat: { every: 60 * 60 * 1000 },
-        jobId: 'hourly-digest',
-      },
+    await this.queue.upsertJobScheduler(
+      'hourly-digest',
+      { every: 60 * 60 * 1000 },
+      { name: 'digest', data: {} },
     );
   }
 }
@@ -282,11 +279,12 @@ export class AdminModule {}
 
 | Concern | `@nestjs/bullmq` (recommended) | `@nestjs/bull` (legacy) |
 |---------|--------------------------------|-------------------------|
-| Underlying lib | BullMQ (actively maintained) | Bull v3 (in maintenance) |
+| Underlying lib | BullMQ (actively maintained) | Bull v3/v4 (maintenance mode) |
+| Line for NestJS 12 | `@nestjs/bullmq` 12.x (`bullmq` `^3`–`^6`) | `@nestjs/bull` 12.x (`bull` `^3.3` or `^4`) |
 | Processor API | `extends WorkerHost` + `process()` | `@Process('name')` |
 | Events | `@OnWorkerEvent('completed')` | `@OnQueueCompleted()` |
 | Job progress | `job.updateProgress(n)` | `job.progress(n)` |
-| Repeatable jobs | `repeat: { pattern, every }` | `repeat: { cron, every }` |
+| Repeatable jobs | `queue.upsertJobScheduler(id, { pattern })` or `{ every }` | `repeat: { cron, every }` |
 | TypeScript | Stricter generics | Looser typings |
 
 Reference: [NestJS Queues](https://docs.nestjs.com/techniques/queues)

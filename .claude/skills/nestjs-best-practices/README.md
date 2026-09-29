@@ -4,9 +4,11 @@
 
 A structured repository for creating and maintaining NestJS Best Practices optimized for agents and LLMs.
 
+> **This copy is vendored and adapted.** The rules here target **NestJS 12** (`nestVersion` in `metadata.json`), were checked against the 12.1.0 packages, and are paired with this repo's conventions (see "Integration with Hexagonal / DDD layers" in `SKILL.md`). The installation commands below fetch the original upstream skill, not this copy.
+
 ## Installation
 
-Install this skill using [skills](https://github.com/vercel-labs/skills):
+Install the upstream skill using [skills](https://github.com/vercel-labs/skills):
 
 ```bash
 # GitHub shorthand
@@ -40,17 +42,13 @@ npx skills add Kadajett/agent-nestjs-skills -a claude-code -a cursor
 
 ## Getting Started
 
-1. Install dependencies:
-   ```bash
-   cd scripts && npm install
-   ```
+Build AGENTS.md from `rules/*.md` and `metadata.json`:
 
-2. Build AGENTS.md from rules:
-   ```bash
-   npm run build
-   # or
-   ./scripts/build.sh
-   ```
+```bash
+cd scripts && node build-agents.ts
+```
+
+Nothing to install: the script only uses Node built-ins (`fs`, `path`, `url`), and on Node 24 — the version this repo pins — `node` strips its TypeScript types natively. The upstream entry points, `npm run build` and `./scripts/build.sh`, run the same file through `npx ts-node`, which pulls `ts-node` from the npm registry. This repo uses pnpm only, so stick to the plain `node` call.
 
 ## Creating a New Rule
 
@@ -74,7 +72,7 @@ npx skills add Kadajett/agent-nestjs-skills -a claude-code -a cursor
 
 Each rule file should follow this structure:
 
-```markdown
+````markdown
 ---
 title: Rule Title Here
 impact: MEDIUM
@@ -101,14 +99,16 @@ Brief explanation of the rule and why it matters.
 Optional explanatory text after examples.
 
 Reference: [NestJS Documentation](https://docs.nestjs.com)
+````
 
+Version-specific notes go in a blockquote right after the intro paragraph: `> **NestJS 12 note:** …` for behavior new in v12, and `> **Since v11:** …` (or `Since NestJS 11 (still true in 12)`) for a v11 change that still holds. Tag the rule `v12`, plus `v11` / `v11+` when it keeps a v11 note.
 
 ## File Naming Convention
 
 - Files starting with `_` are special (excluded from build)
 - Rule files: `area-description.md` (e.g., `arch-avoid-circular-deps.md`)
 - Section is automatically inferred from filename prefix
-- Rules are sorted alphabetically by title within each section
+- Rules are sorted alphabetically by **filename** within each section (so `api-middleware-wildcards` is 8.1 even though its title does not sort first)
 - IDs (e.g., 1.1, 1.2) are auto-generated during build
 
 ## Impact Levels
@@ -123,7 +123,7 @@ Reference: [NestJS Documentation](https://docs.nestjs.com)
 
 ## Scripts
 
-- `npm run build` (in scripts/) - Compile rules into AGENTS.md
+- `node build-agents.ts` (in scripts/) - Compile rules into AGENTS.md
 
 ## Contributing
 
@@ -134,7 +134,7 @@ When adding or modifying rules:
 3. Include clear bad/good examples with explanations
 4. Add appropriate tags
 5. Run the build script to regenerate AGENTS.md
-6. Rules are automatically sorted by title - no need to manage numbers!
+6. Rules are automatically sorted by filename - no need to manage numbers!
 
 ## Documentation Website
 

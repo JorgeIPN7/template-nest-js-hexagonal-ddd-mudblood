@@ -87,6 +87,71 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **La skill `nestjs-best-practices` se alinea con NestJS 12, y su regla de apagado deja de
+  recomendar dos dueños para la misma señal** (2026-09-28). Se revisaron sus 45 reglas contra los
+  paquetes 12.1.0 instalados y docs.nestjs.com; cambian 24.
+  - **Apagado.** La regla recomendaba `enableShutdownHooks()` junto a un `process.on` propio. Con
+    Nest 12 ese bloque sale con 0 en vez de 143, y también con 0 cuando un hook falla (medido
+    compilando y ejecutando el bloque de HEAD). Ahora esa forma es el ejemplo Incorrect. Hay dos
+    salidas válidas con tabla comparativa: A, un único handler propio (`close(signal)` y
+    `process.exit(128 + n)`), que es la recomendada; y B, `enableShutdownHooks()` con
+    `useProcessExit: true`, que sale con 0. `return503OnClosing` se documenta con su ventana real:
+    solo hasta que el servidor deja de escuchar.
+  - **La opción A usa `process.on` con guarda, no `process.once`.** Bajo `nest start`, un solo
+    Ctrl+C llega dos veces al hijo: la terminal avisa a todo el grupo de procesos y el CLI reenvía
+    su copia. Con `once`, la segunda copia lo mata a mitad del apagado. Medido con el bloque del
+    markdown compilado tal cual, 3 de 3: con `once`, petición en vuelo en ECONNRESET y sin
+    `onApplicationShutdown`; con la guarda, 200, hooks completos y salida 130. `SKILL.md`
+    prescribe este patrón para `src/main.ts`.
+  - **Resto.** El suelo de Node pasa a ser `require(esm)` sin flag (20.19 / 22.12), con la LTS 24
+    recomendada. La de health checks pasa a `HealthIndicatorService`, porque `HealthIndicator` y
+    `HealthCheckError` no existen en Terminus 12. Además: config con Standard Schema, `errorCode`,
+    parámetros estructurados del logger, CSRF y cabeceras nativos desde 12.1, comodines de ruta
+    `{/*splat}`, y las líneas 12.x de cache-manager, bullmq y axios.
+  - **`AGENTS.md` se regenera con su script**, nunca a mano. Un comprobador de paridad
+    independiente da 24 fallos con el `AGENTS.md` de HEAD y 0 con el regenerado.
+  - **Límite.** Nada automático vigila estas skills: Prettier ignora `.claude/`, y el comprobador
+    de paridad vivió en el scratch de la sesión, no en la suite.
+- **Skills de arquitectura, tests y flujo de trabajo alineadas con NestJS 12 y con el código real**
+  (2026-09-28). `clean-ddd-hexagonal`, `javascript-typescript-jest`, `writing-plans`,
+  `subagent-driven-development`, `executing-plans` y `brainstorming` seguían anunciando
+  «NestJS 11 + Node 22», y la etiqueta era lo de menos.
+  - **Qué enseñaban mal.** `NESTJS-MAPPING.md`, que `CLAUDE.md` declara fuente de verdad de la
+    forma del código, enseñaba tokens `Symbol` con `@Inject`, carpetas `commands/` y `handlers/` y
+    tests «junto al SUT». Los prompts de revisión exigían esos tokens, así que habrían marcado como
+    crítico el código correcto del repo.
+  - **Cómo queda el mapeo.** Sigue la forma de `users` y `orders`: puertos `abstract class` con
+    adaptadores que hacen `implements`, un caso de uso por archivo con su `…Input`, VOs y agregados
+    sobre `shared/domain`, outbox en una transacción, filtro por contexto y tests en `__tests__/`.
+    Separa lo unitario sin base (mappers, filtros, controllers, adaptadores ACL) de lo que va
+    contra PostgreSQL, que son solo los repositorios; `executing-plans` exigía desde HEAD un E2E a
+    toda tarea de infraestructura, mappers y filtros incluidos. Una sección nueva explica qué
+    cambia Nest 12, y la de controllers avisa de `routeConflictPolicy`. Las DoD de la cadena
+    incluyen ahora `format:check`.
+  - **Cómo se comprobó.** Los fragmentos TypeScript del mapeo y de la skill de Jest compilan con el
+    tsconfig del repo, y un control negativo da `TS2720` si falta un método del puerto. Los specs
+    de ejemplo pasan con el Jest del repo y fallan al quitar el `record()` del agregado. Los 15
+    specs unitarios de infraestructura pasan con el puerto de la base cerrado. El grep de «NestJS 11
+    / Node 22 / v11» sobre las seis skills da cero coincidencias.
+- **nestjs-cls 6.3.1 → 7.0.1, evaluada después del merge** (2026-09-28, PR #82 de Renovate,
+  `24577e6`). Entró sin revisión y sin cambios de código; esta es la evaluación que faltó.
+  - **Cambios incompatibles.** El único publicado es el mapa `exports`: solo se puede importar la
+    raíz del paquete, y el build pasa de `dist/src` a `dist/cjs` + `dist/esm`. El repo solo importa
+    esa raíz, desde `app.module.ts` y `transform.interceptor.ts`. Las notas no dicen que `engines`
+    sube de `>=18` a `>=22` (se ve en el lockfile de `6e83472`); `.nvmrc`, `engines` y la imagen
+    Docker están en 24.21.0 y lo cumplen.
+  - **Paquete dual.** Con dos copias del paquete en el mismo proceso, `cls.getId()` podría devolver
+    `undefined` en una de ellas. No se da: la app, `dist/` y Jest cargan el build CJS, y nada del
+    árbol importa el paquete con `import`. Además, la 7.0.0 lo resuelve upstream: guarda el
+    `AsyncLocalStorage` y las claves (`CLS_ID`…) con `Symbol.for`. Medido en Node 24.21.0 con
+    `ClsMiddleware` real: un contexto abierto por un build lo lee el otro, y con una copia
+    parcheada que no los comparte `getId()` sí da `undefined`. Solo queda que `ClsService` es una
+    clase distinta en cada build, y usarla como token cruzado rompe el arranque con
+    `UnknownDependenciesException`: un fallo ruidoso.
+  - **Sin código ni test de guarda.** La CI de `6e83472` pasó entera: E2E, smoke de arranque y
+    build de Docker. Quien sí tiene ese riesgo, latente, es `nestjs-pino` 5.2.1, cuyo
+    `AsyncLocalStorage` es propio de cada build: queda en `docs/backlog.md` #28 con su criterio de
+    reapertura.
 - **dotenv 17 → 18 para las herramientas de línea de comandos** (2026-09-28, sustituye a la PR #80
   de Renovate). La única consumidora directa es `src/database/data-source.ts`: CLI de TypeORM,
   `seed:admin`, `outbox:relay` y los E2E que los importan. La aplicación ya cargaba su `.env` con
@@ -247,6 +312,125 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **El apagado por señal vuelve a pasar por `main.ts` y pino se vacía antes de salir**
+  (2026-09-28). Cierra lo que la entrada del 2026-09-25 («Un hook de apagado que falla…») dejaba
+  anotado sin arreglar: por señal, el `.then`/`.catch` de `main.ts` no corría nunca.
+  - **El defecto.** El listener de `enableShutdownHooks()` relanzaba la señal con `process.kill`,
+    así que el proceso moría sin emitir `'exit'`, que es donde pino vacía su SonicBoom asíncrono y
+    el worker de `pino-pretty`. Medido sobre `dist`: con el código anterior faltaba «Graceful
+    shutdown completed» en 12 de 12 apagados, y con `LOG_PRETTY=true` también «Received SIGTERM»,
+    en 6 de 6. El `Logger.error` de un hook que falla se perdía incluso con JSON (una corrida por
+    modo).
+  - **Cómo queda.** Se retira `enableShutdownHooks()`. `main.ts` es el único dueño de SIGTERM y
+    SIGINT: hace `app.close(signal)` y sale con `process.exit(128 + señal)`. El código sigue
+    siendo 143/130, que es lo que ven Kubernetes y Docker; `useProcessExit` lo habría convertido
+    en 0. Ahora las dos líneas salen en 12 de 12, y el error de un hook roto llega al log, aunque
+    el proceso siga saliendo con 143 (`Promise.allSettled`).
+  - **Segunda señal.** Se ignora, porque Ctrl+C sobre `nest start` llega dos veces al hijo; con
+    `process.once` el apagado no terminaba en 3 de 3.
+  - ⚠️ **Efectos visibles.** SIGHUP, SIGQUIT, SIGUSR2 y el resto de señales que escuchaba Nest
+    dejan de pasar por los hooks y aplican su acción por defecto. Ctrl+C sobre `pnpm start`
+    muestra ahora `[ELIFECYCLE] Command failed with exit code 130.`
+  - **Opciones de creación.** `NEST_APP_OPTIONS`, que la app comparte con `createTestApp()`, fija
+    `routeConflictPolicy: { duplicate: 'error', shadow: 'error' }`.
+    `src/__tests__/main.spec.ts` fija su efecto con apps reales: 3 de sus 6 casos salen en rojo
+    con las opciones vacías. Sobre la app real, un `@Get('me')` detrás de `@Get(':id')` pasa de
+    arrancar sin queja a abortar con `RouteConflictException`. ⚠️ `shadow` rechaza también
+    `users/me` declarado antes que `users/:id`, el orden que funcionaba: quien necesite ese patrón
+    baja `shadow` a `'warn'`.
+  - **Smoke de CI.** El paso de `ci.yml` arranca con `DOCS_ENABLED=true` y pide el documento JSON,
+    el HTML de Scalar y el bundle con hash, cuyo `Content-Type` comprueba. Después exige el 143 y
+    la línea de cierre en el log. Contra un build del commit anterior falla justo en esa aserción;
+    sin el bundle en `public/`, falla porque el catch-all de Scalar lo sirve como HTML.
+  - **`return503OnClosing` se queda apagado, a propósito.** Se probó y se retiró: platform-express
+    contesta desde el primer instante de `close()` un 503 `text/html` (`Service Unavailable`),
+    sin sobre de error ni `x-request-id`, que tapa el 503 JSON `shutting_down` que el contrato
+    OpenAPI publica para `/health/liveness` y `/health/readiness`. Tampoco protegía nada: el
+    `DataSource` se destruye en `onApplicationShutdown`, después de que el servidor HTTP cierre y
+    espere a las peticiones en vuelo. Medido sobre `dist` con el hook de Terminus alargado 2 s: sin
+    la opción, la sonda da el 503 JSON con sobre y `x-request-id`; con ella, el de texto.
+    `main.spec.ts` fija que la app sigue atendiendo mientras el apagado espera a los hooks, y el
+    comentario de `health.controller.ts` ya no cita `enableShutdownHooks()`.
+- **El `errorCode` de Nest 12 ya no se pierde en el sobre de error** (2026-09-28). Nest 12 añadió
+  `options.errorCode` a `HttpException`, pero `AllExceptionsFilter` reconstruía el cuerpo solo con
+  `message` y `error`: el código se descartaba sin avisar.
+  - **Cómo viaja ahora.** Es una clave **opcional** del sobre, presente solo cuando la excepción lo
+    trae, nunca como `undefined` ni `null`. Con eso, el sobre pasa de las 6 claves que cita la
+    entrada «`details` desaparece…» a 6 fijas y 1 opcional. Manda la propiedad `exception.errorCode`
+    y el cuerpo es el respaldo, porque con una respuesta objeto Nest no lo copia al cuerpo (medido
+    en 12.1.0). Solo vale una cadena no vacía, el mismo criterio que aplica Nest. Una
+    `HttpException` 5xx lo publica también en producción, igual que su `message`. Un `Error`
+    no-HTTP con una propiedad de ese nombre no lo publica nunca.
+  - **Contrato.** `ErrorResponseDto` lo declara con `required: false`, y
+    `ValidationErrorResponseDto` lo omite porque el `ValidationPipe` nunca lo fija. El guardián de
+    claves de `openapi-contract.e2e-spec.ts` lo admite sin exigirlo.
+  - **No es el caso de `details`.** Aquel campo se retiró por declarado e imposible. Este tampoco lo
+    emite hoy ningún filtro de dominio, pero es un campo nativo de Nest que el filtro destruía: se
+    transporta el dato, no se añade funcionalidad. La descripción del DTO lo dice.
+  - **Cómo se comprobó.** 8 tests en rojo con la suite actual contra el filtro y el DTO de HEAD, y
+    diez mutaciones del filtro y del DTO, todas cazadas. En un documento OpenAPI generado de
+    verdad, `errorCode` queda fuera de `required`, y los ejemplos de `buildErrorExample`, que no lo
+    llevan, siguen validando con Ajv. La suite E2E completa pasa con el cambio (12 suites, 136
+    tests).
+- **El lint ya no deja pasar imports profundos de `@nestjs/*` por la puerta de atrás, y
+  `cors.config.ts` deja de usar uno** (2026-09-28).
+  - **La regla era demasiado estrecha.** `no-restricted-imports` vetaba solo el nombre exacto
+    `@nestjs/common/constants`. Pero el mapa `exports` de `@nestjs/common` 12.1.0 es
+    `{".", "./internal", "./*.js", "./*"}`, así que `@nestjs/common/constants.js` y
+    `@nestjs/common/internal` pasaban el lint y compilaban. `./internal` reexporta `constants.js`
+    bajo una cabecera «not part of the public API».
+  - **`cors.config.ts` usaba una subruta.** Importaba `CorsOptions` de
+    `@nestjs/common/interfaces/external/cors-options.interface`, que solo resuelve por el comodín
+    `./*`.
+  - **Qué cambió.** La regla pasa a un patrón `regex` `^@nestjs/[^/]+/` que prohíbe toda subruta,
+    `import type` incluido, sin distinguir mayúsculas, porque en APFS `@NestJS/common/constants`
+    también resuelve. `CorsConfig` deriva su tipo de `NestApplicationOptions['cors']`, que exporta
+    la raíz, quitando el booleano y la función delegada. La regla también veta las pocas subrutas
+    declaradas a propósito, como `@nestjs/swagger/plugin`; hoy ningún archivo importa una.
+  - **Cómo se comprobó.** `src/__tests__/eslint-config.spec.ts` prueba la regla resuelta de la
+    config real vía `calculateConfigForFile`, no una copia. Con la regla anterior salen 3 de 8 en
+    rojo (`constants.js`, `internal`, `import type`), y uno de sus casos detecta un bloque posterior
+    que pisara la regla, comprobado con una mutación. `src/config/__tests__/cors.config.spec.ts`
+    fija, con igualdad exacta de tipos, que el tipo derivado es el que acepta `enableCors` en
+    `@nestjs/platform-express`; tres mutantes de la derivación dan TS2322.
+  - **Corrige la entrada del 2026-08-19** («Claves de metadatos de Nest copiadas y ancladas»). Esa
+    entrada decía que el import profundo era una rotura de arranque «con typecheck en verde». Con
+    `moduleResolution: nodenext`, el del repo desde que existe `tsconfig.json`, TypeScript lee el
+    mismo mapa que Node. Medido con el de `@nestjs/swagger` 12.0.2: cerrar la subruta da TS2307 en
+    `typecheck`, sea el import de valor o de tipo, y `ERR_PACKAGE_PATH_NOT_EXPORTED` en runtime. Un
+    renombrado de la constante no lanza en runtime, pero da TS2305.
+  - **Límite medido.** La regla no ve `require()`, `import('…').X` ni `import()` dinámico. Los dos
+    primeros ya son error por `@typescript-eslint/no-require-imports` y
+    `@typescript-eslint/consistent-type-imports`. El único hueco real es el `import()` dinámico
+    fuera de `domain/`, y hoy no hay ninguno hacia `@nestjs` en `src/`, `test/` ni `scripts/`.
+- **`toolchain-pins.spec.ts` comprueba exactamente los sitios que Renovate reescribe, CLAUDE.md
+  incluido, y los major de NestJS se configuran para llegar en una sola PR** (2026-09-28).
+  - **El agujero.** El spec comprobaba los documentos con un `toContain` sobre el archivo entero, y
+    el comentario HTML que precede a la tabla del README citaba la versión de pnpm. Con la fila
+    `| **pnpm** |` cambiada a otra versión, el spec seguía 10 de 10 en verde: el fallo de
+    `2723d87`, el mismo para el que existe el test.
+  - **Cómo lo comprueba ahora.** Lee los `customManagers` de `renovate.json` y aplica cada
+    `matchString` de forma global, como la estrategia `any` de Renovate. Por documento, exige que
+    un `managerFilePatterns` lo cubra, que haya al menos una coincidencia y que todas las versiones
+    capturadas sean la fijada. Exige además que cada expresión case en algún documento vigilado.
+    Con la misma fila alterada sale rojo (`"11.28.0"` esperado, `"11.27.0"` recibido). El
+    comentario del README ya no lleva números de versión.
+  - **Séptimo sitio de Node.** La línea de Stack de `CLAUDE.md` decía `Node 24.20.0+` con `.nvmrc`
+    en 24.21.0, y nadie la vigilaba. Pasa a 24.21.0 y entra en el customManager de Node con una
+    expresión anclada a `## Stack`. Las entradas del 2026-08-30 hablan de seis sitios; ahora son
+    siete.
+  - **Grupo de major de NestJS.** Una `packageRule` nueva mete los major de `@nestjs/**`,
+    `nestjs-cls` y `nestjs-pino` en el grupo «ecosistema NestJS». El preset de monorepo agrupa por
+    repositorio de origen y dejaba fuera jwt, swagger, typeorm, throttler, nestjs-pino y
+    nestjs-cls; con Nest 12 eso fueron cuatro PR en rojo por separado (#40, #41, #43 y #44;
+    backlog #27). Los minor y patch no cambian: los del monorepo siguen agrupados por el preset y
+    el resto llega en PR sueltas. `src/__tests__/renovate.spec.ts` recorre `package.json` y
+    `node_modules` con el criterio «`@nestjs/*` o peers sobre `@nestjs/common`/`core`» y exige que
+    cada dependencia acoplada quede cubierta: 15 rojos antes de la regla, 17 verdes después.
+  - **Sin comprobar en Renovate real.** `renovate.json` valida contra el JSON Schema oficial
+    44.117.0, pero ese esquema acepta claves desconocidas; una mal escrita la caza el spec. Renovate
+    no se ejecutó: la prueba será la próxima PR de Node, que debería tocar también `CLAUDE.md`, y el
+    próximo major de Nest, que debería llegar desde la rama `renovate/major-ecosistema-nestjs`.
 - **Las PR de Renovate que cambian la longitud de una versión ya no rompen el `format:check`**
   (2026-09-28). Los `customManagers` de `renovate.json` reescriben las versiones de Node y pnpm de
   la tabla de requisitos del README sin recalcular el relleno de las celdas, y Prettier exige la

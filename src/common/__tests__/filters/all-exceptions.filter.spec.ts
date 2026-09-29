@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
+  HttpStatus,
   ServiceUnavailableException,
   type ArgumentsHost,
 } from '@nestjs/common';
@@ -66,6 +68,175 @@ describe('AllExceptionsFilter', () => {
           }),
           buildHost(),
         );
+
+        // Assert
+        const [, payload] = reply.mock.calls[0];
+        expect(Object.keys(payload as object).sort()).toEqual(ENVELOPE_KEYS);
+      },
+    );
+  });
+
+  /**
+   * Nest 12 añadió `errorCode` a `HttpException` (`options.errorCode`), y el filtro reconstruye el
+   * cuerpo campo a campo: antes lo descartaba sin avisar. Aquí se fija que viaja como clave
+   * OPCIONAL del sobre, presente solo cuando la excepción lo trae.
+   *
+   * Las dos fuentes no son redundantes, medido contra `@nestjs/common` 12.1.0: con una respuesta
+   * objeto y `options`, `createBody` devuelve el objeto tal cual y el código solo vive en la
+   * propiedad `exception.errorCode`; con el código metido a mano en el cuerpo y sin `options`, la
+   * propiedad no existe y solo lo tiene el cuerpo.
+   */
+  describe('catch() con el errorCode de Nest 12', () => {
+    it.each([
+      [
+        'una HttpException con respuesta string',
+        () =>
+          new HttpException('Stock agotado', HttpStatus.CONFLICT, { errorCode: 'OUT_OF_STOCK' }),
+      ],
+      [
+        'una ConflictException con respuesta string y errorCode en options',
+        () => new ConflictException('Stock agotado', { errorCode: 'OUT_OF_STOCK' }),
+      ],
+    ])('debería propagar el errorCode de %s', (_label, makeException) => {
+      // Arrange
+      const { filter, reply } = buildFilter();
+
+      // Act
+      filter.catch(makeException(), buildHost());
+
+      // Assert
+      const [, payload, status] = reply.mock.calls[0];
+      expect(status).toBe(409);
+      expect(payload).toMatchObject({ message: 'Stock agotado', errorCode: 'OUT_OF_STOCK' });
+    });
+
+    it('debería propagar el errorCode declarado en options cuando la respuesta es un objeto', () => {
+      // Arrange
+      const { filter, reply } = buildFilter();
+      const exception = new BadRequestException(
+        { message: 'Carrito vacío', error: 'Bad Request', statusCode: 400 },
+        { errorCode: 'EMPTY_CART' },
+      );
+
+      // Act
+      filter.catch(exception, buildHost());
+
+      // Assert
+      const [, payload] = reply.mock.calls[0];
+      expect(payload).toMatchObject({ message: 'Carrito vacío', errorCode: 'EMPTY_CART' });
+      // Lo que hace imprescindible leer la propiedad: el cuerpo que Nest guarda no lo lleva.
+      expect(exception.getResponse()).not.toHaveProperty('errorCode');
+    });
+
+    it('debería tomar el errorCode del cuerpo cuando la excepción no lo declara en options', () => {
+      // Arrange
+      const { filter, reply } = buildFilter();
+      const exception = new BadRequestException({
+        message: 'Carrito vacío',
+        error: 'Bad Request',
+        statusCode: 400,
+        errorCode: 'EMPTY_CART',
+      });
+
+      // Act
+      filter.catch(exception, buildHost());
+
+      // Assert
+      const [, payload] = reply.mock.calls[0];
+      expect(payload.errorCode).toBe('EMPTY_CART');
+      expect(exception.errorCode).toBeUndefined();
+    });
+
+    // La propiedad es la vía que Nest documenta (`options.errorCode`); el cuerpo solo es respaldo.
+    it('debería preferir la propiedad de la excepción cuando el cuerpo trae otro errorCode', () => {
+      // Arrange
+      const { filter, reply } = buildFilter();
+      const exception = new ConflictException(
+        { message: 'Stock agotado', error: 'Conflict', statusCode: 409, errorCode: 'FROM_BODY' },
+        { errorCode: 'FROM_OPTIONS' },
+      );
+
+      // Act
+      filter.catch(exception, buildHost());
+
+      // Assert
+      const [, payload] = reply.mock.calls[0];
+      expect(payload.errorCode).toBe('FROM_OPTIONS');
+    });
+
+    it('debería omitir la clave cuando la excepción no trae errorCode', () => {
+      // Arrange
+      const { filter, reply } = buildFilter();
+
+      // Act
+      filter.catch(new BadRequestException('Invalid input'), buildHost());
+
+      // Assert
+      // `Object.keys` cuenta también una clave con valor `undefined`: se exige que la clave no
+      // exista, no que la serialización la borre por casualidad.
+      const [, payload] = reply.mock.calls[0];
+      expect(Object.keys(payload as object).sort()).toEqual(ENVELOPE_KEYS);
+    });
+
+    // Mismo criterio que Nest: `initErrorCode` y `createBody` solo guardan un `errorCode` truthy.
+    // Un número, un objeto o un `null` en el cuerpo no son un código que el contrato publique.
+    it.each([[42], [''], [null], [{ code: 'X' }]])(
+      'debería omitir la clave cuando el errorCode del cuerpo es %p',
+      (errorCode) => {
+        // Arrange
+        const { filter, reply } = buildFilter();
+
+        // Act
+        filter.catch(
+          new BadRequestException({
+            message: 'x',
+            error: 'Bad Request',
+            statusCode: 400,
+            errorCode,
+          }),
+          buildHost(),
+        );
+
+        // Assert
+        const [, payload] = reply.mock.calls[0];
+        expect(Object.keys(payload as object).sort()).toEqual(ENVELOPE_KEYS);
+      },
+    );
+
+    // `hidesErrorDetails` sanea solo los `Error` no-HTTP, que es donde se cuela la topología
+    // interna. Una `HttpException` 5xx explícita ya publica hoy su `message` en producción porque
+    // su autor lo eligió para el cliente, y el `errorCode` es exactamente eso: un identificador
+    // opaco, puesto a propósito. Ocultarlo en producción y no en desarrollo haría que el contrato
+    // dependiera del entorno.
+    it('debería propagar el errorCode de una HttpException 5xx también en un entorno desplegado', () => {
+      // Arrange
+      const { filter, reply } = buildProductionFilter();
+
+      // Act
+      filter.catch(
+        new ServiceUnavailableException('En mantenimiento', { errorCode: 'MAINTENANCE' }),
+        buildHost(),
+      );
+
+      // Assert
+      const [, payload, status] = reply.mock.calls[0];
+      expect(status).toBe(503);
+      expect(payload).toMatchObject({ message: 'En mantenimiento', errorCode: 'MAINTENANCE' });
+    });
+
+    // La fuente es `HttpException` y nada más: un `Error` cualquiera con una propiedad que se
+    // llame igual —un driver, una librería— no ha pasado por la decisión de publicarla.
+    it.each([
+      ['en desarrollo', () => buildFilter()],
+      ['en un entorno desplegado', () => buildProductionFilter()],
+    ])(
+      'debería ignorar un errorCode colgado de un Error que no es HttpException %s',
+      (_label, makeFilter) => {
+        // Arrange
+        const { filter, reply } = makeFilter();
+
+        // Act
+        filter.catch(Object.assign(new Error('boom'), { errorCode: 'E_INTERNAL' }), buildHost());
 
         // Assert
         const [, payload] = reply.mock.calls[0];
@@ -296,9 +467,10 @@ describe('AllExceptionsFilter', () => {
 // Helpers
 
 /**
- * Las claves del sobre de error, ordenadas: todo lo que el filtro emite, nada más. Sale de un
- * literal con `satisfies Required<ErrorPayload>`, así que si alguien vuelve a añadir un campo al
- * tipo el test deja de compilar en vez de quedarse desfasado.
+ * Las claves que el filtro emite en TODA respuesta de error, ordenadas: el sobre sin `errorCode`,
+ * que es la única clave opcional. Sale de un literal con `satisfies`, así que si alguien añade un
+ * campo al tipo el test deja de compilar en vez de quedarse desfasado, y quien lo añade tiene que
+ * decidir aquí si es fijo u opcional.
  */
 const ENVELOPE_KEYS = Object.keys({
   statusCode: 0,
@@ -307,7 +479,7 @@ const ENVELOPE_KEYS = Object.keys({
   timestamp: '',
   path: '',
   requestId: '',
-} satisfies Required<ErrorPayload>).sort();
+} satisfies Required<Omit<ErrorPayload, 'errorCode'>>).sort();
 
 const buildHost = (request: Record<string, unknown> = {}, response: unknown = {}): ArgumentsHost =>
   ({

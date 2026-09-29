@@ -19,7 +19,7 @@ Every project goes through this process. A todo list, a single-function utility,
 
 ## Companion skills (consult, don't invoke)
 
-This project uses **NestJS 11 + TypeScript 6.0**. While brainstorming, **read** the following three skills as design references — do not call them as workflow steps:
+This project uses **NestJS 12 + TypeScript 6.0** (exact versions: the «Stack» line of `CLAUDE.md`). While brainstorming, **read** the following three skills as design references — do not call them as workflow steps:
 
 - **`clean-ddd-hexagonal`** — for architectural decisions: aggregates, ports, layer boundaries. Use its decision trees when proposing approaches that touch domain logic. Anchor concrete code shape in `${CLAUDE_SKILL_DIR}/../clean-ddd-hexagonal/references/NESTJS-MAPPING.md`.
 - **`nestjs-best-practices`** — for NestJS-specific tradeoffs: auth, guards, scopes, validation, caching, queues. Cite rule codes (e.g. `security-auth-jwt`, `arch-feature-modules`) when proposing options.
@@ -123,8 +123,8 @@ digraph brainstorming {
 1. **Goal** — one sentence
 2. **Bounded context & module placement** — which `src/modules/<context>/` folder, or new
 3. **Domain model** — aggregates, entities, value objects, domain events; invariants
-4. **Ports** — driver and driven, with their token names (`UPPER_SNAKE`)
-5. **Use cases (application layer)** — Command/Query DTOs and the handler signatures
+4. **Ports** — driver and driven, each named as the `abstract class` that is also its injection token (`InvoiceRepository`, no `Port` suffix, no `Symbol`)
+5. **Use cases (application layer)** — one per intention: its `…Input` type and its `execute()` signature (no Command/Query classes)
 6. **Adapters** — HTTP, persistence, messaging; mapping responsibilities
 7. **Cross-cutting** — auth, validation, errors, logging, caching, throttling — each tagged with its `nestjs-best-practices` rule code
 8. **Testing strategy** — what each layer is tested with (unit, integration, E2E)

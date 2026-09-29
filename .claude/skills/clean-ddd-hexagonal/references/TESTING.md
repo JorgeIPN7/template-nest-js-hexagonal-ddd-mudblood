@@ -5,13 +5,19 @@
 > code snippets use generic file names like `*.test.ts` and a flat `tests/` tree from the
 > upstream skill. In this repository, the **`javascript-typescript-jest` skill is the source
 > of truth** for:
-> - File naming: `*.spec.ts` (unit, next to SUT) and `*.e2e-spec.ts` (E2E, under `test/`).
+>
+> - File naming and location: `*.spec.ts` (unit) and `*.e2e-spec.ts` (E2E), both inside the
+>   module's own `__tests__/` folder, mirroring its structure 1:1. Only shared helpers live
+>   outside `src/`, in `test/helpers/`.
+> - Running them: always `pnpm test` / `pnpm test:e2e` — NestJS 12 packages are ESM-only and
+>   those scripts start Jest with `--experimental-vm-modules`; a bare `npx jest` fails.
 > - Mocking strategy: no mocks in domain, hand-written port fakes in application,
 >   realistic doubles in infrastructure.
-> - Path aliases: `@/`, `@common/`, `@config/`, `@modules/`, `@shared/`.
+> - Path aliases: `@/`, `@common/`, `@config/`, `@database/`, `@modules/`, `@shared/`, and
+>   `@test/` → `test/`.
 >
-> Read this file for the *patterns* (test pyramid, what each layer tests, why), not for the
-> *file naming or directory layout*. The concrete shape lives in
+> Read this file for the _patterns_ (test pyramid, what each layer tests, why), not for the
+> _file naming or directory layout_. The concrete shape lives in
 > `clean-ddd-hexagonal/references/NESTJS-MAPPING.md` and the `javascript-typescript-jest` skill.
 
 > Sources:

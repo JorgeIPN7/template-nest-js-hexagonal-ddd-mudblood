@@ -2,7 +2,7 @@
 title: Use API Versioning for Breaking Changes
 impact: MEDIUM
 impactDescription: Versioning allows you to evolve APIs without breaking existing clients
-tags: api, versioning, breaking-changes, compatibility
+tags: api, versioning, breaking-changes, compatibility, routing, v12
 ---
 
 ## Use API Versioning for Breaking Changes
@@ -63,9 +63,9 @@ async function bootstrap() {
   await app.listen(3000);
 }
 
-// Version-specific controllers
-@Controller('users')
-@Version('1')
+// Version-specific controllers: the version goes in @Controller's options.
+// @Version() is a MethodDecorator — on a class it does not compile.
+@Controller({ path: 'users', version: '1' })
 export class UsersV1Controller {
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<UserV1Response> {
@@ -79,8 +79,7 @@ export class UsersV1Controller {
   }
 }
 
-@Controller('users')
-@Version('2')
+@Controller({ path: 'users', version: '2' })
 export class UsersV2Controller {
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<UserV2Response> {
@@ -168,8 +167,7 @@ export class UsersController {
 }
 
 // Deprecation strategy - mark old versions as deprecated
-@Controller('users')
-@Version('1')
+@Controller({ path: 'users', version: '1' })
 @UseInterceptors(DeprecationInterceptor)
 export class UsersV1Controller {
   // All V1 routes will include deprecation warning
@@ -188,4 +186,19 @@ export class DeprecationInterceptor implements NestInterceptor {
 }
 ```
 
-Reference: [NestJS Versioning](https://docs.nestjs.com/techniques/versioning)
+**NestJS 12+: catch overlapping routes at bootstrap.** Adding a version, a `VERSION_NEUTRAL` handler or a literal route next to a parametric one makes overlaps easy to introduce, and on Express the first-registered route silently wins: with `@Get(':id')` declared before `@Get('me')`, `GET /users/me` is served by the `:id` handler. NestJS 12 adds two opt-in `NestApplicationOptions` for that:
+
+```typescript
+const app = await NestFactory.create(AppModule, {
+  // duplicate: same method + path + host + version. shadow: two patterns can match
+  // the same request (/users/me vs /users/:id). Each is 'off' | 'warn' | 'error' (default 'off').
+  routeConflictPolicy: { duplicate: 'error', shadow: 'warn' },
+  // Register literal segments before parametric and wildcard ones on order-sensitive
+  // adapters such as Express (default 'declaration' = the order you wrote them).
+  routeResolutionStrategy: 'specificity',
+});
+```
+
+Measured with NestJS 12.1.0: `shadow: 'warn'` logs `Route GET /users/me (…) is shadowed by GET /users/:id (…)`, `'error'` aborts the bootstrap, and `'specificity'` makes `GET /users/me` reach the `me` handler. Two controllers sharing `path: 'users'` with different `version` values are **not** reported as duplicates, so `duplicate: 'error'` is safe to combine with URI versioning.
+
+Reference: [NestJS Versioning](https://docs.nestjs.com/techniques/versioning) · [NestJS 12 migration — route conflict diagnostics](https://docs.nestjs.com/migration-guide)

@@ -19,7 +19,7 @@ Agent({
 
     ## Stack
 
-    NestJS 11, TypeScript 6.0, pnpm, Jest, Supertest. The codebase follows the
+    NestJS 12, TypeScript 6.0, pnpm, Jest, Supertest. The codebase follows the
     hexagonal layout from the `clean-ddd-hexagonal` skill (see
     `clean-ddd-hexagonal/references/NESTJS-MAPPING.md`), the rule codes from
     `nestjs-best-practices`, and the Jest conventions from
@@ -55,8 +55,14 @@ Agent({
     - Layer purity:
       - `domain/` files have ZERO `@nestjs/*`, ORM, HTTP, or `pino` imports.
       - Controllers live under `infrastructure/http/` only.
-      - Adapters implement domain ports; ports are interfaces under `domain/ports/`.
-      - DI is wired by Symbol token, never by class type alone for ports.
+      - Ports are `abstract class`es under `domain/ports/` with only public `abstract`
+        members (no fields, no constructor); adapters `implements` them, never `extends`.
+      - DI is wired by the port class itself (`{ provide: Port, useClass: Adapter }`); a
+        `Symbol` token or an `@Inject` for a port is a finding.
+      - No decorated file (use case, adapter, module) imports a port with `import type` —
+        the reference is erased and DI fails at runtime with lint and typecheck green.
+      - One use case per file under `application/use-cases/`, input `type` in the same file.
+      - `@nestjs/*` imported from the package root only, never a deep subpath.
     - Are aggregates / entities / VOs respecting the boundary defined in the plan?
 
     **NestJS rule codes:**
@@ -64,8 +70,8 @@ Agent({
       - `arch-feature-modules` → feature module isolated, exports curated
       - `arch-single-responsibility` → no god services
       - `di-prefer-constructor-injection` → constructor only, no `@Optional` on required deps
-      - `di-use-interfaces-tokens` → port has Symbol token; module uses `{ provide: TOKEN, useClass: ... }`
-      - `error-use-exception-filters` → no inline `throw new HttpException` inside handlers; domain errors translated by filter
+      - `di-use-interfaces-tokens` → port is an `abstract class`; module uses `{ provide: Port, useClass: Adapter }`
+      - `error-use-exception-filters` → no `HttpException` in `domain/` or `application/`; domain errors translated by the context's filter in `infrastructure/http/`
       - `security-validate-all-input` → DTOs use class-validator; controller uses ValidationPipe
       - `api-use-dto-serialization` → response shape via class-transformer / DTO
       - `api-versioning` → controller version metadata if the project versions APIs

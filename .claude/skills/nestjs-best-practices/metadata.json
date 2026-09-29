@@ -1,17 +1,17 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "organization": "NestJS Best Practices",
   "author": "Kadajett",
   "license": "MIT",
-  "date": "April 2026",
-  "nestVersion": "11.x",
-  "abstract": "Comprehensive best practices and architecture guide for NestJS applications, aligned with NestJS 11 (Express v5 / Fastify v5, Node.js 20+, cache-manager v6 / Keyv, BullMQ WorkerHost, reverse-order termination hooks). Designed for AI agents and LLMs. Contains 45 rules across 10 categories, prioritized by impact from critical (architecture, dependency injection) to incremental (DevOps patterns). Each rule includes a brief explanation, an incorrect example, a correct example, and explicit notes for v11-specific behavior where applicable.",
+  "date": "September 2026",
+  "nestVersion": "12.x",
+  "abstract": "Comprehensive best practices and architecture guide for NestJS applications, aligned with NestJS 12 (ESM-only packages loaded from CommonJS through require(esm) on Node.js 20.19+ / 22.12+, 24 LTS recommended; lifecycle hooks by hierarchy level with allSettled termination; one owner of the shutdown signals; Standard Schema config validation; Terminus HealthIndicatorService; HttpException errorCode; built-in CSRF protection and security headers since 12.1) and with the NestJS 11 changes it keeps (Express v5 / Fastify v5, cache-manager v6+ / Keyv, BullMQ WorkerHost). Designed for AI agents and LLMs. Contains 45 rules across 10 categories, prioritized by impact from critical (architecture, dependency injection) to incremental (DevOps patterns). Each rule includes a brief explanation, an incorrect example, a correct example, and explicit notes for version-specific behavior (v11 changes still in force, v12 changes) where applicable.",
   "references": [
     "[NestJS Documentation](https://docs.nestjs.com)",
-    "[NestJS 11 Migration Guide](https://docs.nestjs.com/migration-guide)",
+    "[NestJS 12 Migration Guide](https://docs.nestjs.com/migration-guide)",
     "[NestJS Lifecycle Events](https://docs.nestjs.com/fundamentals/lifecycle-events)",
     "[NestJS Injection Scopes (incl. Durable Providers)](https://docs.nestjs.com/fundamentals/injection-scopes)",
-    "[NestJS Caching (cache-manager v6 / Keyv)](https://docs.nestjs.com/techniques/caching)",
+    "[NestJS Caching (cache-manager v6+ / Keyv)](https://docs.nestjs.com/techniques/caching)",
     "[NestJS Queues (BullMQ)](https://docs.nestjs.com/techniques/queues)",
     "[NestJS Validation](https://docs.nestjs.com/techniques/validation)",
     "[NestJS Configuration](https://docs.nestjs.com/techniques/configuration)",
@@ -19,8 +19,11 @@
     "[NestJS Versioning](https://docs.nestjs.com/techniques/versioning)",
     "[NestJS Microservices](https://docs.nestjs.com/microservices/basics)",
     "[NestJS Terminus (Health Checks)](https://docs.nestjs.com/recipes/terminus)",
-    "[NestJS Security — Helmet](https://docs.nestjs.com/security/helmet)",
-    "[NestJS Security — CSRF (csrf-csrf)](https://docs.nestjs.com/security/csrf)",
-    "[NestJS Throttler](https://docs.nestjs.com/security/rate-limiting)"
+    "[NestJS Security — Helmet and built-in security headers (12.1+)](https://docs.nestjs.com/security/helmet)",
+    "[NestJS Security — CSRF (built-in since 12.1, csrf-csrf)](https://docs.nestjs.com/security/csrf)",
+    "[NestJS Throttler](https://docs.nestjs.com/security/rate-limiting)",
+    "[Node.js — Loading ECMAScript modules using require()](https://nodejs.org/api/modules.html#loading-ecmascript-modules-using-require)",
+    "[Node.js release schedule](https://github.com/nodejs/release#release-schedule)",
+    "[Jest — ECMAScript Modules](https://jestjs.io/docs/ecmascript-modules)"
   ]
 }

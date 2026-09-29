@@ -2,12 +2,14 @@
 title: Handle Async Errors Properly
 impact: HIGH
 impactDescription: Prevents process crashes from unhandled rejections
-tags: error-handling, async, promises
+tags: error-handling, async, promises, logging, v12
 ---
 
 ## Handle Async Errors Properly
 
 NestJS automatically catches errors from async route handlers, but errors from background tasks, event handlers, and manually created promises can crash your application. Always handle async errors explicitly and use global handlers as a safety net.
+
+> **NestJS 12 note — log the error in one entry.** The built-in logger treats plain objects after the message as structured params of the same entry, takes a trailing **string** as the log *context*, and only `error()` recognises a stack-trace string. So `logger.error('Unhandled Rejection at:', promise, 'reason:', reason)` splits into several records, the promise is printed as `{}`, and a string `reason` lands in the `context` or `stack` field instead of the message. Pass the error inside an object — `logger.error('Unhandled rejection', { reason })` — or its stack as the second argument of `error()`.
 
 **Incorrect (fire-and-forget without error handling):**
 
@@ -80,8 +82,9 @@ export class OrdersService {
     try {
       await this.processOrder(event);
     } catch (error) {
-      this.logger.error('Failed to process order', { event, error });
-      // Don't rethrow - would crash the process
+      this.logger.error('Failed to process order', { event, error }); // v12: one entry, "params"
+      // Handle it here: rethrowing only reaches @nestjs/event-emitter, which by default
+      // (suppressErrors: true) logs it and moves on — the event would be lost silently
       await this.deadLetterQueue.add('order.created', event);
     }
   }
@@ -109,12 +112,14 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const logger = new Logger('Bootstrap');
 
-  process.on('unhandledRejection', (reason, promise) => {
-    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.on('unhandledRejection', (reason) => {
+    // One entry; an Error reason is serialized with its stack, a string one stays a value
+    logger.error('Unhandled rejection', { reason });
   });
 
   process.on('uncaughtException', (error) => {
-    logger.error('Uncaught Exception:', error);
+    // fatal() does not detect a stack string: pass the error inside an object
+    logger.fatal('Uncaught exception', { error });
     process.exit(1);
   });
 

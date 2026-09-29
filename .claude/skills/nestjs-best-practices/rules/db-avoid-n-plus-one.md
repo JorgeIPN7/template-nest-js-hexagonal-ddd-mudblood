@@ -9,6 +9,8 @@ tags: database, n-plus-one, queries, performance
 
 N+1 queries occur when you fetch a list of entities, then make an additional query for each entity to load related data. Use eager loading with `relations`, query builder joins, or DataLoader to batch queries efficiently.
 
+> **TypeORM 1.x note:** `@nestjs/typeorm` 12 accepts `typeorm` `^0.3.0 || ^1.0.0-dev`, and TypeORM 1 removed the string-array forms of `relations` and `select` (`relations: ['items', 'items.product']` no longer compiles). Use the object form shown below — TypeORM 0.3 accepts it too.
+
 **Incorrect (lazy loading in loops causes N+1):**
 
 ```typescript
@@ -50,7 +52,7 @@ export class OrdersService {
     // Single query with JOIN
     return this.orderRepo.find({
       where: { userId },
-      relations: ['items', 'items.product'],
+      relations: { items: { product: true } },
     });
   }
 }
@@ -84,7 +86,7 @@ export class UsersService {
 async getOrderSummaries(userId: string): Promise<OrderSummary[]> {
   return this.orderRepo.find({
     where: { userId },
-    relations: ['items'],
+    relations: { items: true },
     select: {
       id: true,
       total: true,

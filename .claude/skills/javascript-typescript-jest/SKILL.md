@@ -1,10 +1,10 @@
 ---
 name: javascript-typescript-jest
-description: Best practices for writing TypeScript tests with Jest in this NestJS 11 codebase. Use when writing, reviewing, or refactoring any *.spec.ts or *.e2e-spec.ts file. Covers test naming, AAA structure, mocking strategy by hexagonal layer, property-based testing, async patterns, and Supertest E2E. Source: github/awesome-copilot, adapted to this repo's conventions.
+description: Best practices for writing TypeScript tests with Jest in this NestJS 12 codebase. Use when writing, reviewing, or refactoring any *.spec.ts or *.e2e-spec.ts file. Covers test naming, AAA structure, mocking strategy by hexagonal layer, property-based testing, async patterns, and Supertest E2E. Source: github/awesome-copilot, adapted to this repo's conventions.
 allowed-tools: Read, Grep, Glob
 ---
 
-# Jest Testing for NestJS 11 + TS 6.0
+# Jest Testing for NestJS 12 + TS 6.0
 
 Conventions for writing Jest tests in this repository. Adapted from the upstream `javascript-typescript-jest` skill (github/awesome-copilot) to match this project's `jest.config.mjs`, hexagonal layout, and the rest of the workflow skills.
 
@@ -12,18 +12,21 @@ Conventions for writing Jest tests in this repository. Adapted from the upstream
 
 These are the rules the test runner enforces — match them or your tests won't be discovered:
 
-| Concern            | This repo                                                                          |
-| ------------------ | ---------------------------------------------------------------------------------- |
-| Unit test regex    | `*.spec.ts` (anywhere under `src/`)                                                |
-| E2E test regex     | `*.e2e-spec.ts` (also under `src/`, next to the module it exercises)               |
-| Test location      | `__tests__/` folder at the root of each module, mirroring the module's structure   |
-| Transform          | `@swc/jest` (decorators + decorator metadata enabled)                              |
-| Auto reset         | `clearMocks: true`, `restoreMocks: true` (no need to reset manually)               |
-| Coverage threshold | branches 50, statements/lines 85, functions 88                                     |
-| Path aliases       | `@/` → `src/`, `@common/`, `@config/`, `@modules/`, `@shared/`, `@test/` → `test/` |
-| Test runner        | `pnpm test <file>` (unit), `pnpm test:e2e` (E2E)                                   |
+| Concern            | This repo                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| Unit test regex    | `*.spec.ts` (anywhere under `src/`)                                                              |
+| E2E test regex     | `*.e2e-spec.ts` (also under `src/`, next to the module it exercises)                             |
+| Test location      | `__tests__/` folder at the root of each module, mirroring the module's structure                 |
+| Transform          | `@swc/jest` (decorators + decorator metadata enabled)                                            |
+| Auto reset         | `clearMocks: true`, `restoreMocks: true` (no need to reset manually)                             |
+| Coverage threshold | branches 50, statements/lines 85, functions 88                                                   |
+| Timeouts           | 15 s unit (`jest.config.mjs`), 30 s E2E (`test/jest-e2e.config.mjs`, one worker)                 |
+| Path aliases       | `@/` → `src/`, `@common/`, `@config/`, `@database/`, `@modules/`, `@shared/`, `@test/` → `test/` |
+| Test runner        | `pnpm test <file>` (unit), `pnpm test:e2e` (E2E) — never a bare `jest` / `npx jest`              |
 
 **Naming consequence:** never name a test file `*.test.ts`. The runner won't pick it up. Always `*.spec.ts` or `*.e2e-spec.ts`.
+
+**Runner consequence (NestJS 12):** every `@nestjs/*` 12.x package is ESM-only and this repo stays CommonJS. Jest can only load those packages with Node's `--experimental-vm-modules`, so the `test*` scripts in `package.json` run `node --experimental-vm-modules node_modules/jest/bin/jest.js` (the rationale lives in `jest.config.mjs`). A bare `npx jest` dies with `Must use import to load ES Module: …/@nestjs/…`. The official migration guide adds the Node floor for Jest itself: the ESM-only v12 packages load only on Node 24.9+ (https://docs.nestjs.com/migration-guide) — the repo's Node is pinned in `.nvmrc`. Pass paths and Jest flags straight after the script, **without** `--`: `pnpm test src/modules/users --verbose`. With `pnpm test -- …`, pnpm 11 forwards a literal `--` and Jest reads every flag after it as one more path pattern (measured: `pnpm test -- src/shared --listTests` runs the suites instead of listing them).
 
 **Why the branches threshold is lower:** SWC instruments the code it generates for `emitDecoratorMetadata` and property defaults, and those synthetic branches are unreachable from a test. Files without decorators (`src/config/**`) reach 88-100 % branches; decorator-heavy files plateau near 50 %. Don't write filler tests chasing that number.
 
@@ -34,28 +37,34 @@ These are the rules the test runner enforces — match them or your tests won't 
 ```
 src/modules/billing/
 ├── domain/
-│   ├── invoice.entity.ts
+│   ├── entities/invoice.entity.ts
+│   ├── value-objects/invoice-amount.vo.ts
 │   └── ports/invoice.repository.ts
-├── application/handlers/
-│   └── issue-invoice.handler.ts
-├── infrastructure/http/
-│   └── invoices.controller.ts
+├── application/use-cases/
+│   └── issue-invoice.use-case.ts
+├── infrastructure/
+│   ├── http/invoices.controller.ts
+│   └── persistence/invoice.typeorm.repository.ts
 ├── billing.module.ts
 └── __tests__/                          ← mirrors the module above
     ├── domain/
-    │   └── invoice.entity.spec.ts
-    ├── application/handlers/
-    │   └── issue-invoice.handler.spec.ts
-    ├── infrastructure/http/
-    │   └── invoices.controller.spec.ts
-    ├── billing.module.spec.ts
+    │   ├── entities/invoice.entity.spec.ts
+    │   └── value-objects/invoice-amount.vo.spec.ts
+    ├── application/use-cases/
+    │   └── issue-invoice.use-case.spec.ts
+    ├── infrastructure/
+    │   ├── http/invoices.controller.spec.ts
+    │   └── persistence/invoice.typeorm.repository.e2e-spec.ts   ← real PostgreSQL
+    ├── helpers/                        ← module-wide fakes, factories, arbitraries
+    │   └── in-memory-invoice.repository.ts
     └── billing.e2e-spec.ts             ← E2E ships with its module too
 ```
 
 - **One test file per code file (1:1)**, same base name: `invoice.entity.ts` ↔ `invoice.entity.spec.ts`.
-- **Import the SUT with a relative path** (`../../domain/invoice.entity`), never an alias — a relative path survives the module being moved, `@modules/billing/...` does not.
-- **Shared helpers stay in `test/helpers/`** and are imported via the `@test/` alias. That folder is the only test code outside `src/`.
-- E2E specs use `test/helpers/create-test-app.ts` to boot the real `AppModule`.
+- **Import the SUT with a relative path** (`../../../domain/entities/invoice.entity`), never an alias — a relative path survives the module being moved, `@modules/billing/...` does not.
+- **Module-wide helpers** (port fakes, factories, `arbitraries.ts`) live in `<module>/__tests__/helpers/`; **cross-cutting ones** in `test/helpers/`, imported via the `@test/` alias. `test/helpers/` is the only test code outside `src/`. Never copy a builder into several specs.
+- **Module wiring is proven by the E2E suite.** `*.module.ts` is excluded from unit coverage and measured by `test/jest-e2e.config.mjs`: compiling a context module with persistence opens real connections, so `<context>.e2e-spec.ts` is what shows the wiring works.
+- E2E specs use `createTestApp()` from `@test/helpers/create-test-app` to boot the real `AppModule` with the production globals.
 
 ## Test Structure
 
@@ -112,7 +121,7 @@ When Act and Assert are a single statement (e.g., `expect(fn).toThrow()`), the c
 - **One precise assertion per `it` when the assertion is the SUT's contract.** Multiple assertions are fine when they describe a single observable outcome.
 - **Drop-and-still-passes check.** Before approving a test, mentally remove the production line that's supposed to make it pass. If the test still passes, it wasn't testing what it claimed. Fix the test.
 - **No hardcoded values in unused fields.** Anti-pattern: `const user = { name: 'Paul', birthday: '2010-02-03' }` when only `birthday` matters. Either drop the field or use an arbitrary (`g(fc.string)` for property-based, see PBT section).
-- **File-local helpers go at the bottom** of the spec, below all `describe` blocks, under a `// Helpers` comment line. Reusable helpers shared across files belong in `test/helpers/` or a dedicated module.
+- **File-local helpers go at the bottom** of the spec, below all `describe` blocks, under a `// Helpers` comment line. Reusable helpers shared across files belong in `<module>/__tests__/helpers/` (module-wide) or `test/helpers/` (cross-cutting).
 
 ```ts
 describe('AllExceptionsFilter', () => {
@@ -139,22 +148,26 @@ This is the part that diverges most from generic Jest advice. Match the layer or
 - **Why:** if the domain needs a mock, the test is wrong or the design leaked infra into domain.
 
 ```ts
-// src/modules/billing/__tests__/domain/invoice.entity.spec.ts
-import { Invoice } from '../../domain/invoice.entity';
-import { InvoiceId } from '../../domain/invoice-id.vo';
-import { Money } from '../../domain/money.vo';
+// src/modules/billing/__tests__/domain/entities/invoice.entity.spec.ts
+import { Invoice } from '../../../domain/entities/invoice.entity';
+import { InvoiceIssued } from '../../../domain/events/invoice-issued.event';
+import { InvoiceAmount } from '../../../domain/value-objects/invoice-amount.vo';
+import { InvoiceId } from '../../../domain/value-objects/invoice-id.vo';
 
 describe('Invoice', () => {
   describe('issue()', () => {
-    it('debería emitir un evento al emitir una factura en borrador', () => {
+    it('debería registrar InvoiceIssued al emitir una factura en borrador', () => {
       // Arrange
-      const invoice = Invoice.draft(InvoiceId.from('inv_1'), Money.of(100, 'USD'));
+      const invoice = Invoice.draft({
+        id: InvoiceId.generate(),
+        amount: InvoiceAmount.from(149_900),
+      });
 
       // Act
       invoice.issue(new Date('2026-01-01T00:00:00Z'));
 
       // Assert
-      expect(invoice.pullEvents()).toHaveLength(1);
+      expect(invoice.pullEvents()).toEqual([expect.any(InvoiceIssued)]);
     });
   });
 });
@@ -162,47 +175,67 @@ describe('Invoice', () => {
 
 ### Application layer (`src/modules/<context>/application/`)
 
-- **Hand-written port fakes**, not `jest.mock`. The fake is a class implementing the port interface, often with an in-memory backing.
-- Construct the handler with `new IssueInvoiceHandler(fakeRepo)`. Don't go through `Test.createTestingModule` for unit tests.
+- **Hand-written port fakes**, not `jest.mock`. The fake is a class that `implements` the port's `abstract class`, often with an in-memory backing, and lives in `<module>/__tests__/helpers/` so every spec shares one (see `users/__tests__/helpers/in-memory-user.repository.ts`).
+- The fake has no decorators, so it imports the port with `import type` — the reverse of production files, where a decorated class must import the port as a value (`clean-ddd-hexagonal/references/NESTJS-MAPPING.md` §2).
+- Construct the use case directly: `new IssueInvoiceUseCase(fakeRepo)`. Don't go through `Test.createTestingModule` for unit tests.
 - `jest.spyOn` is acceptable on the fake's methods to assert calls; `jest.mock` against module paths is not.
 
 ```ts
-// src/modules/billing/__tests__/application/handlers/issue-invoice.handler.spec.ts
-import { IssueInvoiceHandler } from '../../../application/handlers/issue-invoice.handler';
-import { IssueInvoiceCommand } from '../../../application/commands/issue-invoice.command';
-import type { InvoiceRepository } from '../../../domain/ports/invoice.repository';
-import { Invoice } from '../../../domain/invoice.entity';
-import { InvoiceId } from '../../../domain/invoice-id.vo';
-import { Money } from '../../../domain/money.vo';
+// src/modules/billing/__tests__/application/use-cases/issue-invoice.use-case.spec.ts
+import { IssueInvoiceUseCase } from '../../../application/use-cases/issue-invoice.use-case';
+import { Invoice } from '../../../domain/entities/invoice.entity';
+import { InvoiceAmount } from '../../../domain/value-objects/invoice-amount.vo';
+import { InvoiceId } from '../../../domain/value-objects/invoice-id.vo';
+import { InMemoryInvoiceRepository } from '../../helpers/in-memory-invoice.repository';
 
-describe('IssueInvoiceHandler', () => {
+describe('IssueInvoiceUseCase', () => {
   describe('execute()', () => {
-    it('debería emitir una factura en borrador que ya existe', async () => {
+    it('debería emitir una factura en borrador y entregar su evento al repositorio', async () => {
       // Arrange
-      const repo = new InMemoryInvoiceRepo();
-      const id = InvoiceId.from('inv_1');
-      await repo.save(Invoice.draft(id, Money.of(100, 'USD')));
-      const handler = new IssueInvoiceHandler(repo);
+      const id = InvoiceId.generate();
+      const repository = new InMemoryInvoiceRepository([
+        Invoice.draft({ id, amount: InvoiceAmount.from(149_900) }),
+      ]);
+      const useCase = new IssueInvoiceUseCase(repository);
 
       // Act
-      await handler.execute(new IssueInvoiceCommand('inv_1', new Date('2026-01-01')));
+      await useCase.execute({ invoiceId: id.value });
 
       // Assert
-      const reloaded = await repo.findById(id);
-      expect(reloaded).not.toBeNull();
+      expect(repository.savedEvents()).toHaveLength(1);
     });
   });
 });
+```
 
-// Helpers
+```ts
+// src/modules/billing/__tests__/helpers/in-memory-invoice.repository.ts
+import type { Invoice } from '../../domain/entities/invoice.entity';
+import type { InvoiceIssued } from '../../domain/events/invoice-issued.event';
+import type { InvoiceRepository } from '../../domain/ports/invoice.repository';
+import type { InvoiceId } from '../../domain/value-objects/invoice-id.vo';
 
-class InMemoryInvoiceRepo implements InvoiceRepository {
-  private store = new Map<string, Invoice>();
-  async findById(id: InvoiceId) {
-    return this.store.get(id.value) ?? null;
+export class InMemoryInvoiceRepository implements InvoiceRepository {
+  private readonly store = new Map<string, Invoice>();
+  private readonly events: InvoiceIssued[] = [];
+
+  constructor(seed: Invoice[] = []) {
+    seed.forEach((invoice) => this.store.set(invoice.id.value, invoice));
   }
-  async save(invoice: Invoice) {
+
+  findById(id: InvoiceId): Promise<Invoice | null> {
+    return Promise.resolve(this.store.get(id.value) ?? null);
+  }
+
+  save(invoice: Invoice, events: readonly InvoiceIssued[]): Promise<void> {
     this.store.set(invoice.id.value, invoice);
+    this.events.push(...events);
+    return Promise.resolve();
+  }
+
+  /** Solo para aserciones del test, no forma parte del puerto. */
+  savedEvents(): readonly InvoiceIssued[] {
+    return this.events;
   }
 }
 ```
@@ -211,8 +244,8 @@ class InMemoryInvoiceRepo implements InvoiceRepository {
 
 This is the layer where the upstream skill's advice fully applies — `jest.mock`, `jest.spyOn`, and `Test.createTestingModule` are all on the table.
 
-- **Controllers (`infrastructure/http/`):** unit tests with `Test.createTestingModule({ controllers, providers })`, providing a fake handler. E2E tests with Supertest in `test/`.
-- **Repositories (`infrastructure/persistence/`):** integration tests against a real test database (or a documented in-memory equivalent like sqlite). Don't `jest.mock('typeorm')` — the test loses its value.
+- **Controllers (`infrastructure/http/`):** the unit spec builds the controller directly with its real use cases over the in-memory fakes (`new UsersController(new FindUserByIdUseCase(repository), …)` in `users.controller.spec.ts`) and covers only the transport ↔ DTO translation; the happy path over HTTP belongs to the module's `<context>.e2e-spec.ts` (Supertest, inside the module's `__tests__/`). `Test.createTestingModule` is for when the DI wiring itself is under test.
+- **Repositories (`infrastructure/persistence/`):** `*.typeorm.repository.e2e-spec.ts` against the real PostgreSQL test database (the one `test/setup-env.ts` forces, never the dev one), run by `pnpm test:e2e`. Don't `jest.mock('typeorm')` — the test loses its value — and don't swap in sqlite: behaviour such as the `23505` unique-violation translation is PostgreSQL's.
 - **HTTP gateways:** `nock` or `msw`-node for outbound HTTP; `jest.mock` for the SDK module is acceptable when no other option exists.
 - **Messaging adapters:** test against a test broker if available; otherwise hand-written fakes for the publisher.
 
@@ -243,37 +276,55 @@ When mocks are appropriate (i.e. infrastructure or cross-cutting), the operation
 ## Testing async code
 
 - Use `async`/`await` in `it` callbacks. Always return a promise or await it — never fire-and-forget.
-- For rejection assertions: `await expect(handler.execute(cmd)).rejects.toThrow(InvoiceNotFoundError)`.
+- For rejection assertions: `await expect(useCase.execute({ invoiceId })).rejects.toThrow(InvoiceNotFoundError)`.
 - For resolution assertions: `await expect(repo.findById(id)).resolves.toBeNull()`.
 - Set timeouts only when justified: `jest.setTimeout(20_000)` for genuinely slow integration tests. Default is 15 s (unit) / 30 s (E2E).
 
 ## E2E with Supertest
 
-- Use `test/helpers/create-test-app.ts` (already in this repo) to bootstrap a test app.
+- Use `createTestApp()` from `@test/helpers/create-test-app` (already in this repo): it boots the real `AppModule` with the same globals and creation options as production and returns `{ app, prefix, appConfig, corsConfig, docsPath }`.
 - File name: `src/modules/<context>/__tests__/<context>.e2e-spec.ts` — the E2E ships inside the module it exercises.
+- Build URLs from `prefix` (`/api/v1` today), never a hardcoded path.
+- The suite runs against the test database that `test/setup-env.ts` forces, with one worker; a `TRUNCATE` in `beforeEach` is what makes it repeatable. On a fresh clone, run `pnpm db:migrate:test` once first.
+- Protected endpoints need a token: register and log in **once** in `beforeAll`, as `orders.e2e-spec.ts` does with its `registerAndLogin` helper — the auth endpoints are throttled.
 - Skeleton:
 
 ```ts
 // src/modules/billing/__tests__/billing.e2e-spec.ts
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { createTestApp } from './helpers/create-test-app';
+import type { App } from 'supertest/types';
+import { DataSource } from 'typeorm';
 
-describe('POST /v1/invoices/:id/issue (e2e)', () => {
-  let app: INestApplication;
+import { createTestApp } from '@test/helpers/create-test-app';
+
+describe('Billing (e2e)', () => {
+  let app: INestApplication<App>;
+  let prefix: string;
 
   beforeAll(async () => {
-    app = await createTestApp();
+    ({ app, prefix } = await createTestApp());
   });
+
+  beforeEach(async () => {
+    await app.get(DataSource).query('TRUNCATE TABLE invoices, billing_outbox');
+  });
+
   afterAll(async () => {
     await app.close();
   });
 
-  it('returns 204 when issuing a draft invoice', async () => {
-    await request(app.getHttpServer())
-      .post('/v1/invoices/inv_1/issue')
-      .send({ issuedAt: '2026-01-01T00:00:00Z' })
-      .expect(204);
+  describe('POST /invoices/:id/issue', () => {
+    it('debería responder 401 sin token', async () => {
+      // Arrange
+      const path = `${prefix}/invoices/9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012/issue`;
+
+      // Act
+      const response = await request(app.getHttpServer()).post(path);
+
+      // Assert
+      expect(response.status).toBe(401);
+    });
   });
 });
 ```
@@ -315,7 +366,7 @@ Property-based tests express **invariants** instead of examples: "for any `n`, `
 | Layer              | Value         | Typical targets                                                                                                                                                          |
 | ------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Domain**         | High          | Invariants of value objects (`Money` non-negative), entity state machines (`Invoice` only issues from draft), pure functions (`sort` idempotency, `Period` containment). |
-| **Application**    | Medium        | Handler idempotency (`execute` twice = once), "no event order produces an invalid aggregate state", race-prone handlers via `fc.scheduler()`.                            |
+| **Application**    | Medium        | Use-case idempotency (`execute` twice = once), "no event order produces an invalid aggregate state", race-prone use cases via `fc.scheduler()`.                          |
 | **Infrastructure** | Rare but real | Mappers (DTO ↔ entity round-trip), parsers, serializers. **Skip** for repos and HTTP clients — real integration tests are more valuable there.                           |
 
 ### Writing a property in `@fast-check/jest`

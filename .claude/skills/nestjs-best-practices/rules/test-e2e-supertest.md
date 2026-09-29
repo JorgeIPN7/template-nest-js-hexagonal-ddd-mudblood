@@ -2,12 +2,14 @@
 title: Use Supertest for E2E Testing
 impact: HIGH
 impactDescription: Validates the full request/response cycle
-tags: testing, e2e, supertest, integration
+tags: testing, e2e, supertest, integration, v12
 ---
 
 ## Use Supertest for E2E Testing
 
 End-to-end tests use Supertest to make real HTTP requests against your NestJS application. They test the full stack including middleware, guards, pipes, and interceptors. E2E tests catch integration issues that unit tests miss.
+
+> **NestJS 12 note:** E2E suites load the whole `@nestjs/*` 12.x graph, which ships as ESM only — so they need the same runner setup as unit tests: on Jest in a CommonJS project, Node 24.9+ and `node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./test/jest-e2e.json` (the official v12 template's `test:e2e` script); ESM projects use Vitest. Import Supertest with a **default import**, as both v12 templates do: `import * as request from 'supertest'` yields a namespace object, not the function — natively in ESM and under `esModuleInterop` in CommonJS (the templates enable it) — and the first call throws `TypeError: request is not a function`.
 
 **Incorrect (no proper E2E setup or teardown):**
 
@@ -42,7 +44,7 @@ describe('Users API', () => {
 // Proper E2E test setup
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest'; // default import — `import * as` is not callable
 import { AppModule } from '../src/app.module';
 
 describe('UsersController (e2e)', () => {

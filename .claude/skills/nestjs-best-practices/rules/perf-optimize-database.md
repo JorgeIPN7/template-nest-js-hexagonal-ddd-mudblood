@@ -9,6 +9,8 @@ tags: performance, database, queries, optimization
 
 Select only needed columns, use proper indexes, avoid over-fetching relations, and consider query performance when designing your data access. Most API slowness traces back to inefficient database queries.
 
+> **TypeORM 1.x note:** `@nestjs/typeorm` 12 accepts `typeorm` `^0.3.0 || ^1.0.0-dev`, and TypeORM 1 removed the string-array forms of `select` and `relations` (`select: ['email']` no longer compiles). Use the object form shown below — TypeORM 0.3 accepts it too.
+
 **Incorrect (over-fetching data and missing indexes):**
 
 ```typescript
@@ -24,7 +26,7 @@ export class UsersService {
   async getUserSummary(id: string): Promise<UserSummary> {
     const user = await this.repo.findOne({
       where: { id },
-      relations: ['posts', 'posts.comments', 'posts.comments.author', 'followers'],
+      relations: { posts: { comments: { author: true } }, followers: true },
     });
     // Over-fetches massive relation tree
     return { name: user.name, postCount: user.posts.length };
@@ -50,7 +52,7 @@ export class Order {
 export class UsersService {
   async findAllEmails(): Promise<string[]> {
     const users = await this.repo.find({
-      select: ['email'], // Only fetch email column
+      select: { email: true }, // Only fetch email column
     });
     return users.map((u) => u.email);
   }
@@ -71,7 +73,7 @@ export class UsersService {
   async getFullProfile(id: string): Promise<User> {
     return this.repo.findOne({
       where: { id },
-      relations: ['posts'], // Only immediate relation
+      relations: { posts: true }, // Only immediate relation
       select: {
         id: true,
         name: true,

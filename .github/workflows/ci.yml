@@ -187,24 +187,61 @@ jobs:
       # aparecería al desplegar. Este paso arranca `dist/` de verdad y pide las dos sondas.
       # Apunta a la base de tests porque es la que tiene el esquema migrado.
       #
-      # El apagado no se asierta aquí: con SIGTERM el proceso sale con 143, porque el listener
-      # de `enableShutdownHooks()` vuelve a lanzar la señal al terminar, y eso ya era así en
-      # Nest 11 (medido). El `|| true` del `wait` es por eso, no para tapar fallos de arranque:
-      # esos rompen antes, en los `curl -f`.
+      # `DOCS_ENABLED: 'true'` porque la documentación es la otra mitad del grafo que solo este
+      # paso carga con el loader de Node: con el default `false`, ni `SwaggerModule.createDocument`
+      # ni `apiReference()` de `@scalar/nestjs-api-reference` —paquete `type: module`— llegaban a
+      # ejecutarse, y un bump que rompiera `/api/docs` solo fuera de Jest pasaba en verde. Se piden
+      # las tres piezas: el documento JSON, el HTML de Scalar y el bundle con hash que ese HTML
+      # referencia, con su `Content-Type`: montado en mal orden, el catch-all de Scalar contesta
+      # 200 con HTML donde el navegador espera JavaScript.
+      #
+      # El apagado SÍ se asierta: es el test de regresión del handler de señales de `main.ts`.
+      # SIGTERM tiene que salir con 143 —lo que ve el orquestador, y lo que `useProcessExit` habría
+      # convertido en 0— y dejar «Graceful shutdown completed» en el log. Con el listener de
+      # `enableShutdownHooks()` el código también era 143, pero esa línea no aparecía nunca: el
+      # proceso moría por la señal relanzada, sin `'exit'`, que es donde pino vacía su buffer. El
+      # `wait` va con `|| code=$?` porque el shell del paso es `bash -e` y un 143 lo abortaría antes
+      # de llegar a la aserción.
       - name: Smoke de arranque (dist con require(esm))
         env:
           DB_DATABASE: nest_base_template_test
+          DOCS_ENABLED: 'true'
+          PORT: '8888'
         run: |
           node dist/src/main > /tmp/smoke.log 2>&1 &
           PID=$!
+          fail() {
+            echo "::error::$1"
+            cat /tmp/smoke.log
+            kill -KILL "$PID" 2>/dev/null || true
+            exit 1
+          }
+          BASE="http://localhost:$PORT/api"
           for i in $(seq 1 30); do
-            curl -sf -o /dev/null http://localhost:8888/api/v1/health/liveness && break
+            curl -sf -o /dev/null "$BASE/v1/health/liveness" && break
+            kill -0 "$PID" 2>/dev/null || fail "el proceso murió durante el arranque"
             sleep 1
           done
-          curl -sf http://localhost:8888/api/v1/health/liveness || { cat /tmp/smoke.log; exit 1; }
-          curl -sf http://localhost:8888/api/v1/health/readiness || { cat /tmp/smoke.log; exit 1; }
+          curl -sf -o /dev/null "$BASE/v1/health/liveness" || fail "liveness no respondió"
+          curl -sf -o /dev/null "$BASE/v1/health/readiness" || fail "readiness no respondió"
+          curl -sf -o /tmp/openapi.json "$BASE/docs/json" || fail "el documento OpenAPI no respondió"
+          node -e 'const d = require("/tmp/openapi.json"); process.exit(d.openapi && Object.keys(d.paths ?? {}).length ? 0 : 1)' \
+            || fail "el documento OpenAPI no trae openapi ni paths"
+          curl -sf -o /tmp/docs.html "$BASE/docs" || fail "la referencia de Scalar no respondió"
+          BUNDLE=$(sed -nE 's|.*src="([^"]*/scalar\.[0-9a-f]+\.js)".*|\1|p' /tmp/docs.html | head -n1)
+          [ -n "$BUNDLE" ] || fail "el HTML de Scalar no referencia el bundle con hash"
+          TYPE=$(curl -sf -o /dev/null -w '%{content_type}' "http://localhost:$PORT$BUNDLE") \
+            || fail "el bundle $BUNDLE no se sirve"
+          case "$TYPE" in
+            *javascript*) ;;
+            *) fail "el bundle $BUNDLE se sirve como '$TYPE', no como JavaScript" ;;
+          esac
           kill -TERM "$PID"
-          wait "$PID" || true
+          code=0
+          wait "$PID" || code=$?
+          [ "$code" -eq 143 ] || fail "SIGTERM salió con código $code; se esperaba 143"
+          grep -q 'Graceful shutdown completed' /tmp/smoke.log \
+            || fail "falta «Graceful shutdown completed» en el log: o el apagado no pasó por el handler de main.ts o pino no se vació al salir"
 
       # Nadie construía la imagen, así que un fallo del stage de producción —como el hook
       # `prepare: husky` corriendo bajo `--prod`— solo aparecía al desplegar.

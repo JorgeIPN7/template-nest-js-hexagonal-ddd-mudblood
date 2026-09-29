@@ -2,14 +2,14 @@
 title: Use Guards for Authentication and Authorization
 impact: HIGH
 impactDescription: Enforces access control before handlers execute
-tags: security, guards, authentication, authorization, v11
+tags: security, guards, authentication, authorization, v12
 ---
 
 ## Use Guards for Authentication and Authorization
 
 Guards determine whether a request should be handled based on authentication state, roles, permissions, or other conditions. They run after middleware but before pipes and interceptors, making them ideal for access control. Use guards instead of manual checks in controllers.
 
-> **NestJS 11 type-inference note:** `Reflector.getAllAndOverride<T>(...)` now returns `T | undefined` (was `T`), and `getAllAndMerge<T>(...)` returns an object instead of an array when there is exactly one entry of object type. Always handle the `undefined` case (treat "no metadata" as a deliberate fallback like `false`/`null`) — `if (isPublic)` already does this safely, but `if (roles.length === 0)` will crash if you forget. Prefer the typed key form `reflector.getAllAndOverride(IS_PUBLIC_KEY, [...])` where `IS_PUBLIC_KEY` is a `Reflector.createDecorator<boolean>()` so the return type is inferred for you.
+> **Reflector typing note (checked against NestJS 12.1.0):** `reflector.getAllAndOverride()` returns `undefined` at runtime when neither the handler nor the class carries the metadata — but neither overload puts `undefined` in its return type (`getAllAndOverride<TResult>(key, targets): TResult`; the `Reflector.createDecorator` form returns the decorator's value type). The compiler will not warn you: write the `undefined` into the type argument yourself (`getAllAndOverride<Role[] | undefined>(...)`) and treat "no metadata" as a deliberate fallback. `if (isPublic)` already does this safely, but `if (roles.length === 0)` throws a `TypeError` on every route without `@Roles()`. `getAllAndMerge()` returns the object itself, not a one-element array, when exactly one target carries a non-array object. Prefer the typed decorator form — `const Roles = Reflector.createDecorator<Role[]>()` and `reflector.getAllAndOverride(Roles, [...])` — so the key and the value type cannot drift apart; the `undefined` check is still yours to write.
 
 **Incorrect (manual auth checks in every handler):**
 
@@ -54,7 +54,7 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Check for @Public() decorator
-    const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [
+    const isPublic = this.reflector.getAllAndOverride<boolean | undefined>('isPublic', [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -87,7 +87,8 @@ export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<Role[]>('roles', [
+    // `| undefined` is not in the declared return type — without it the check below looks redundant
+    const requiredRoles = this.reflector.getAllAndOverride<Role[] | undefined>('roles', [
       context.getHandler(),
       context.getClass(),
     ]);

@@ -27,8 +27,8 @@ const isUniqueViolation = (error: unknown): boolean =>
  * del módulo que conoce el `Repository` del ORM; todo lo que sale de aquí ya es dominio.
  *
  * `implements UserRepository`, NUNCA `extends`: la conformidad con el puerto la garantiza
- * el `implements` y solo él — `ClassProvider.provide` está tipado como `any`, así que el
- * `useClass` del module NO comprueba nada. `UserRepository` es un puerto y por eso se
+ * el `implements` y solo él — `ClassProvider` no relaciona `provide` con `useClass` (`useClass`
+ * es `Type<any>`), así que el `useClass` del module NO comprueba nada. `UserRepository` es un puerto y por eso se
  * importa como VALOR aunque aquí solo aparezca en el `implements` (ver el bloque
  * `no-restricted-syntax` de `eslint.config.mjs`).
  */

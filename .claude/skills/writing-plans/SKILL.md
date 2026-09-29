@@ -13,7 +13,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
-**Stack assumed:** NestJS 11, TypeScript 6.0, Node 22, pnpm 11, SWC, Jest, Supertest, Pino, Zod, class-validator. Plans must use this stack — no Python, no other test runners.
+**Stack assumed:** NestJS 12, TypeScript 6.0, Node 24, pnpm 11, SWC, Jest, Supertest, Pino, Zod, class-validator, TypeORM + PostgreSQL. Plans must use this stack — no Python, no other test runners. Exact versions live in the «Stack» line of `CLAUDE.md`, `package.json`, `.nvmrc` and `packageManager`; cite those instead of copying a version that the next bump will make stale. NestJS 12 packages are ESM-only and the repo stays CommonJS, so every test command in a plan goes through `pnpm test` / `pnpm test:e2e` (they start Jest with `--experimental-vm-modules`), never a bare `jest`.
 
 **Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
 
@@ -37,7 +37,8 @@ Before defining tasks, map out which files will be created or modified and what 
 
 - Map every file to its **layer** (`domain` / `application` / `infrastructure` / `bootstrap` / `common`) and check the dependency rule: outer → inner only. No `domain/` file imports `@nestjs/*`, `typeorm`, `prisma`, `axios`, `class-validator` decorators, or `pino`.
 - Each file has one responsibility (a single aggregate, a single use case, a single adapter, etc.).
-- For each port: declare the **token name** (e.g. `INVOICE_REPOSITORY`) and the file containing the interface.
+- For each port: declare its **`abstract class` name** (e.g. `InvoiceRepository`, no `Port` suffix) and its file under `domain/ports/`. The class is also its injection token — there is no `Symbol`, no `SCREAMING_SNAKE_CASE` constant and no `@Inject` (`NESTJS-MAPPING.md` §2).
+- For each use case: one file under `application/use-cases/` holding the class **and** its `…Input` type. No `commands/`, `queries/` or `handlers/` folders.
 - Files that change together live together. Split by responsibility, not by technical layer alone.
 - In existing codebases, follow established patterns from `src/modules/`. If a file you're modifying has grown unwieldy, including a split in the plan is reasonable.
 
@@ -66,7 +67,7 @@ tabla resultante vive en la tarea del plan — artefacto versionado, no conversa
 
 | #   | Caso (se vuelve el `it`)                                 | Entrada / estado inicial  | Resultado esperado              |
 | --- | -------------------------------------------------------- | ------------------------- | ------------------------------- |
-| 1   | debería rechazar un email sin arroba                     | `Email.create('foo')`     | lanza `InvalidEmailError`       |
+| 1   | debería rechazar un email sin arroba                     | `Email.from('foo')`       | lanza `InvalidEmailError`       |
 | P1  | debería aceptar cualquier email RFC-válido _(propiedad)_ | arbitrario `validEmail()` | nunca lanza; round-trip estable |
 
 - **Trazabilidad 1:1:** cada caso puntual produce exactamente un `it` cuyo texto es el caso;
@@ -89,7 +90,7 @@ tabla resultante vive en la tarea del plan — artefacto versionado, no conversa
 
 **Architecture:** [2-3 sentences explaining the aggregates / ports / adapters introduced]
 
-**Tech stack:** NestJS 11, TypeScript 6.0, Jest, Supertest, [+ any extra: TypeORM/Prisma, Redis, BullMQ, etc.]
+**Tech stack:** NestJS 12, TypeScript 6.0, Jest, Supertest, TypeORM + PostgreSQL, [+ any extra the plan introduces: Redis, BullMQ, etc.]
 
 **Rule codes touched:** [comma-separated list of nestjs-best-practices codes the plan exercises]
 
@@ -112,69 +113,80 @@ tabla resultante vive en la tarea del plan — artefacto versionado, no conversa
 
 **Files:**
 
-- Create: `src/modules/billing/domain/invoice.entity.ts`
-- Create: `src/modules/billing/domain/ports/invoice.repository.ts`
-- Test: `src/modules/billing/__tests__/domain/invoice.entity.spec.ts`
+- Create: `src/modules/billing/domain/entities/invoice.entity.ts`
+- Test: `src/modules/billing/__tests__/domain/entities/invoice.entity.spec.ts`
+- Uses (from earlier tasks): `InvoiceId`, `InvoiceAmount`, `InvoiceIssued`, `InvoiceNotDraftError`
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
-// src/modules/billing/domain/invoice.entity.spec.ts
-import { Invoice } from './invoice.entity';
-import { InvoiceId } from './invoice-id.vo';
-import { Money } from './money.vo';
+// src/modules/billing/__tests__/domain/entities/invoice.entity.spec.ts
+import { Invoice } from '../../../domain/entities/invoice.entity';
+import { InvoiceIssued } from '../../../domain/events/invoice-issued.event';
+import { InvoiceAmount } from '../../../domain/value-objects/invoice-amount.vo';
+import { InvoiceId } from '../../../domain/value-objects/invoice-id.vo';
 
 describe('Invoice', () => {
-  it('issues a draft invoice', () => {
-    const invoice = Invoice.draft(InvoiceId.from('inv_1'), Money.of(100, 'USD'));
-    invoice.issue(new Date('2026-01-01T00:00:00Z'));
-    const events = invoice.pullEvents();
-    expect(events).toHaveLength(1);
+  describe('issue()', () => {
+    it('debería registrar InvoiceIssued al emitir una factura en borrador', () => {
+      // Arrange
+      const invoice = Invoice.draft({
+        id: InvoiceId.generate(),
+        amount: InvoiceAmount.from(149_900),
+      });
+
+      // Act
+      invoice.issue(new Date('2026-01-01T00:00:00Z'));
+
+      // Assert
+      expect(invoice.pullEvents()).toEqual([expect.any(InvoiceIssued)]);
+    });
   });
 });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm test src/modules/billing/domain/invoice.entity.spec.ts`
-Expected: FAIL — `Cannot find module './invoice.entity'`
+Run: `pnpm test src/modules/billing/__tests__/domain/entities/invoice.entity.spec.ts`
+Expected: FAIL — `Cannot find module '../../../domain/entities/invoice.entity'`
 
 - [ ] **Step 3: Write minimal implementation**
 
 ```ts
-// src/modules/billing/domain/invoice.entity.ts
-import { InvoiceIssued } from './events/invoice-issued.event';
-import type { InvoiceId } from './invoice-id.vo';
-import type { Money } from './money.vo';
+// src/modules/billing/domain/entities/invoice.entity.ts
+import { AggregateRoot } from '@shared/domain/aggregate-root';
 
-export class Invoice {
-  private readonly events: unknown[] = [];
+import { InvoiceNotDraftError } from '../errors/invoice.errors';
+import { InvoiceIssued } from '../events/invoice-issued.event';
+import type { InvoiceAmount } from '../value-objects/invoice-amount.vo';
+import type { InvoiceId } from '../value-objects/invoice-id.vo';
 
+export class Invoice extends AggregateRoot<InvoiceIssued> {
   private constructor(
     readonly id: InvoiceId,
+    readonly amount: InvoiceAmount,
     private status: 'draft' | 'issued',
-    private readonly total: Money,
-  ) {}
+  ) {
+    super();
+  }
 
-  static draft(id: InvoiceId, total: Money): Invoice {
-    return new Invoice(id, 'draft', total);
+  static draft(params: { id: InvoiceId; amount: InvoiceAmount }): Invoice {
+    return new Invoice(params.id, params.amount, 'draft');
   }
 
   issue(now: Date): void {
-    if (this.status !== 'draft') throw new Error('not draft');
+    if (this.status !== 'draft') {
+      throw new InvoiceNotDraftError(this.id.value);
+    }
     this.status = 'issued';
-    this.events.push(new InvoiceIssued(this.id, this.total, now));
-  }
-
-  pullEvents(): readonly unknown[] {
-    return this.events.splice(0);
+    this.record(new InvoiceIssued(this.id.value, this.amount.value, now));
   }
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm test src/modules/billing/domain/invoice.entity.spec.ts`
+Run: `pnpm test src/modules/billing/__tests__/domain/entities/invoice.entity.spec.ts`
 Expected: PASS — 1 passed
 ````
 
@@ -184,7 +196,7 @@ Use these as starting points; adapt to the spec. Test conventions are governed b
 
 ### Domain task (pure TS)
 
-- Test file: `__tests__/domain/<name>.spec.ts` at the module root, mirroring the layer path. Import the SUT relatively (`../../domain/<name>`).
+- Test file: `__tests__/domain/<subfolder>/<name>.spec.ts` at the module root, mirroring the layer path (`entities/`, `value-objects/`, …). Import the SUT relatively (`../../../domain/entities/<name>`).
 - `Test.createTestingModule` is **forbidden** — instantiate directly with `new`.
 - No mocks at all. No `jest.mock`, no `jest.spyOn` on domain code. If the test "needs" a mock, the design leaked.
 - No `@nestjs/*` imports in the SUT or in the test.
@@ -193,31 +205,36 @@ Use these as starting points; adapt to the spec. Test conventions are governed b
 - The task's «Casos acordados» table is the source of the `it` list — 1:1 mapping, see the «Casos acordados» section above.
 - **Consider PBT for invariants.** When the requirement has an "always" or "never" shape (e.g., "Money.add never produces a negative amount", "Invoice.issue is idempotent on a draft"), include an `it.prop([...])` from `@fast-check/jest` alongside the example-based tests.
 
-### Application task (use case / handler)
+### Application task (use case)
 
-- Test file: `__tests__/application/handlers/<handler-name>.spec.ts` at the module root, mirroring the layer path.
-- Use **hand-written port fakes** (small classes implementing the port interface, often in-memory). **Forbidden:** `jest.mock` against module paths.
+- Source file: `application/use-cases/<verb-noun>.use-case.ts`, holding the use case class **and** its `export type <Name>Input`. The input is a plain `type`, never a class with `class-validator`.
+- Test file: `__tests__/application/use-cases/<verb-noun>.use-case.spec.ts` at the module root, mirroring the layer path.
+- Use **hand-written port fakes** (classes that `implements` the port's `abstract class`, often in-memory) in `__tests__/helpers/`, shared by every spec of the module. **Forbidden:** `jest.mock` against module paths.
 - `jest.spyOn` on the fake's methods is acceptable when asserting calls.
-- Construct the handler directly: `new IssueInvoiceHandler(fakeRepo, fakeEventBus)` — no `Test.createTestingModule`.
-- Handler is `@Injectable()` with one public method (`execute`).
-- Inject ports by token via `@Inject(<TOKEN>)`.
-- Rule codes: `di-prefer-constructor-injection`, `di-use-interfaces-tokens`, `arch-single-responsibility`.
+- Construct the use case directly: `new IssueInvoiceUseCase(fakeRepo)` — no `Test.createTestingModule`.
+- The use case is `@Injectable()` with one public method, `execute(input)`.
+- Ports arrive through the constructor, typed with their `abstract class` and **imported as a value** — no `@Inject`, and never `import type` in a decorated file: the reference is erased and DI fails at runtime with lint and typecheck green (`NESTJS-MAPPING.md` §2).
+- Rule codes: `di-prefer-constructor-injection`, `di-use-interfaces-tokens` (option «abstract class» of that rule), `arch-single-responsibility`.
 - **AAA + `debería…` mandatory.** Same rules as the domain task.
 - The task's «Casos acordados» table is the source of the `it` list — 1:1 mapping, see the «Casos acordados» section above.
-- **Consider PBT for handler invariants** — e.g., idempotency (`execute` twice = once), "no event order produces an invalid state". For race-prone handlers, use `fc.scheduler()` (see `javascript-typescript-jest` PBT section).
+- **Consider PBT for use-case invariants** — e.g., idempotency (`execute` twice = once), "no event order produces an invalid state". For race-prone use cases, use `fc.scheduler()` (see `javascript-typescript-jest` PBT section).
 
 ### Infrastructure task (controller / repo / messaging)
 
-- **Controllers:** unit tests with `Test.createTestingModule({ controllers, providers })` providing a fake handler **and** an E2E spec under `src/modules/<context>/__tests__/<context>.e2e-spec.ts` using Supertest + `@test/helpers/create-test-app`.
-- **Repositories:** integration tests against a real test database (or a documented in-memory equivalent like sqlite). Never `jest.mock('typeorm')` — the test loses its value.
+- **Controllers:** a unit spec that builds the controller with its real use cases over the in-memory fakes (see `users.controller.spec.ts`) **and** an E2E spec under `src/modules/<context>/__tests__/<context>.e2e-spec.ts` using Supertest + `createTestApp()` from `@test/helpers/create-test-app`. Every endpoint carries the full OpenAPI documentation the contract guard demands (`CLAUDE.md`, «Endpoint documentation») — list those decorators in the task, don't leave them for review.
+- **Mappers, domain-exception filters, guards, DTOs and ACL adapters:** a unit `*.spec.ts` in the mirrored `__tests__/infrastructure/…` path, with no database. Each has a pattern to copy:
+  - mappers get a PBT round-trip (`user.mapper.spec.ts`);
+  - filters take real domain errors in and assert the Nest exception out (`user-domain-exception.filter.spec.ts`);
+  - ACL adapters receive the foreign gate as an object-literal fake (`users-customer.directory.spec.ts`).
+- **Repositories:** `*.typeorm.repository.e2e-spec.ts` against the real PostgreSQL test database, under `__tests__/infrastructure/persistence/`. They are the only infrastructure specs that need the database. Never `jest.mock('typeorm')` — the test loses its value.
 - **HTTP gateways:** `nock`/`msw-node` for outbound HTTP; `jest.mock` for the SDK module is acceptable only when no other option exists.
 - Rule codes: `api-use-dto-serialization`, `security-validate-all-input`, `arch-use-repository-pattern`, `db-use-transactions` (when writes span multiple rows).
 
 ### Module wiring task
 
-- One task per `*.module.ts`: imports, providers (with token bindings), controllers, exports.
-- The wiring task is the **last** task that introduces a new bounded context — it brings everything together.
-- A short integration test (`<context>.module.spec.ts`) instantiates the module with `Test.createTestingModule` and resolves each provider token to confirm wiring.
+- One task per `*.module.ts`: imports, providers (each port bound as `{ provide: InvoiceRepository, useClass: InvoiceTypeOrmRepository }`), controllers, exports. Only the context's public gates are exported, and re-exported as TS symbols from the module file.
+- The wiring task is the **last** task that introduces a new bounded context — it brings everything together, adds the module to `AppModule`'s `imports` and its scope to `commitlint.config.cjs`.
+- The wiring is proven by the context's `<context>.e2e-spec.ts`, not by a unit `<context>.module.spec.ts`: `*.module.ts` is excluded from unit coverage and compiling a module with persistence opens real connections. `ClassProvider` does not check that `useClass` conforms to the port — the adapter's `implements` does — so `pnpm typecheck` passing is not proof of wiring.
 
 ## No Placeholders
 
@@ -255,7 +272,7 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 1. **Spec coverage:** Skim each section/requirement in the spec. Can you point to a task that implements it? List any gaps.
 2. **Placeholder scan:** Search your plan for red flags — any of the patterns from "No Placeholders". Fix them.
-3. **Type consistency:** Do types, method signatures, port interfaces, and token names match across tasks? `INVOICE_REPOSITORY` in Task 3 must equal `INVOICE_REPOSITORY` in Task 7.
+3. **Type consistency:** Do types, method signatures, port classes and use-case inputs match across tasks? The `InvoiceRepository` declared in Task 3 must be the same class, with the same methods, that Task 7 binds with `useClass`.
 4. **Layer purity:** Every file in `domain/` is free of `@nestjs/*` and ORM imports. Every controller lives under `infrastructure/http/`.
 5. **Rule-code coverage:** Every Nest artifact lists at least one rule code; cross-cutting concerns (auth, validation, logging, errors) are tagged.
 6. **No commits:** No task contains `git commit` or `git push`.
