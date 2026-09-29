@@ -135,11 +135,16 @@ export class UsersController {
 }
 
 // Custom cache interceptor with TTL
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+
 @Injectable()
 export class HttpCacheInterceptor implements NestInterceptor {
   constructor(
-    private cacheManager: Cache,
-    private reflector: Reflector,
+    // cache-manager >= 6 (the floor of @nestjs/cache-manager 12) exports `Cache` as a type,
+    // not a class: without @Inject(CACHE_MANAGER) Nest cannot resolve this parameter
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly reflector: Reflector,
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
@@ -151,7 +156,8 @@ export class HttpCacheInterceptor implements NestInterceptor {
     }
 
     const cacheKey = this.generateKey(request);
-    const ttl = this.reflector.get<number>('cacheTTL', context.getHandler()) || 300;
+    // cache-manager TTLs are milliseconds
+    const ttl = this.reflector.get<number | undefined>('cacheTTL', context.getHandler()) ?? 300_000;
 
     const cached = await this.cacheManager.get(cacheKey);
     if (cached) {
@@ -172,7 +178,7 @@ export class HttpCacheInterceptor implements NestInterceptor {
 
 // Usage with custom TTL
 @Get()
-@SetMetadata('cacheTTL', 600)
+@SetMetadata('cacheTTL', 600_000) // 10 minutes, in milliseconds
 @UseInterceptors(HttpCacheInterceptor)
 async findAll(): Promise<User[]> {
   return this.usersService.findAll();

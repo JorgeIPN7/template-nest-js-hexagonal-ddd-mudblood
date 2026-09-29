@@ -2,14 +2,16 @@
 title: Implement Rate Limiting
 impact: HIGH
 impactDescription: Protects against abuse and ensures fair resource usage
-tags: security, rate-limiting, throttler, protection, v11
+tags: security, rate-limiting, throttler, protection, v12
 ---
 
 ## Implement Rate Limiting
 
 Use `@nestjs/throttler` to limit request rates per client. Apply different limits for different endpoints — stricter for auth endpoints, more relaxed for read operations. Consider using Redis for distributed rate limiting in clustered deployments.
 
-> **NestJS 11 + reverse proxy note:** when running behind a load balancer (k8s ingress, ALB, Cloudflare), `req.ip` resolves to the proxy's IP — every request looks like it comes from one client and rate limits are useless. Either configure `app.set('trust proxy', ...)` on Express **and** override `getTracker()` to read `req.ips[0]`, or run the throttler on the proxy. `getTracker()` returns `Promise<string>` in v11 — make it `async`.
+> **NestJS 12 note:** `@nestjs/throttler` stays on its own 6.x line — 6.7.1 declares `@nestjs/common` / `@nestjs/core` `^12.0.0` among its peers and still ships CommonJS, unlike the ESM-only `@nestjs/*` 12 packages. Its guard exposes `protected getTracker(req): Promise<string>` (make overrides `async`) and **no `getLimit()` hook**: per-caller limits go in the options, where `limit` and `ttl` accept a function of the `ExecutionContext`.
+
+> **Reverse proxy note:** when running behind a load balancer (k8s ingress, ALB, Cloudflare), `req.ip` resolves to the proxy's IP unless Express is told to trust it — every request looks like it comes from one client and rate limits are useless. Configure `app.set('trust proxy', ...)` with the exact hop count or CIDR, or run the throttler on the proxy. That is enough: the default tracker already reads `req.ip` (grouping IPv6 addresses by /64 subnet), and with a correct setting Express makes `req.ips[0]` equal to `req.ip` — overriding `getTracker()` to read `req.ips[0]` adds nothing. With `trust proxy` set to `true`, both come from the client-controlled `X-Forwarded-For`.
 
 **Incorrect (no rate limiting on sensitive endpoints):**
 
@@ -46,7 +48,7 @@ export class ApiController {
 
 ```typescript
 // Configure throttler globally with multiple limits
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard, minutes } from '@nestjs/throttler';
 
 @Module({
   imports: [
@@ -103,27 +105,29 @@ export class HealthController {
   }
 }
 
-// Custom throttle per user type — getTracker() is async in v11
+// Track authenticated users by ID — getTracker() is async in @nestjs/throttler 6.x
 @Injectable()
-export class CustomThrottlerGuard extends ThrottlerGuard {
+export class UserAwareThrottlerGuard extends ThrottlerGuard {
   protected async getTracker(req: Record<string, any>): Promise<string> {
-    // Authenticated user → user ID; otherwise client IP behind proxy
+    // req.user only exists if the authentication guard already ran for this request
     if (req.user?.id) return `user:${req.user.id}`;
-    // req.ips is populated when 'trust proxy' is set; fall back to req.ip
-    return req.ips?.[0] ?? req.ip;
-  }
-
-  protected async getLimit(context: ExecutionContext): Promise<number> {
-    const request = context.switchToHttp().getRequest();
-
-    // Higher limits for authenticated users
-    if (request.user) {
-      return request.user.isPremium ? 1000 : 200;
-    }
-
-    return 50; // Anonymous users
+    // Anonymous: keep the default tracker (req.ip, IPv6 grouped by /64 subnet)
+    return super.getTracker(req);
   }
 }
+
+// Limits per user type: `limit` (and `ttl`) accept a function of the ExecutionContext.
+// ThrottlerGuard has no getLimit() hook — a method with that name is never called.
+ThrottlerModule.forRoot([
+  {
+    ttl: minutes(1),
+    limit: (context: ExecutionContext) => {
+      const user = context.switchToHttp().getRequest().user;
+      if (!user) return 50; // Anonymous users
+      return user.isPremium ? 1000 : 200; // Higher limits for authenticated users
+    },
+  },
+]);
 
 // Trust the load balancer so req.ip / req.ips report the real client
 import { NestExpressApplication } from '@nestjs/platform-express';

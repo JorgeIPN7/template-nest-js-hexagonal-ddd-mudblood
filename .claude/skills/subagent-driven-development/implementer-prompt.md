@@ -14,7 +14,11 @@ Agent({
 
     ## Stack
 
-    NestJS 11, TypeScript 6.0, Node 22, pnpm 11, Jest, Supertest, Pino, Zod, class-validator.
+    NestJS 12, TypeScript 6.0, Node 24, pnpm 11, Jest, Supertest, Pino, Zod, class-validator,
+    TypeORM + PostgreSQL (exact versions: the «Stack» line of CLAUDE.md, package.json, .nvmrc).
+    NestJS 12 packages are ESM-only and this repo stays CommonJS: run tests ONLY through
+    `pnpm test <path>` / `pnpm test:e2e` (they add `--experimental-vm-modules`); a bare
+    `jest` / `npx jest` fails to load them. Import `@nestjs/*` from the package root only.
 
     Companion skills (read for context, do not invoke as steps):
     - clean-ddd-hexagonal — for layer rules. Read `clean-ddd-hexagonal/references/NESTJS-MAPPING.md`.
@@ -29,7 +33,7 @@ Agent({
 
     ## Context
 
-    [Scene-setting: which bounded context, dependencies on prior tasks, port tokens already defined, architectural context]
+    [Scene-setting: which bounded context, dependencies on prior tasks, ports (abstract classes) already defined, architectural context]
 
     ## Layer of this Task
 
@@ -44,7 +48,7 @@ Agent({
     If you have questions about:
     - Requirements or acceptance criteria
     - Approach or implementation strategy
-    - Dependencies or assumptions (port tokens, neighbouring modules)
+    - Dependencies or assumptions (ports, neighbouring modules)
     - Anything unclear in the task description
 
     **Ask them now.** Raise any concerns before starting work.
@@ -80,13 +84,21 @@ Agent({
       - No decorators. Plain TS classes / functions / types.
       - Tests are pure Jest, NO `Test.createTestingModule`.
     - Application (`src/modules/<context>/application/`):
-      - May use `@nestjs/common` decorators. Must NOT import ORMs or HTTP clients.
-      - Inject ports by token via `@Inject(<TOKEN>)`.
-      - Tests use hand-written port fakes — NO `jest.mock`.
+      - May use `@nestjs/common` decorators. Must NOT import ORMs, HTTP clients or
+        `class-validator`.
+      - One use case per file under `use-cases/`, with its `…Input` type in the same file
+        and a single public `execute(input)`. No `commands/`, `queries/`, `handlers/`.
+      - Ports are `abstract class`es and are their own injection token: declare them as
+        constructor parameter types, imported as a VALUE. No `Symbol` tokens, no `@Inject`,
+        and never `import type` a port in a decorated file — DI then fails at runtime with
+        lint and typecheck green.
+      - Tests use hand-written port fakes in `__tests__/helpers/` — NO `jest.mock`.
     - Infrastructure (`src/modules/<context>/infrastructure/`):
       - The only layer that imports ORMs, HTTP libs, message brokers.
       - Controllers under `infrastructure/http/`. Repos under `infrastructure/persistence/`.
-      - Tests are integration / E2E with real (or test-container) infrastructure.
+      - Adapters `implements` the port (never `extends`); the module binds them with
+        `{ provide: Port, useClass: Adapter }`.
+      - Repositories are tested against the real PostgreSQL test database in the E2E suite.
 
     Run a quick `grep` after writing to confirm no forbidden imports leaked into the
     wrong layer; report it as a concern if any did.
@@ -153,7 +165,7 @@ Agent({
     - Right artifact in the right folder?
 
     **Rule codes:**
-    - Each listed rule code visibly applied (e.g. token present, validator on DTO, guard registered)?
+    - Each listed rule code visibly applied (e.g. port is an abstract class bound with `useClass`, validator on DTO, guard registered)?
 
     **Testing (per javascript-typescript-jest):**
     - Test files end in `.spec.ts` (unit) or `.e2e-spec.ts` (E2E) — never `.test.ts`?

@@ -15,6 +15,7 @@ describe('ErrorResponseDto', () => {
       timestamp: '2026-08-01T10:15:00.000Z',
       path: '/api/v1/users/1',
       requestId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+      errorCode: 'RESOURCE_LOCKED',
     };
 
     // Act
@@ -22,6 +23,21 @@ describe('ErrorResponseDto', () => {
 
     // Assert
     expect(new Set(declared)).toEqual(new Set(Object.keys(payload)));
+  });
+
+  // Si `errorCode` se publicara como requerido, ningún ejemplo de error del documento —todos
+  // salen de `buildErrorExample`, que no lo emite— satisfaría su esquema, y el guardián Ajv de
+  // `openapi-contract.e2e-spec.ts` se pondría rojo en cada operación.
+  it('debería publicar errorCode como opcional y con un example', () => {
+    // Arrange
+    const metadata = propertyMetadata(ErrorResponseDto, 'errorCode');
+
+    // Act
+    const { required, example } = metadata ?? {};
+
+    // Assert
+    expect(required).toBe(false);
+    expect(example).toEqual(expect.any(String));
   });
 });
 
@@ -51,7 +67,7 @@ describe('ValidationErrorResponseDto', () => {
     expect(published).toEqual(expected);
   });
 
-  it('debería conservar las claves que no redeclara', () => {
+  it('debería conservar las claves que no redeclara, salvo errorCode', () => {
     // Arrange
     const declared = declaredKeys(ValidationErrorResponseDto);
 
@@ -62,6 +78,20 @@ describe('ValidationErrorResponseDto', () => {
     expect(keys).toEqual(
       new Set(['statusCode', 'message', 'error', 'timestamp', 'path', 'requestId']),
     );
+  });
+
+  // El `exceptionFactory` por defecto del `ValidationPipe` construye la excepción sin opciones
+  // (`validation.pipe.js` en `@nestjs/common` 12.1.0), así que un 400 de validación nunca trae
+  // `errorCode`. Heredarlo publicaría un campo que ese status no puede llevar.
+  it('debería omitir errorCode, que el ValidationPipe nunca fija', () => {
+    // Arrange
+    const declared = declaredKeys(ValidationErrorResponseDto);
+
+    // Act
+    const hasErrorCode = declared.includes('errorCode');
+
+    // Assert
+    expect(hasErrorCode).toBe(false);
   });
 });
 
@@ -78,7 +108,7 @@ const PROPERTY_META = 'swagger/apiModelProperties';
 // y `Reflect.getMetadata` dispara `no-unsafe-argument`.
 type DtoClass = { prototype: object };
 
-type PropertyMetadata = { example?: unknown };
+type PropertyMetadata = { example?: unknown; required?: boolean };
 
 /** Nombres de propiedad que `@ApiProperty` registró en el DTO. */
 const declaredKeys = (dto: DtoClass): string[] =>

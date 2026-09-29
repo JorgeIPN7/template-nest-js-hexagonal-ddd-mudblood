@@ -17,7 +17,7 @@ Agent({
 
     ## Stack
 
-    NestJS 11, TypeScript 6.0, pnpm, Jest, Supertest. Companion architectural rules
+    NestJS 12, TypeScript 6.0, pnpm, Jest, Supertest. Companion architectural rules
     from `clean-ddd-hexagonal` (layer purity), rule codes from `nestjs-best-practices`,
     and Jest conventions from `javascript-typescript-jest` (file naming `*.spec.ts` /
     `*.e2e-spec.ts`, layer-aware mocking).
@@ -58,11 +58,15 @@ Agent({
       - Controllers live under `infrastructure/http/`
       - Repositories implement a domain port and live under `infrastructure/persistence/`
     - Verify rule codes:
-      - `di-use-interfaces-tokens` → ports have a `Symbol(...)` token, modules wire by token
+      - `di-use-interfaces-tokens` → each port is an `abstract class` (its own token) under
+        `domain/ports/`; the module binds `{ provide: Port, useClass: Adapter }`; no
+        `Symbol` token and no `@Inject` for ports (see `NESTJS-MAPPING.md` §2)
       - `security-validate-all-input` → DTOs use class-validator decorators
-      - `arch-use-repository-pattern` → adapter implements the domain port interface
+      - `arch-use-repository-pattern` → adapter `implements` the domain port class
       - …and so on for the codes the plan lists
-    - Re-run the test command the implementer claims passed (`pnpm test <file>`).
+    - Re-run the test command the implementer claims passed (`pnpm test <file>`, never a
+      bare `jest`: NestJS 12 packages are ESM-only and the script adds
+      `--experimental-vm-modules`).
 
     ## Your Job
 

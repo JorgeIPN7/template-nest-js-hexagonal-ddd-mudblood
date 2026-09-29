@@ -11,7 +11,7 @@ Execute a plan by dispatching a fresh subagent per task, with two-stage review a
 
 **Core principle:** fresh subagent per task + two-stage review (spec then quality) = high quality, fast iteration.
 
-**Stack:** NestJS 11 + TypeScript 6.0, `pnpm`, Jest, Supertest. Companion skills `clean-ddd-hexagonal`, `nestjs-best-practices`, and `javascript-typescript-jest` apply to every dispatch — every implementer prompt MUST cite all three.
+**Stack:** NestJS 12 + TypeScript 6.0, `pnpm`, Jest, Supertest (exact versions: the «Stack» line of `CLAUDE.md`). NestJS 12 packages are ESM-only and the repo stays CommonJS, so subagents run tests only through `pnpm test` / `pnpm test:e2e` — a bare `jest` cannot load them. Companion skills `clean-ddd-hexagonal`, `nestjs-best-practices`, and `javascript-typescript-jest` apply to every dispatch — every implementer prompt MUST cite all three.
 
 ## Tooling notes (Claude Code)
 
@@ -145,10 +145,13 @@ After the final reviewer approves, run this directly — **do not invoke any ext
 ```bash
 pnpm typecheck
 pnpm lint:check
+pnpm format:check
 pnpm test
 pnpm test:e2e
 pnpm build
 ```
+
+This is the Definition of Done from `CLAUDE.md`, in its order. `pnpm test:e2e` needs PostgreSQL up (`pnpm db:up`) and a migrated test database (`pnpm db:migrate:test` on a fresh clone).
 
 Then **suggest a commit** to the user (do not run it):
 
@@ -183,7 +186,7 @@ Implementer: "Got it. Implementing now…"
 [Later] Implementer report:
   - Status: DONE
   - Implemented Invoice.entity.ts + VOs + InvoiceIssued event
-  - 6/6 unit tests passing (pnpm test src/modules/billing/domain)
+  - 6/6 unit tests passing (pnpm test src/modules/billing/__tests__/domain)
   - No @nestjs/* imports in domain/ (verified by grep)
   - No git operations performed
 
@@ -204,7 +207,7 @@ Quality reviewer:
 [After all tasks: dispatch final reviewer with subagent_type=Plan]
 Final reviewer: All tasks complete, layers respected, rule codes honored.
 
-[Run DoD inline: typecheck/lint/test/test:e2e/build all pass]
+[Run DoD inline: typecheck/lint:check/format:check/test/test:e2e/build all pass]
 
 You (to user): "Implementation complete. Te sugiero hacer un commit de los
 cambios por implementar el plan `feat-billing-invoice.md` (Tasks 1–5).

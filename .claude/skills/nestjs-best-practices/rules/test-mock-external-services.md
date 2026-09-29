@@ -2,12 +2,14 @@
 title: Mock External Services in Tests
 impact: HIGH
 impactDescription: Ensures fast, reliable, deterministic tests
-tags: testing, mocking, external-services, jest
+tags: testing, mocking, external-services, jest, v12
 ---
 
 ## Mock External Services in Tests
 
 Never call real external services (APIs, databases, message queues) in unit tests. Mock them to ensure tests are fast, deterministic, and don't incur costs. Use realistic mock data and test edge cases like timeouts and errors.
+
+> **NestJS 12 note:** the `HttpService` mocked below comes from `@nestjs/axios` **12.x** — the package jumped from 4.x to 12.0.0, and 4.0.1 declares its `@nestjs/common` peer as `^10 || ^11` only. Everything `Test.createTestingModule` pulls in is ESM-only in v12, so on Jest in a CommonJS project the suite needs Node 24.9+ and `node --experimental-vm-modules node_modules/jest/bin/jest.js`; in a Vitest project (the ESM default) the `jest.*` helpers used here map to `vi.*` (`vi.fn()`, `vi.useFakeTimers()`, `vi.setSystemTime()`, `vi.advanceTimersByTime()`).
 
 **Incorrect (calling real APIs and databases):**
 

@@ -11,7 +11,7 @@ Load a plan from `docs/plans/`, review it critically, execute its tasks step by 
 
 **Announce at start:** "I'm using the executing-plans skill to implement this plan."
 
-**Stack:** NestJS 11 + TypeScript 6.0. All commands assume `pnpm`.
+**Stack:** NestJS 12 + TypeScript 6.0 (exact versions: the «Stack» line of `CLAUDE.md`). All commands assume `pnpm`. NestJS 12 packages are ESM-only and the repo stays CommonJS, so tests run only through `pnpm test` / `pnpm test:e2e` — a bare `jest` cannot load them.
 
 **Note:** both this skill and `subagent-driven-development` run in the **current session**. The difference is _who does the work_: this skill executes every task inline in your own context; `subagent-driven-development` dispatches a fresh subagent per task with two-stage review. Prefer `subagent-driven-development` when subagents are available — it is generally higher quality. Use this skill for small plans, tightly coupled tasks, a tight feedback loop, or when there is no subagent budget.
 
@@ -35,9 +35,9 @@ For each task:
 5. Run the verifications specified by each step (typically `pnpm test <file>`).
 6. After all steps in the task pass, run the layer-specific check before marking complete:
    - **Domain task:** `pnpm test <file>.spec.ts` passes; the file has zero `@nestjs/*` or ORM imports (`grep` to confirm).
-   - **Application task:** unit test passes with hand-written port fakes (no `jest.mock`); handler is `@Injectable()` with one public method.
-   - **Infrastructure task:** integration / E2E test passes; controller routes through the use case (not the repo).
-   - **Module task:** `pnpm typecheck` passes; the module wires every port/adapter pair via tokens.
+   - **Application task:** unit test passes with hand-written port fakes (no `jest.mock`); the use case is `@Injectable()` with one public `execute()` and its `…Input` type in the same file; ports arrive by constructor as their `abstract class`, imported as a value (no `@Inject`, no `import type`).
+   - **Infrastructure task:** its specs pass. Mappers, filters, controllers, guards, DTOs and ACL adapters use unit `*.spec.ts` with no database, run with `pnpm test <file>`. Only TypeORM repositories get a `*.typeorm.repository.e2e-spec.ts`, which runs against PostgreSQL with `pnpm test:e2e`. The controller routes through the use case (not the repo), and each adapter `implements` its port.
+   - **Module task:** `pnpm typecheck` passes and the module binds every port to its adapter with `{ provide: Port, useClass: Adapter }`. Typecheck alone does not prove the binding — `useClass` accepts any class — so the context's E2E must boot and exercise it.
    - **Domain/application tasks additionally:** run `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"` and record the mutation score for the report.
 7. Mark the task `completed`.
 
@@ -48,10 +48,13 @@ After all tasks finish, run this checklist directly — **do not invoke any exte
 ```bash
 pnpm typecheck
 pnpm lint:check
+pnpm format:check
 pnpm test
 pnpm test:e2e
 pnpm build
 ```
+
+This is the Definition of Done from `CLAUDE.md`, in its order. `pnpm test:e2e` needs PostgreSQL up (`pnpm db:up`) and a migrated test database (`pnpm db:migrate:test` on a fresh clone).
 
 Address every failure before reporting. If a failure reveals a plan gap, surface it to the user and pause — do not patch silently.
 

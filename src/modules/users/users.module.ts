@@ -27,8 +27,8 @@ import { UserTypeOrmRepository } from './infrastructure/persistence/user.typeorm
   providers: [
     // El token es la propia `abstract class` del puerto: `useClass` la ata a su adaptador,
     // y quien la declare como tipo de un parámetro de constructor la recibe sin `@Inject`.
-    // Ojo: `ClassProvider.provide` está tipado como `any` — que el adaptador cumpla el
-    // puerto lo garantiza su `implements`, no esta línea.
+    // Ojo: `ClassProvider` no relaciona `provide` con `useClass` (`useClass` es `Type<any>`) —
+    // que el adaptador cumpla el puerto lo garantiza su `implements`, no esta línea.
     { provide: UserRepository, useClass: UserTypeOrmRepository },
     // Puertas públicas del contexto: lo único de users que otro módulo puede inyectar.
     // `UserRepository` NO se exporta (ver `exports` más abajo) — si se exportara, un

@@ -2,12 +2,14 @@
 title: Use Testing Module for Unit Tests
 impact: HIGH
 impactDescription: Enables proper isolated testing with mocked dependencies
-tags: testing, unit-tests, mocking, jest
+tags: testing, unit-tests, mocking, jest, v12
 ---
 
 ## Use Testing Module for Unit Tests
 
 Use `@nestjs/testing` module to create isolated test environments with mocked dependencies. This ensures your tests run fast, don't depend on external services, and properly test your business logic in isolation.
+
+> **NestJS 12 note — running the suite:** the testing API below is unchanged in v12; what changed is how Jest loads it. Every `@nestjs/*` 12.x package ships as ESM only, and Jest does not use Node's `require(esm)` but its own loader, which can `require()` an ES module only on **Node 24.9+** and only when Node runs with **`--experimental-vm-modules`** (that flag is what exposes `vm.SourceTextModule`). So a CommonJS project on Jest runs it as `node --experimental-vm-modules node_modules/jest/bin/jest.js` — the form the `test` script of the official v12 CommonJS template uses. A bare `npx jest` dies with `Must use import to load ES Module: …/@nestjs/…/dist/index.js`; on Node < 24.9 it fails with `ERR_REQUIRE_ASYNC_MODULE`. Pin **Jest ≥ 30.5**: 30.4 added the support, but a CommonJS module that `require()`d an ES module mid-graph could get a shared dependency evaluated twice — two instances of the same `@nestjs/*` module in one test (jestjs/jest#16375, shipped in 30.5.0). ESM projects are scaffolded with Vitest instead, where `jest.fn()` / `jest.spyOn()` become `vi.fn()` / `vi.spyOn()`.
 
 **Incorrect (manual instantiation bypassing DI):**
 

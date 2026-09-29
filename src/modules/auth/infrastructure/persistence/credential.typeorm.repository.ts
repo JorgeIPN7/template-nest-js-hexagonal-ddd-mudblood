@@ -13,8 +13,8 @@ import { CredentialOrmEntity } from './credential.orm-entity';
  * `auth` que conoce el `Repository` del ORM; todo lo que sale de aquí ya es dominio.
  *
  * `implements CredentialRepository`, NUNCA `extends`: la conformidad con el puerto la
- * garantiza el `implements` y solo él — `ClassProvider.provide` está tipado como `any`, así
- * que el `useClass` del module NO comprueba nada.
+ * garantiza el `implements` y solo él — `ClassProvider` no relaciona `provide` con `useClass`
+ * (`useClass` es `Type<any>`), así que el `useClass` del module NO comprueba nada.
  *
  * Sin traducción de errores del driver, a diferencia de `UserTypeOrmRepository`: aquí el
  * único choque posible contra `idx_auth_credentials_user_id` es una segunda credencial para

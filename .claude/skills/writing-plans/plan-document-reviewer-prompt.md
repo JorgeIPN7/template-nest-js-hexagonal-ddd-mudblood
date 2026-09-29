@@ -2,7 +2,7 @@
 
 Use this template when dispatching a plan document reviewer subagent.
 
-**Purpose:** Verify the plan is complete, matches the spec, and has proper task decomposition for the NestJS 11 + TS 6.0 stack.
+**Purpose:** Verify the plan is complete, matches the spec, and has proper task decomposition for the NestJS 12 + TS 6.0 stack.
 
 **Dispatch with the Agent tool, `subagent_type: "general-purpose"`, after the complete plan is written.**
 
@@ -11,7 +11,7 @@ Agent({
   subagent_type: "general-purpose",
   description: "Review plan document",
   prompt: |
-    You are a plan document reviewer. Verify this plan is complete and ready for implementation in a NestJS 11 + TypeScript 6.0 codebase.
+    You are a plan document reviewer. Verify this plan is complete and ready for implementation in a NestJS 12 + TypeScript 6.0 codebase (hexagonal layout per `clean-ddd-hexagonal/references/NESTJS-MAPPING.md`).
 
     **Plan to review:** [PLAN_FILE_PATH]
     **Spec for reference:** [SPEC_FILE_PATH]
@@ -25,7 +25,9 @@ Agent({
     | Task decomposition | Tasks have clear boundaries, steps are actionable |
     | Buildability | Could an engineer follow this plan without getting stuck? |
     | Layer purity | No `domain/` file imports `@nestjs/*` or ORM libs; controllers under `infrastructure/http/`; ports under `domain/ports/` |
-    | DI tokens | Every port has an explicit Symbol token; every adapter is wired by that token in a module task |
+    | Ports & DI | Every port is an `abstract class` under `domain/ports/` (it is its own token — a `Symbol` token or `@Inject` is a finding); every adapter `implements` it and a module task binds it with `{ provide: Port, useClass: Adapter }` |
+    | Use cases | One use case per file under `application/use-cases/`, with its `…Input` type in the same file — no `commands/`, `queries/` or `handlers/` |
+    | Test commands | Tests run through `pnpm test <path>` / `pnpm test:e2e`, never a bare `jest` (NestJS 12 packages are ESM-only; the scripts add `--experimental-vm-modules`) |
     | Rule-code coverage | Each Nest artifact lists rule codes from `nestjs-best-practices` |
     | Test stack | Tests use Jest + Supertest only — not Python/pytest, not Mocha |
     | No autocommit | No task contains `git commit` or `git push` instructions |

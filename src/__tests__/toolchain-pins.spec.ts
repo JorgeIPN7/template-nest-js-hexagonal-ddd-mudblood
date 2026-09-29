@@ -12,15 +12,127 @@ const packageJson = JSON.parse(read('package.json')) as {
   devDependencies: Record<string, string>;
 };
 
-// Los dos documentos que le dicen a una persona qué instalar. No son decoración: el de
-// incidencias existe para descartar «runtime equivocado» como causa, y con la versión
-// equivocada prerellenada hace lo contrario de su trabajo.
-const DOCS_THAT_CITE_VERSIONS = ['README.md', '.github/ISSUE_TEMPLATE/bug_report.yml'];
+type RegexManager = {
+  customType: string;
+  depNameTemplate?: string;
+  managerFilePatterns: string[];
+  matchStrings: string[];
+  matchStringsStrategy?: string;
+};
+
+const renovate = JSON.parse(read('renovate.json')) as { customManagers: RegexManager[] };
+
+// Los documentos que le dicen a una persona —o a un agente— qué instalar. No son decoración: el
+// de incidencias existe para descartar «runtime equivocado» como causa, y con la versión
+// equivocada prerellenada hace lo contrario de su trabajo; la línea de Stack de `CLAUDE.md` es
+// lo primero que lee un agente antes de tocar nada.
+const NODE_DOCS = ['README.md', '.github/ISSUE_TEMPLATE/bug_report.yml', 'CLAUDE.md'];
+// `CLAUDE.md` cita pnpm solo por su major («pnpm 11»): no hay literal de versión que mantener.
+const PNPM_DOCS = ['README.md', '.github/ISSUE_TEMPLATE/bug_report.yml'];
 
 /**
- * Contrato del toolchain. El repo declara su runtime en CUATRO sitios que se mueven juntos y
- * su compilador en DOS, y hasta el 2026-08-19 nada lo verificaba. Las dos veces que se movió
- * quedó a medias, y las dos veces en verde:
+ * El customManager que reescribe las citas en prosa de `depName`. Tiene que ser uno, de tipo
+ * regex y con la estrategia `any` por defecto, porque es la semántica que replica
+ * `renovatedValues`: con otra, este spec afirmaría sobre algo que Renovate no hace.
+ */
+const managerFor = (depName: string): RegexManager => {
+  const [manager, ...others] = renovate.customManagers.filter(
+    (candidate) => candidate.depNameTemplate === depName,
+  );
+  if (
+    manager === undefined ||
+    others.length > 0 ||
+    manager.customType !== 'regex' ||
+    (manager.matchStringsStrategy ?? 'any') !== 'any'
+  ) {
+    throw new Error(
+      `renovate.json debería declarar un único customManager regex con estrategia «any» para ${depName}`,
+    );
+  }
+  return manager;
+};
+
+/**
+ * `managerFilePatterns` admite regex (`/…/`) y globs. Hoy solo hay regex, y el spec se niega a
+ * adivinar un glob: Renovate usa minimatch con `dot: true` y `path.matchesGlob` no, que es
+ * justo la diferencia que decide si `**` entra en `.github/`.
+ */
+const coversFile = (pattern: string, file: string): boolean => {
+  const regex = /^\/(.*)\/(i?)$/s.exec(pattern);
+  if (regex === null) {
+    throw new Error(`Patrón glob sin soporte en este spec: ${pattern}. Escríbelo como /regex/.`);
+  }
+  return new RegExp(regex[1] ?? '', regex[2]).test(file);
+};
+
+/**
+ * Las versiones que Renovate lee —y por tanto reescribe— en `contents`: cada `matchString` por
+ * separado y de forma global, que es la estrategia `any` (`handleAny` en
+ * `lib/modules/manager/custom/regex/strategies.ts` compila cada una con `regEx(matchString, 'g')`).
+ * Solo esos sitios: una cita que ninguna expresión cubre no la mueve nadie.
+ */
+const renovatedValues = (manager: RegexManager, contents: string): string[] =>
+  manager.matchStrings.flatMap((source) =>
+    Array.from(
+      contents.matchAll(new RegExp(source, 'g')),
+      (match) => match.groups?.currentValue ?? '',
+    ),
+  );
+
+/**
+ * Los tres casos que atan los documentos de `docs` al customManager de `depName`. Test y Renovate
+ * no pueden divergir en ninguna dirección: un documento que el spec vigila y Renovate no cubre es
+ * rojo, un sitio con otra versión es rojo, y una expresión que ya no casa en ningún documento
+ * —Renovate dejaría de mover esa cita en silencio— también.
+ */
+const describeRenovatedDocs = (depName: string, docs: string[], pinned: string): void => {
+  describe('documentos que Renovate reescribe', () => {
+    it.each(docs)('debería tener %s bajo los managerFilePatterns de su customManager', (doc) => {
+      // Arrange
+      const { managerFilePatterns } = managerFor(depName);
+
+      // Act
+      const covered = managerFilePatterns.some((pattern) => coversFile(pattern, doc));
+
+      // Assert
+      expect(covered).toBe(true);
+    });
+
+    it.each(docs)('debería citar esa versión, y solo esa, en cada sitio de %s', (doc) => {
+      // Arrange
+      const manager = managerFor(depName);
+
+      // Act
+      const values = renovatedValues(manager, read(doc));
+
+      // Assert
+      expect(values).not.toHaveLength(0);
+      expect(values).toEqual(values.map(() => pinned));
+    });
+
+    it('debería encontrar cada matchString en alguno de los documentos', () => {
+      // Arrange
+      const { matchStrings } = managerFor(depName);
+      const contents = docs.map(read);
+
+      // Act
+      const dead = matchStrings.filter(
+        (source) => !contents.some((text) => new RegExp(source).test(text)),
+      );
+
+      // Assert
+      expect(dead).toEqual([]);
+    });
+  });
+};
+
+/**
+ * Contrato del toolchain. El repo declara Node en SIETE sitios —cuatro con manager nativo de
+ * Renovate (`.nvmrc`, `.node-version`, el `FROM` del Dockerfile y `engines.node`) y tres en prosa
+ * (la tabla de requisitos del README, la plantilla de incidencias y la línea de Stack de
+ * `CLAUDE.md`)—, pnpm en TRES (`packageManager` y dos en prosa) y el compilador en DOS, y hasta
+ * el 2026-08-19 nada lo verificaba. Las dos veces que se movió quedó a medias, y las dos veces en
+ * verde:
  *
  *   - `bdfe609` (Node 22.23.2 → 24.19.0) tocó `.nvmrc`, `.node-version` y el `FROM` del
  *     Dockerfile, y dejó `engines.node` en `>=22.23.2 <25.0.0`: un manifiesto anunciando tres
@@ -32,6 +144,12 @@ const DOCS_THAT_CITE_VERSIONS = ['README.md', '.github/ISSUE_TEMPLATE/bug_report
  * `engine-strict`, y el propio README lo dice—, la CI toma la versión de `.nvmrc` sin matriz, y
  * ningún spec leía estos archivos. El coste se cobra fuera del repo, en quien deriva la
  * plantilla.
+ *
+ * Los sitios en prosa se leen con las MISMAS expresiones con las que Renovate los reescribe
+ * (`customManagers` de `renovate.json`). Hasta el 2026-09-28 se leían con un `toContain` sobre el
+ * documento entero, y el agujero era real: el comentario HTML que precede a la tabla del README
+ * citaba la versión de pnpm, así que la fila podía quedarse vieja con este spec en verde —el
+ * fallo de `2723d87`, el mismo para el que existe—.
  *
  * Se afirma sobre el RESULTADO, no sobre la intención: qué versión resuelve de verdad, no qué
  * versión pretendía el literal.
@@ -78,13 +196,7 @@ describe('toolchain pins', () => {
       expect(range).toBe(expected);
     });
 
-    it.each(DOCS_THAT_CITE_VERSIONS)('debería citar esa versión en %s', (doc) => {
-      // Arrange
-      const contents = read(doc);
-
-      // Act & Assert
-      expect(contents).toContain(nvmrc);
-    });
+    describeRenovatedDocs('node', NODE_DOCS, nvmrc);
   });
 
   describe('pnpm', () => {
@@ -99,13 +211,7 @@ describe('toolchain pins', () => {
       expect(declared).toMatch(/^pnpm@\d+\.\d+\.\d+$/);
     });
 
-    it.each(DOCS_THAT_CITE_VERSIONS)('debería citar esa versión en %s', (doc) => {
-      // Arrange
-      const contents = read(doc);
-
-      // Act & Assert
-      expect(contents).toContain(pinned);
-    });
+    describeRenovatedDocs('pnpm', PNPM_DOCS, pinned);
   });
 
   describe('typescript', () => {

@@ -21,13 +21,36 @@ export type ErrorPayload = {
   timestamp: string;
   path: string;
   requestId: string;
+  /**
+   * El `errorCode` que Nest 12 añadió a `HttpException` (`options.errorCode`). Opcional de verdad:
+   * la clave solo existe cuando la excepción lo trae, nunca como `undefined` ni `null`.
+   */
+  errorCode?: string;
 };
 
 type NormalizedException = {
   statusCode: number;
   message: string;
   errorName: string;
+  errorCode?: string;
 };
+
+/**
+ * El `errorCode` de una `HttpException`, o `undefined` si no trae ninguno publicable.
+ *
+ * Dos fuentes, porque ninguna basta sola (medido contra `@nestjs/common` 12.1.0): con una
+ * respuesta objeto y `options`, `createBody` devuelve el objeto tal cual y el código solo vive en
+ * la propiedad `exception.errorCode`; con el código escrito a mano dentro del cuerpo, la propiedad
+ * no existe. La propiedad manda porque es la vía que Nest documenta. Solo vale una cadena no
+ * vacía, el mismo criterio que aplican `initErrorCode` y `createBody`.
+ */
+const errorCodeOf = (
+  exception: HttpException,
+  body?: { errorCode?: unknown },
+): string | undefined =>
+  [exception.errorCode, body?.errorCode].find(
+    (candidate): candidate is string => typeof candidate === 'string' && candidate !== '',
+  );
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -73,6 +96,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       path: resolvedPath,
       requestId,
     };
+    if (normalized.errorCode !== undefined) {
+      payload.errorCode = normalized.errorCode;
+    }
 
     const isServerError = normalized.statusCode >= 500;
     if (isServerError && !(exception instanceof HttpException)) {
@@ -89,18 +115,29 @@ export class AllExceptionsFilter implements ExceptionFilter {
     httpAdapter.reply(response, payload, normalized.statusCode);
   }
 
+  /**
+   * `hidesErrorDetails` solo afecta a los `Error` no-HTTP. Una `HttpException` —también una 5xx—
+   * publica su `message` y su `errorCode` en cualquier entorno: los dos los eligió para el cliente
+   * quien la construyó, y ocultarlos en producción haría que el contrato dependiera del entorno.
+   */
   private normalizeException(exception: unknown): NormalizedException {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const resp = exception.getResponse();
 
       if (typeof resp === 'string') {
-        return { statusCode: status, message: resp, errorName: exception.name };
+        return {
+          statusCode: status,
+          message: resp,
+          errorName: exception.name,
+          errorCode: errorCodeOf(exception),
+        };
       }
 
       const body = resp as {
         message?: string | string[];
         error?: string;
+        errorCode?: unknown;
         [key: string]: unknown;
       };
       const message = Array.isArray(body.message)
@@ -111,6 +148,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         statusCode: status,
         message,
         errorName: body.error ?? exception.name,
+        errorCode: errorCodeOf(exception, body),
       };
     }
 

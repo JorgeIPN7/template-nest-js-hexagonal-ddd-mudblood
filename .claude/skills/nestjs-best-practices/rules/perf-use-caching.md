@@ -2,14 +2,16 @@
 title: Use Caching Strategically
 impact: HIGH
 impactDescription: Dramatically reduces database load and response times
-tags: performance, caching, redis, keyv, optimization, v11
+tags: performance, caching, redis, keyv, optimization, v11+, v12
 ---
 
 ## Use Caching Strategically
 
 Implement caching for expensive operations, frequently accessed data, and external API calls. Use NestJS `CacheModule` with appropriate TTLs and cache invalidation strategies. Don't cache everything — focus on high-impact areas.
 
-> **NestJS 11 note:** `@nestjs/cache-manager` migrated to `cache-manager` v6, which is built on top of **Keyv**. The legacy `redisStore` shape (`{ store: redisStore(...) }`) is no longer supported. Configure adapters via the `stores: [...]` array using `KeyvRedis`, `KeyvCacheableMemory`, etc. Cache values are now wrapped in `{ value, expires }` internally — important if you read/write the cache directly or migrate from a v10 deployment that produced the old shape.
+> **Since NestJS 11 (still true in 12):** `@nestjs/cache-manager` runs on `cache-manager` v6+ (7.x today), which is built on top of **Keyv**. The legacy `redisStore` shape (`{ store: redisStore(...) }`) is no longer supported. Configure adapters via the `stores: [...]` array using `KeyvRedis`, `KeyvCacheableMemory`, etc. Cache values are wrapped in `{ value, expires }` internally — important if you read/write the cache directly or migrate from a v10 deployment that produced the old shape.
+
+> **NestJS 12 note:** `@nestjs/cache-manager` jumped from 3.x to **12.0.0** to follow the framework's major, and that is the line to install — 3.1.3 declares peers `@nestjs/common`/`@nestjs/core` `^9 || ^10 || ^11` only, so it conflicts with Nest 12. 12.0.0 keeps the public API of 3.1.3 and its other peers (`cache-manager` `>=6`, `keyv` `>=5`), but ships as ESM only with `engines.node` `^20.19.0 || ^22.12.0 || >=24.0.0` — the versions where the `require(esm)` a CommonJS app relies on to load it works without a flag.
 
 **Incorrect (no caching, caching everything, or legacy redisStore):**
 
@@ -30,7 +32,7 @@ export class ProductsService {
   }
 }
 
-// ❌ Legacy v10 shape — no longer works in NestJS 11
+// ❌ Legacy v10 shape — no longer works since NestJS 11 (nor in 12)
 CacheModule.registerAsync({
   useFactory: async () => {
     const store = await redisStore({ socket: { host: 'localhost', port: 6379 } });
@@ -54,7 +56,7 @@ export class UsersService {
 **Correct (Keyv-based stores with strategic invalidation):**
 
 ```typescript
-// Setup: install peers — npm i @nestjs/cache-manager cache-manager keyv @keyv/redis cacheable
+// Setup: install peers — npm i @nestjs/cache-manager@^12 cache-manager keyv @keyv/redis cacheable
 import { CacheModule } from '@nestjs/cache-manager';
 import { Keyv } from 'keyv';
 import KeyvRedis from '@keyv/redis';
@@ -159,4 +161,4 @@ export class CacheInvalidationService {
 | External API responses (rate-limited / paid) | Strongly time-sensitive data (auth tokens, balances) |
 | Pure functions with bounded input space | Anything where staleness is a correctness bug |
 
-Reference: [NestJS Caching](https://docs.nestjs.com/techniques/caching) · [Migration to cache-manager v6 / Keyv](https://docs.nestjs.com/migration-guide#cache-module)
+Reference: [NestJS Caching](https://docs.nestjs.com/techniques/caching) · [Using alternative Cache stores (Keyv)](https://docs.nestjs.com/techniques/caching#using-alternative-cache-stores)

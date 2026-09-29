@@ -9,6 +9,10 @@ tags: performance, lazy-loading, modules, optimization
 
 NestJS supports lazy-loading modules, which defers initialization until first use. This is valuable for large applications where some features are rarely used, serverless deployments where cold start time matters, or when certain modules have heavy initialization costs.
 
+> **Caveats (unchanged in v12):** lifecycle hooks (`onModuleInit`, `onApplicationBootstrap`, …) are **not invoked** in lazily loaded modules and services; controllers, resolvers and gateways cannot be lazy loaded; a lazy module cannot be registered as global, and global enhancers it registers (`APP_GUARD`, `APP_INTERCEPTOR`, …) will not work properly.
+>
+> **Import path:** write the dynamic `import()` with the `.js` extension, as the official docs now do. Under `module`/`moduleResolution: nodenext` an `import()` is resolved with ESM rules even in a CommonJS project, so `import('./reports/reports.module')` fails the typecheck (TS2307) while the `.js` form compiles.
+
 **Incorrect (loading everything eagerly):**
 
 ```typescript
@@ -44,7 +48,7 @@ export class ReportsService {
 
   async generateReport(type: string): Promise<Report> {
     // Load module only when needed
-    const { ReportsModule } = await import('./reports/reports.module');
+    const { ReportsModule } = await import('./reports/reports.module.js');
     const moduleRef = await this.lazyModuleLoader.load(() => ReportsModule);
 
     const reportsService = moduleRef.get(ReportsGeneratorService);
@@ -61,7 +65,7 @@ export class AdminService {
 
   private async getAdminModule(): Promise<ModuleRef> {
     if (!this.adminModule) {
-      const { AdminModule } = await import('./admin/admin.module');
+      const { AdminModule } = await import('./admin/admin.module.js');
       this.adminModule = await this.lazyModuleLoader.load(() => AdminModule);
     }
     return this.adminModule;
@@ -102,7 +106,7 @@ export class ModulePreloader implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     setTimeout(async () => {
-      await this.preloadModule(() => import('./reports/reports.module'));
+      await this.preloadModule(() => import('./reports/reports.module.js'));
     }, 5000); // 5 seconds after startup
   }
 

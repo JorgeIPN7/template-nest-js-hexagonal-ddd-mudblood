@@ -1,4 +1,4 @@
-import { ApiProperty, OmitType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 
 /**
  * Contrato de error que realmente devuelve `AllExceptionsFilter`. Antes no existía en el
@@ -6,7 +6,8 @@ import { ApiProperty, OmitType } from '@nestjs/swagger';
  * generado no tenía forma de tipar un fallo. Es el mismo defecto que `ApiEnvelopeDto` ya
  * corrigió para las respuestas de éxito.
  *
- * Las claves deben seguir a `ErrorPayload` una a una — `error-response.dto.spec.ts` lo vigila.
+ * Las claves deben seguir a `ErrorPayload` una a una, opcionales incluidas —
+ * `error-response.dto.spec.ts` lo vigila.
  */
 export class ErrorResponseDto {
   @ApiProperty({ example: 404, description: 'Código HTTP de la respuesta.' })
@@ -47,6 +48,22 @@ export class ErrorResponseDto {
       'Correlaciona la respuesta con la traza en los logs. Inclúyelo al reportar una incidencia.',
   })
   requestId!: string;
+
+  /**
+   * Opcional en el esquema porque es opcional en el filtro: `required: false` es lo que deja que
+   * los ejemplos de `buildErrorExample`, que no lo llevan, sigan satisfaciendo el esquema en el
+   * guardián Ajv. Ningún filtro de dominio lo emite; existe para que `AllExceptionsFilter` no
+   * descarte el que traiga una excepción de Nest 12.
+   */
+  @ApiPropertyOptional({
+    example: 'RESOURCE_LOCKED',
+    description:
+      'Identificador del error legible por máquina. Solo aparece cuando la excepción HTTP que ' +
+      'origina la respuesta lo declara (opción `errorCode` de Nest); si no, la clave no existe, ' +
+      'nunca vale `null`. Los errores de esta API no lo usan todavía: no bifurques por él sin ' +
+      'comprobar que el endpoint lo documenta.',
+  })
+  errorCode?: string;
 }
 
 /**
@@ -58,11 +75,16 @@ export class ErrorResponseDto {
  *
  * `OmitType` es lo que permite sustituir los `example` heredados, que hablan de un 404 y
  * desorientarían en una respuesta 400.
+ *
+ * **Sin `errorCode`, y no se redeclara.** El `exceptionFactory` por defecto construye la
+ * excepción sin opciones (`validation.pipe.js` en `@nestjs/common` 12.1.0), así que un fallo de
+ * validación nunca lo trae. Heredarlo anunciaría un campo que este status no puede llevar.
  */
 export class ValidationErrorResponseDto extends OmitType(ErrorResponseDto, [
   'statusCode',
   'message',
   'error',
+  'errorCode',
 ] as const) {
   @ApiProperty({ example: 400, description: 'Código HTTP de la respuesta.' })
   statusCode!: number;

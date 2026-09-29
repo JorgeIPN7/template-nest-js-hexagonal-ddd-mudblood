@@ -79,24 +79,52 @@ export default tseslint.config(
       '@typescript-eslint/return-await': ['error', 'in-try-catch'],
       '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
 
-      // `@nestjs/common/constants` es un entrypoint interno. Hasta 11.x ni siquiera estaba
-      // declarado (el paquete no publicaba `exports`); NestJS 12 publicó el mapa con un comodín
-      // `./*` que hoy lo mantiene resoluble (medido sobre 12.1.0), pero lo interno declarado
-      // vive en `./internal` y las subrutas se cierran en cualquier versión — `@nestjs/swagger`
-      // cerró las suyas en 11.4.3, un patch, con `ERR_PACKAGE_PATH_NOT_EXPORTED`. Ese fallo llega en runtime con
-      // typecheck en verde, porque los tipos viajan por el mismo camino que se rompe. Y si en
-      // vez de desaparecer la clave se RENOMBRA, nada lanza:
-      // `reflector.get(undefined, …)` devuelve `undefined` y el interceptor deja de detectar
-      // SSE en silencio. Las dos claves que hacían falta viven copiadas y ancladas al
-      // decorador público que las escribe en `src/common/nest-metadata.constants.ts`.
+      // Solo la RAÍZ de un paquete `@nestjs/*` es API pública: toda subruta queda prohibida,
+      // `import type` incluido. Hasta 11.x `@nestjs/common` no publicaba `exports` y cualquier
+      // subruta resolvía por el algoritmo legacy de Node. NestJS 12 publicó el mapa, y medido
+      // sobre `@nestjs/common@12.1.0` es `{".", "./internal", "./*.js", "./*": "./*.js"}`: los
+      // comodines dejan resoluble cualquier archivo del paquete —`constants`, `constants.js`,
+      // `interfaces/external/cors-options.interface`— y `./internal` reexporta `constants.js`
+      // bajo una cabecera que dice «not part of the public API». Por eso vetar un NOMBRE no
+      // bastaba: con `@nestjs/common/constants` prohibido, `@nestjs/common/constants.js` y
+      // `@nestjs/common/internal` pasaban el lint y compilaban. El patrón corta la clase entera.
+      //
+      // Que hoy resuelva no lo hace seguro: las subrutas se cierran en cualquier versión —
+      // `@nestjs/swagger` 11.4.2 no publicaba `exports` y 11.4.3, un patch, publicó un mapa sin
+      // comodín (`.`, `./plugin`, `./package.json`). Con `moduleResolution: nodenext`, el de este
+      // repo, TypeScript lee el mismo mapa que Node: cerrar una subruta rompe `typecheck` con
+      // TS2307 tanto si el import es de valor como de tipo, y en runtime el de valor lanza
+      // `ERR_PACKAGE_PATH_NOT_EXPORTED` (medido con este tsconfig sobre el mapa de
+      // `@nestjs/swagger` 12.0.2). `pnpm build` también cae, porque `typeCheck: true` corre ese
+      // mismo chequeo y aborta con «Found N type error(s)» (leído en `@nestjs/cli`, no ejecutado).
+      // Es un fallo ruidoso, pero es un bump de patch en rojo sin haber tocado nada.
+      //
+      // Si la constante se RENOMBRA en vez de desaparecer, en runtime nada lanza:
+      // `reflector.get(undefined, …)` devuelve `undefined` y el interceptor deja de detectar SSE.
+      // La única señal es el TS2305 de `typecheck` (medido con un paquete de prueba). Las dos
+      // claves que hacían falta viven copiadas y ancladas al decorador público que las escribe en
+      // `src/common/nest-metadata.constants.ts`. Un tipo que la raíz no exporta se deriva de uno
+      // que sí, como hace `src/config/cors.config.ts`.
+      //
+      // `regex` compara sin distinguir mayúsculas (su defecto, sin `caseSensitive`): en un disco
+      // que no las distingue —el APFS por defecto de macOS— `@NestJS/common/constants` también
+      // resuelve. Qué visita (medido): `import`/`export … from` e `import x = require()`. No ve
+      // `require()` ni el tipo `import('…').X`, pero esos dos ya son error por otras reglas en
+      // todo `src/` y `test/`: `@typescript-eslint/no-require-imports` (del preset
+      // `recommendedTypeChecked`) y `@typescript-eslint/consistent-type-imports`, que prohíbe las
+      // anotaciones `import()`. El único hueco real es el `import()` dinámico, que ninguna regla
+      // marca fuera de `domain/` (allí lo corta `boundaries/dependencies`). Hoy no hay ninguno hacia
+      // `@nestjs` en `src/`, `test/` ni `scripts/`. `scripts/*.mjs` queda además fuera del glob de
+      // `lint:check` (`{src,test}/**/*.ts`), así que esta regla no los vigila.
+      // Spec: `src/__tests__/eslint-config.spec.ts`, sobre esta config y no sobre una copia.
       'no-restricted-imports': [
         'error',
         {
-          paths: [
+          patterns: [
             {
-              name: '@nestjs/common/constants',
+              regex: '^@nestjs/[^/]+/',
               message:
-                'Entrypoint no declarado de @nestjs/common. Usa src/common/nest-metadata.constants.ts, cuyos literales están anclados al API público por su spec.',
+                'Subruta de un paquete @nestjs: solo la raíz del paquete es API estable; el comodín `./*` de su mapa `exports` y `./internal` pueden cerrarse en cualquier versión. Para las claves de metadatos usa src/common/nest-metadata.constants.ts, cuyos literales están anclados al API público por su spec; un tipo que la raíz no exporta, derívalo de uno que sí (como CorsConfig en src/config/cors.config.ts).',
             },
           ],
         },

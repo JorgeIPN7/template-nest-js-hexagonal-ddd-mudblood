@@ -2,12 +2,19 @@
 title: Implement Health Checks for Microservices
 impact: MEDIUM-HIGH
 impactDescription: Health checks enable orchestrators to manage service lifecycle
-tags: microservices, health-checks, terminus, kubernetes
+tags: microservices, health-checks, terminus, kubernetes, v12
 ---
 
 ## Implement Health Checks for Microservices
 
 Implement liveness and readiness probes using `@nestjs/terminus`. Liveness checks determine if the service should be restarted. Readiness checks determine if the service can accept traffic. Proper health checks enable Kubernetes and load balancers to route traffic correctly.
+
+> **Terminus 12 notes:**
+>
+> - **The legacy indicator API is gone.** `HealthIndicator` (the base class) and `HealthCheckError` were deprecated in v11 and are removed in v12: custom indicators inject `HealthIndicatorService` and **return** `up()` / `down()` / `degraded()` — throwing is no longer how you report "down".
+> - **`degraded`** is a third state: the indicator is still serving but impaired; the overall status becomes `degraded` and the HTTP status stays `200`.
+> - **Built-in shutdown readiness.** From `beforeApplicationShutdown` on, `HealthCheckService.check()` answers `503` with `status: 'shutting_down'`; `TerminusModule.forRoot({ gracefulShutdownTimeoutMs })` also delays shutdown on SIGTERM. No hand-rolled flag needed.
+> - **A `down` result carries the error text.** `attempt()`-based checks (such as `TypeOrmHealthIndicator.pingCheck`) add `message: err.message` and `responseTime` — on a public probe that can publish driver or infrastructure details. Strip it or keep the probe off the public surface.
 
 **Incorrect (simple ping that doesn't check dependencies):**
 
@@ -56,6 +63,8 @@ export class HealthController {
     private db: TypeOrmHealthIndicator,
     private disk: DiskHealthIndicator,
     private memory: MemoryHealthIndicator,
+    private redis: RedisHealthIndicator, // custom, defined below
+    private queue: QueueHealthIndicator, // custom, defined below
   ) {}
 
   // Liveness probe - is the service alive?
@@ -73,15 +82,15 @@ export class HealthController {
   @HealthCheck()
   readiness() {
     return this.health.check([
-      () => this.db.pingCheck('database'),
-      () =>
-        this.http.pingCheck('redis', 'http://redis:6379', { timeout: 1000 }),
+      // v12: pingCheck returns an attempt; chain the timeout (the `timeout` option is deprecated)
+      () => this.db.pingCheck('database').withTimeout(1000),
+      () => this.redis.isHealthy('redis'), // Redis is not HTTP: custom indicator below
       () =>
         this.disk.checkStorage('disk', { path: '/', thresholdPercent: 0.9 }),
     ]);
   }
 
-  // Deep health check for debugging
+  // Deep health check for debugging (HttpHealthIndicator needs @nestjs/axios + axios)
   @Get('deep')
   @HealthCheck()
   deepCheck() {
@@ -97,45 +106,54 @@ export class HealthController {
   }
 }
 
-// Custom indicator for business-specific health
+// Custom indicator for business-specific health (Terminus 12: HealthIndicatorService)
+import { HealthIndicatorService } from '@nestjs/terminus';
+
 @Injectable()
-export class QueueHealthIndicator extends HealthIndicator {
-  constructor(private queueService: QueueService) {
-    super();
-  }
+export class QueueHealthIndicator {
+  constructor(
+    private readonly healthIndicatorService: HealthIndicatorService,
+    private readonly queueService: QueueService,
+  ) {}
 
-  async isHealthy(key: string): Promise<HealthIndicatorResult> {
+  async isHealthy(key: string) {
+    const indicator = this.healthIndicatorService.check(key);
     const queueStats = await this.queueService.getStats();
-
-    const isHealthy = queueStats.failedCount < 100;
-    const result = this.getStatus(key, isHealthy, {
+    const data = {
       waiting: queueStats.waitingCount,
       active: queueStats.activeCount,
       failed: queueStats.failedCount,
-    });
+    };
 
-    if (!isHealthy) {
-      throw new HealthCheckError('Queue unhealthy', result);
+    if (queueStats.failedCount >= 100) {
+      return indicator.down(data); // return it: the check turns 503
     }
-
-    return result;
+    if (queueStats.waitingCount > 1_000) {
+      return indicator.degraded(data); // still serving: overall 'degraded', HTTP 200
+    }
+    return indicator.up(data);
   }
 }
 
-// Redis health indicator
+// Redis health indicator: attempt() marks 'up' when the function resolves and
+// 'down' (with message + responseTime) when it throws or times out
 @Injectable()
-export class RedisHealthIndicator extends HealthIndicator {
-  constructor(@InjectRedis() private redis: Redis) {
-    super();
-  }
+export class RedisHealthIndicator {
+  constructor(
+    private readonly healthIndicatorService: HealthIndicatorService,
+    @InjectRedis() private readonly redis: Redis,
+  ) {}
 
-  async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    try {
-      const pong = await this.redis.ping();
-      return this.getStatus(key, pong === 'PONG');
-    } catch (error) {
-      throw new HealthCheckError('Redis check failed', this.getStatus(key, false));
-    }
+  isHealthy(key: string) {
+    return this.healthIndicatorService
+      .check(key)
+      .attempt(async () => {
+        const pong = await this.redis.ping();
+        if (pong !== 'PONG') {
+          throw new Error(`Unexpected PING reply: ${pong}`);
+        }
+      })
+      .withTimeout(1000);
   }
 }
 
@@ -144,42 +162,22 @@ export class RedisHealthIndicator extends HealthIndicator {
 @HealthCheck()
 readiness() {
   return this.health.check([
-    () => this.db.pingCheck('database'),
+    () => this.db.pingCheck('database').withTimeout(1000),
     () => this.redis.isHealthy('redis'),
     () => this.queue.isHealthy('job-queue'),
   ]);
 }
 
-// Graceful shutdown handling
-@Injectable()
-export class GracefulShutdownService implements OnApplicationShutdown {
-  private isShuttingDown = false;
-
-  isShutdown(): boolean {
-    return this.isShuttingDown;
-  }
-
-  async onApplicationShutdown(signal: string): Promise<void> {
-    this.isShuttingDown = true;
-    console.log(`Shutting down on ${signal}`);
-
-    // Wait for in-flight requests
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-  }
-}
-
-// Health check respects shutdown state
-@Get('ready')
-@HealthCheck()
-readiness() {
-  if (this.shutdownService.isShutdown()) {
-    throw new ServiceUnavailableException('Shutting down');
-  }
-
-  return this.health.check([
-    () => this.db.pingCheck('database'),
-  ]);
-}
+// Graceful shutdown: Terminus flips every check() to 503 'shutting_down' by itself
+// (from beforeApplicationShutdown on) and, on SIGTERM, waits before the HTTP server closes.
+// Keep the delay below Kubernetes' terminationGracePeriodSeconds. The hooks must receive
+// the signal — see devops-graceful-shutdown for who owns SIGTERM.
+@Module({
+  imports: [TerminusModule.forRoot({ gracefulShutdownTimeoutMs: 5_000 })],
+  controllers: [HealthController],
+  providers: [QueueHealthIndicator, RedisHealthIndicator],
+})
+export class HealthModule {}
 ```
 
 ### Kubernetes Configuration

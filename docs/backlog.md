@@ -1259,6 +1259,96 @@ Throttler cumplía el criterio **literal** («una versión con `^12` en su peer�
 completo de la app con el `require(esm)` real de Node: Jest usa su propio loader, y el paso de
 migraciones solo carga `@nestjs/config`.
 
+**Seguimiento del 2026-09-28: tres flecos de la migración, cerrados.** Una revisión posterior
+encontró que la migración había dejado tres cosas a medias. La primera es el defecto del punto 4;
+las otras dos esta entrada no las recogía. Lo de arriba se conserva tal cual, porque es el
+razonamiento de entonces:
+
+1. **El apagado por señal (punto 4, tercera viñeta) está arreglado, no solo aceptado.**
+   - **Causa.** El listener de `enableShutdownHooks()` relanzaba la señal y el proceso moría sin
+     emitir `'exit'`, que es donde pino vacía su SonicBoom asíncrono y el worker de `pino-pretty`.
+   - **Medido sobre `dist` del commit anterior.** «Graceful shutdown completed» faltaba en 12 de 12
+     apagados. Con `LOG_PRETTY=true` faltaba también «Received SIGTERM», en 6 de 6. Y el
+     `Logger.error` de un hook que falla se perdía incluso con JSON (una corrida por modo).
+   - **Cómo queda.** `main.ts` es el único dueño de SIGTERM y SIGINT: hace `app.close(signal)` y
+     sale con `process.exit(128 + señal)`. El código sigue siendo 143/130, no el 0 que daría
+     `useProcessExit`, y ahora las dos líneas salen en 12 de 12.
+   - **Vigilancia.** El smoke de `ci.yml` exige el 143 y la línea de cierre; contra un build del
+     commit anterior falla justo en esa aserción. Arranca además con `DOCS_ENABLED=true`, así que
+     también carga por el loader de Node el documento OpenAPI y Scalar.
+   - **Lo que sigue aceptado.** Un hook que falla sale con 143, como un apagado limpio
+     (`Promise.allSettled`), pero su error ya llega al log.
+   - **`return503OnClosing`, probado y retirado.** Contesta un 503 `text/html` sin sobre desde el
+     primer instante de `close()` y tapa el 503 JSON `shutting_down` que el contrato de
+     `/health/liveness` y `/health/readiness` publica; y no protege nada, porque el `DataSource` se
+     destruye en `onApplicationShutdown`, después de cerrar el servidor HTTP. Medido sobre `dist`
+     con el hook de Terminus alargado 2 s. `main.spec.ts` fija que la app sigue atendiendo
+     mientras el apagado espera a los hooks. Si algún día hace falta, se activa junto con un cambio
+     del contrato de health, nunca solo.
+2. **Las cuatro PR en rojo por separado no se repetirán en el próximo major**, al menos por
+   configuración. El preset de monorepo agrupa por repositorio de origen y dejaba fuera jwt,
+   swagger, typeorm, throttler, nestjs-pino y nestjs-cls. Una `packageRule` de `renovate.json`
+   mete ahora todos los major de `@nestjs/**`, `nestjs-cls` y `nestjs-pino` en el grupo
+   «ecosistema NestJS». `src/__tests__/renovate.spec.ts` recalcula desde `package.json` y
+   `node_modules` qué dependencias están acopladas a Nest y exige que la regla las cubra. **No
+   está comprobado en Renovate real**, que no se ejecutó: la prueba será el próximo major, que
+   debería llegar en una sola PR desde la rama `renovate/major-ecosistema-nestjs`.
+3. **Las skills se revisaron para la 12.** La migración las dejó fuera a propósito y seguían
+   anunciando NestJS 11. Cambiaron 24 de las 45 reglas de `nestjs-best-practices` y las otras seis
+   skills; `NESTJS-MAPPING.md` enseñaba además tokens `Symbol` y carpetas `handlers/`. Detalle en
+   `CHANGELOG.md`.
+
+Relacionado, aunque no era un fleco de esta entrada: el punto 2 cuenta que throttler 6.6/6.7
+importaba una subruta de `@nestjs/common` que el mapa `exports` de la 12 no resuelve. El lint del
+repo vetaba solo el nombre `@nestjs/common/constants`, así que `constants.js` e `internal` pasaban
+y compilaban. Desde el 2026-09-28 `eslint.config.mjs` prohíbe toda subruta de `@nestjs/*`.
+
+---
+
+## 28. Un grafo mixto CJS/ESM partiría en dos el contexto por petición de `nestjs-pino` (no el de `nestjs-cls`)
+
+**Qué pasa.** `nestjs-cls` 7 y `nestjs-pino` 5.2 publican un build dual: su `exports` lleva
+`require` a `dist/cjs` e `import` a `dist/esm`. Si un mismo proceso cargara los dos builds de un
+paquete, cada build tendría su propia copia del estado de módulo. Hoy no pasa: medido el
+2026-09-28 en Node 24.21.0, la app, `dist/` y Jest resuelven los dos paquetes al build CJS, y
+ninguna dependencia del árbol los importa. Pero el riesgo no es igual en los dos paquetes:
+
+- **`nestjs-cls` ya lo resolvió upstream**, en la 7.0.0 (commit 35c25b7). El `AsyncLocalStorage`
+  y las claves (`CLS_ID`…) viven en el registro global de `Symbol.for`. Con los dos builds
+  cargados, un contexto abierto por uno lo lee el otro, también a través de `ClsMiddleware` real.
+  Parcheando la copia ESM para que no los comparta, `getId()` pasa a `undefined`: es esa
+  mitigación la que lo evita. Quedan tres cosas:
+  - `ClsService` es una clase distinta en cada build. Usarla como token cruzado rompe el arranque
+    con `UnknownDependenciesException`: un fallo ruidoso.
+  - Tres registros de módulo no se comparten: proxy providers, plugins y `ContextClsStoreMap`. El
+    repo no usa ninguno.
+  - El único consumidor, `TransformInterceptor`, cae a `request.id`, que en el grafo real vale lo
+    mismo que `cls.getId()`.
+- **`nestjs-pino` 5.2.1 no lo resuelve.** `storage` es un `new AsyncLocalStorage()` de módulo en
+  cada build. Medido: un store abierto por el build CJS da `undefined` si se lee con `getStore()`
+  desde el ESM. Un `PinoLogger` cargado del build ESM escribiría con el logger raíz, sin `req` ni
+  `reqId`, y sin aviso. `rootLogger` también se duplicaría, y habría dos `pino-http`.
+
+**Criterio ya decidido.** No se añade código ni test de guarda mientras el grafo sea CJS puro. La
+condición no es alcanzable, y un spec que cargue los dos builds a mano probaría algo que la app no
+produce. La entrada se reabre si ocurre cualquiera de estas tres cosas:
+
+- Una migración parcial a ESM: un `.mjs` o un `"type": "module"` que importe `nestjs-pino` o
+  `nestjs-cls` mientras el resto del código usa `require`.
+- Entra una dependencia que los importe: `pnpm why nestjs-pino` o `pnpm why nestjs-cls` deja de
+  mostrar solo la raíz.
+- Jest pasa a cargar `src/` como ESM.
+
+Migrar el repo entero a ESM **no** reactiva el riesgo, porque todo resolvería al build `import` y
+habría una sola copia. Si se reabre, el guarda es un spec que haga `require` e `import()` del
+paquete y compruebe que un contexto abierto por uno se ve desde el otro. Con `nestjs-pino` ese
+spec sale en rojo hasta que upstream comparta el ALS o el repo lo cargue por una sola vía.
+
+**Cómo se sabrá que está hecho.** Vale cualquiera de las dos: que `nestjs-pino` comparta `storage`
+entre builds, como `nestjs-cls` 7 (se comprueba con la sonda de dos builds: un store abierto con
+`storage.run` del build CJS tiene que verse con `getStore()` del ESM), o que el repo deje de poder
+formar un grafo mixto.
+
 ---
 
 ## Cerrado al verificarlo

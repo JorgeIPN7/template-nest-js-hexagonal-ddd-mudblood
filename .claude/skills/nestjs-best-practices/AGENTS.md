@@ -1,8 +1,8 @@
 # NestJS Best Practices
 
-**Version 1.2.0**
+**Version 1.3.0**
 NestJS Best Practices
-April 2026
+September 2026
 
 > **Note:**
 > This document is mainly for agents and LLMs to follow when maintaining,
@@ -14,7 +14,7 @@ April 2026
 
 ## Abstract
 
-Comprehensive best practices and architecture guide for NestJS applications, aligned with NestJS 11 (Express v5 / Fastify v5, Node.js 20+, cache-manager v6 / Keyv, BullMQ WorkerHost, reverse-order termination hooks). Designed for AI agents and LLMs. Contains 45 rules across 10 categories, prioritized by impact from critical (architecture, dependency injection) to incremental (DevOps patterns). Each rule includes a brief explanation, an incorrect example, a correct example, and explicit notes for v11-specific behavior where applicable.
+Comprehensive best practices and architecture guide for NestJS applications, aligned with NestJS 12 (ESM-only packages loaded from CommonJS through require(esm) on Node.js 20.19+ / 22.12+, 24 LTS recommended; lifecycle hooks by hierarchy level with allSettled termination; one owner of the shutdown signals; Standard Schema config validation; Terminus HealthIndicatorService; HttpException errorCode; built-in CSRF protection and security headers since 12.1) and with the NestJS 11 changes it keeps (Express v5 / Fastify v5, cache-manager v6+ / Keyv, BullMQ WorkerHost). Designed for AI agents and LLMs. Contains 45 rules across 10 categories, prioritized by impact from critical (architecture, dependency injection) to incremental (DevOps patterns). Each rule includes a brief explanation, an incorrect example, a correct example, and explicit notes for version-specific behavior (v11 changes still in force, v12 changes) where applicable.
 
 ---
 
@@ -1572,6 +1572,8 @@ Reference: [NestJS Custom Providers](https://docs.nestjs.com/fundamentals/custom
 
 NestJS automatically catches errors from async route handlers, but errors from background tasks, event handlers, and manually created promises can crash your application. Always handle async errors explicitly and use global handlers as a safety net.
 
+> **NestJS 12 note — log the error in one entry.** The built-in logger treats plain objects after the message as structured params of the same entry, takes a trailing **string** as the log *context*, and only `error()` recognises a stack-trace string. So `logger.error('Unhandled Rejection at:', promise, 'reason:', reason)` splits into several records, the promise is printed as `{}`, and a string `reason` lands in the `context` or `stack` field instead of the message. Pass the error inside an object — `logger.error('Unhandled rejection', { reason })` — or its stack as the second argument of `error()`.
+
 **Incorrect (fire-and-forget without error handling):**
 
 ```typescript
@@ -1643,8 +1645,9 @@ export class OrdersService {
     try {
       await this.processOrder(event);
     } catch (error) {
-      this.logger.error('Failed to process order', { event, error });
-      // Don't rethrow - would crash the process
+      this.logger.error('Failed to process order', { event, error }); // v12: one entry, "params"
+      // Handle it here: rethrowing only reaches @nestjs/event-emitter, which by default
+      // (suppressErrors: true) logs it and moves on — the event would be lost silently
       await this.deadLetterQueue.add('order.created', event);
     }
   }
@@ -1672,12 +1675,14 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const logger = new Logger('Bootstrap');
 
-  process.on('unhandledRejection', (reason, promise) => {
-    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.on('unhandledRejection', (reason) => {
+    // One entry; an Error reason is serialized with its stack, a string one stays a value
+    logger.error('Unhandled rejection', { reason });
   });
 
   process.on('uncaughtException', (error) => {
-    logger.error('Uncaught Exception:', error);
+    // fatal() does not detect a stack string: pass the error inside an object
+    logger.fatal('Uncaught exception', { error });
     process.exit(1);
   });
 
@@ -1694,6 +1699,16 @@ Reference: [Node.js Unhandled Rejections](https://nodejs.org/api/process.html#ev
 **Impact: HIGH** — Keeps controllers thin and simplifies error handling
 
 It's acceptable (and often preferable) to throw `HttpException` subclasses from services in HTTP applications. This keeps controllers thin and allows services to communicate appropriate error states. For truly layer-agnostic services, use domain exceptions that map to HTTP status codes.
+
+> **NestJS 12 note — `errorCode`:** `HttpExceptionOptions` accepts `errorCode`, a stable identifier clients can branch on instead of parsing `message`. It is copied to `exception.errorCode` and serialized into the body, with one exception:
+>
+> | You throw | Response body |
+> | --- | --- |
+> | `new NotFoundException('User #42 not found', { errorCode: 'USER_NOT_FOUND' })` | `{ "message": "User #42 not found", "error": "Not Found", "statusCode": 404, "errorCode": "USER_NOT_FOUND" }` |
+> | `new HttpException('Teapot', 418, { errorCode: 'TEAPOT' })` | the default filter adds it: `{ "statusCode": 418, "message": "Teapot", "errorCode": "TEAPOT" }` |
+> | `new NotFoundException({ message: 'x' }, { errorCode: 'USER_NOT_FOUND' })` | **your object, verbatim** — `errorCode` is only on `exception.errorCode` |
+>
+> Pass a string message (not an object) when you want the code in the body, and make sure a custom global filter that rebuilds the body copies `exception.errorCode` (see `error-use-exception-filters`).
 
 **Incorrect (return error objects instead of throwing):**
 
@@ -1734,7 +1749,8 @@ export class UsersService {
   async findById(id: string): Promise<User> {
     const user = await this.repo.findOne({ where: { id } });
     if (!user) {
-      throw new NotFoundException(`User #${id} not found`);
+      // v12: errorCode travels in the body next to message/error/statusCode
+      throw new NotFoundException(`User #${id} not found`, { errorCode: 'USER_NOT_FOUND' });
     }
     return user;
   }
@@ -1744,7 +1760,7 @@ export class UsersService {
       where: { email: dto.email },
     });
     if (existing) {
-      throw new ConflictException('Email already registered');
+      throw new ConflictException('Email already registered', { errorCode: 'EMAIL_TAKEN' });
     }
     return this.repo.save(dto);
   }
@@ -1790,6 +1806,7 @@ export class EntityNotFoundFilter implements ExceptionFilter {
     response.status(404).json({
       statusCode: 404,
       message: exception.message,
+      errorCode: 'ENTITY_NOT_FOUND', // same field name as HttpException's errorCode
       entity: exception.entity,
       id: exception.id,
     });
@@ -1806,6 +1823,8 @@ Reference: [NestJS Exception Filters](https://docs.nestjs.com/exception-filters)
 **Impact: HIGH** — Consistent, centralized error handling
 
 Never catch exceptions and manually format error responses in controllers. Use NestJS exception filters to handle errors consistently across your application. Create custom exception filters for specific error types and a global filter for unhandled exceptions.
+
+> **NestJS 12 note — propagate `errorCode`:** `new NotFoundException('…', { errorCode: 'USER_NOT_FOUND' })` stores the code on `exception.errorCode` and the built-in filter serializes it into the body. A custom filter that **rebuilds** the body from scratch drops it unless it copies `exception.errorCode` itself — and when the exception was built from an object, the code is *only* on the property, never in `getResponse()`.
 
 **Incorrect (manual error handling in controllers):**
 
@@ -1851,15 +1870,11 @@ export class UsersController {
   }
 }
 
-// Custom domain exception
+// Custom domain exception — v12: a string message plus errorCode yields the standard body
+// { message, error: 'Not Found', statusCode: 404, errorCode: 'USER_NOT_FOUND' }
 export class UserNotFoundException extends NotFoundException {
   constructor(userId: string) {
-    super({
-      statusCode: 404,
-      error: 'Not Found',
-      message: `User with ID "${userId}" not found`,
-      code: 'USER_NOT_FOUND',
-    });
+    super(`User with ID "${userId}" not found`, { errorCode: 'USER_NOT_FOUND' });
   }
 }
 
@@ -1875,7 +1890,7 @@ export class DomainExceptionFilter implements ExceptionFilter {
 
     response.status(status).json({
       statusCode: status,
-      code: exception.code,
+      errorCode: exception.code, // one field name for every error, as in HttpException
       message: exception.message,
       timestamp: new Date().toISOString(),
       path: request.url,
@@ -1893,33 +1908,37 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const status =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+    const isHttp = exception instanceof HttpException;
+    const status = isHttp ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
+    // getResponse(), not exception.message: ValidationPipe keeps its array of messages
+    // there, while exception.message degrades to "Bad Request Exception"
+    const body = isHttp ? exception.getResponse() : undefined;
     const message =
-      exception instanceof HttpException
-        ? exception.message
-        : 'Internal server error';
+      typeof body === 'string'
+        ? body
+        : typeof body === 'object' && body !== null && 'message' in body
+          ? body.message
+          : 'Internal server error';
 
-    this.logger.error(
-      `${request.method} ${request.url}`,
-      exception instanceof Error ? exception.stack : exception,
-    );
+    // v12: the code lives on the exception; rebuilding the body means copying it
+    const errorCode = isHttp ? exception.errorCode : undefined;
+
+    this.logger.error(`${request.method} ${request.url}`, { exception });
 
     response.status(status).json({
       statusCode: status,
       message,
+      ...(errorCode !== undefined && { errorCode }),
       timestamp: new Date().toISOString(),
       path: request.url,
     });
   }
 }
 
-// Register globally in main.ts
+// Register globally in main.ts (Logger is not a provider: app.get(Logger) would throw)
 app.useGlobalFilters(
-  new AllExceptionsFilter(app.get(Logger)),
+  new AllExceptionsFilter(new Logger('Exceptions')),
   new DomainExceptionFilter(),
 );
 
@@ -2091,7 +2110,7 @@ Reference: [NestJS Authentication](https://docs.nestjs.com/security/authenticati
 
 **Impact: HIGH** — CSRF lets an attacker perform state changes as the victim user
 
-If your NestJS app authenticates browser users with **cookies** (session cookies, persistent JWT-in-cookie, OAuth refresh cookie), every state-changing endpoint is reachable from a cross-origin form unless you protect it. Use the double-submit-cookie pattern via `csrf-csrf` (Express) or `@fastify/csrf-protection` (Fastify). The deprecated `csurf` package is no longer maintained and should not be used.
+If your NestJS app authenticates browser users with **cookies** (session cookies, persistent JWT-in-cookie, OAuth refresh cookie), every state-changing endpoint is reachable from a cross-origin form unless you protect it. Since NestJS 12.1 the framework ships the protection built in: `app.enableCsrfProtection()` rejects cross-origin, state-changing browser requests based on Fetch Metadata (`Sec-Fetch-Site`) with an `Origin`/`Host` fallback — the algorithm of Go's `net/http.CrossOriginProtection`, no tokens and no cookies. Token schemes — the double-submit-cookie pattern via `csrf-csrf` (Express) or `@fastify/csrf-protection` (Fastify) — remain the answer on older NestJS versions and a supplement for browsers that send neither header. The deprecated `csurf` package is no longer maintained and should not be used.
 
 CSRF protection is **not needed** for endpoints authenticated with `Authorization: Bearer ...` headers from a non-cookie source — browsers do not auto-attach those, so cross-origin requests can't impersonate the user.
 
@@ -2125,20 +2144,59 @@ async function bootstrap() {
 // → cookie auto-sent, account deleted
 ```
 
-**Correct (Express — `csrf-csrf` double-submit-cookie):**
+**Correct (NestJS 12.1+ — built-in `app.enableCsrfProtection()`):**
 
 ```typescript
-// npm i csrf-csrf cookie-parser
+import { RequestMethod } from '@nestjs/common';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  // Once, before app.init() / app.listen(). The check runs before Nest middleware,
+  // body parsing, guards and handlers; a rejection is a ForbiddenException that goes
+  // through your exception filters.
+  app.enableCsrfProtection({
+    // Cross-origin callers allowed to change state. Origins allowed by CORS are
+    // NOT trusted implicitly — list them here too. Exact "scheme://host[:port]".
+    trustedOrigins: ['https://admin.example.com'],
+    // Server-to-server callers that send a foreign Origin (e.g. webhooks). Declared
+    // like MiddlewareConsumer.exclude(), without the global prefix, but matched exactly.
+    exclude: [{ path: 'webhooks/stripe', method: RequestMethod.POST }],
+  });
+
+  await app.listen(3000);
+}
+```
+
+What it lets through, measured with NestJS 12.1.0:
+
+| Request | Result |
+|---------|--------|
+| `GET` / `HEAD` / `OPTIONS` | Always allowed |
+| `Sec-Fetch-Site: same-origin` or `none` | Allowed |
+| `Sec-Fetch-Site: same-site` or `cross-site` | **403** (unless trusted origin or excluded route) |
+| No `Sec-Fetch-Site`, `Origin` not matching `Host` | **403** |
+| Neither `Sec-Fetch-Site` nor `Origin` (curl, server-to-server) | Allowed — it protects browsers, not the API from non-browser clients |
+
+Two deployment traps: browsers send `Sec-Fetch-Site` only to secure origins (HTTPS or `localhost`), so over plain HTTP only the `Origin`/`Host` comparison applies; and `X-Forwarded-Host` is ignored — behind a proxy that rewrites `Host`, preserve it or list the public origin in `trustedOrigins`. Middleware registered with `app.use()` **before** the call runs before the check.
+
+**Correct (Express — `csrf-csrf` double-submit-cookie token, for NestJS < 12.1 or as a supplement):**
+
+```typescript
+// npm i csrf-csrf cookie-parser   (csrf-csrf v4 API)
 import cookieParser from 'cookie-parser';
 import { doubleCsrf } from 'csrf-csrf';
+import type { Request, Response } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser(process.env.COOKIE_SECRET));
 
-  const { doubleCsrfProtection, generateToken } = doubleCsrf({
+  const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => process.env.CSRF_SECRET!,
+    // Required since v4: binds the token to the session (express-session here)
+    getSessionIdentifier: (req) => req.session.id,
     cookieName: '__Host-psifi.x-csrf-token',
     cookieOptions: {
       sameSite: 'lax',
@@ -2148,14 +2206,14 @@ async function bootstrap() {
     },
     // Only protect mutating methods — GETs are read-only
     ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
-    getTokenFromRequest: (req) => req.headers['x-csrf-token'] as string,
+    getCsrfTokenFromRequest: (req) => req.headers['x-csrf-token'],
   });
 
   app.use(doubleCsrfProtection);
 
   // Expose a public endpoint that issues a fresh token to the SPA
-  app.use('/csrf-token', (req, res) => {
-    res.json({ token: generateToken(req, res) });
+  app.use('/csrf-token', (req: Request, res: Response) => {
+    res.json({ token: generateCsrfToken(req, res) });
   });
 
   await app.listen(3000);
@@ -2192,7 +2250,7 @@ async function bootstrap() {
 
 - Set session cookies as `Secure; HttpOnly; SameSite=Lax` (or `Strict` if no third-party login redirects).
 - Use the `__Host-` cookie prefix to lock cookies to the exact host with `Path=/`.
-- Validate `Origin` / `Referer` on mutating endpoints as a second layer.
+- Check `Origin` on mutating endpoints — `app.enableCsrfProtection()` does it for you on NestJS 12.1+; on older versions validate `Origin` / `Referer` by hand.
 - Never accept a CSRF token via query string (it leaks into logs and the Referer header).
 
 Reference: [NestJS Security — CSRF](https://docs.nestjs.com/security/csrf) · [csrf-csrf](https://github.com/Psifi-Solutions/csrf-csrf) · [OWASP CSRF Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
@@ -2205,7 +2263,9 @@ Reference: [NestJS Security — CSRF](https://docs.nestjs.com/security/csrf) · 
 
 Use `@nestjs/throttler` to limit request rates per client. Apply different limits for different endpoints — stricter for auth endpoints, more relaxed for read operations. Consider using Redis for distributed rate limiting in clustered deployments.
 
-> **NestJS 11 + reverse proxy note:** when running behind a load balancer (k8s ingress, ALB, Cloudflare), `req.ip` resolves to the proxy's IP — every request looks like it comes from one client and rate limits are useless. Either configure `app.set('trust proxy', ...)` on Express **and** override `getTracker()` to read `req.ips[0]`, or run the throttler on the proxy. `getTracker()` returns `Promise<string>` in v11 — make it `async`.
+> **NestJS 12 note:** `@nestjs/throttler` stays on its own 6.x line — 6.7.1 declares `@nestjs/common` / `@nestjs/core` `^12.0.0` among its peers and still ships CommonJS, unlike the ESM-only `@nestjs/*` 12 packages. Its guard exposes `protected getTracker(req): Promise<string>` (make overrides `async`) and **no `getLimit()` hook**: per-caller limits go in the options, where `limit` and `ttl` accept a function of the `ExecutionContext`.
+
+> **Reverse proxy note:** when running behind a load balancer (k8s ingress, ALB, Cloudflare), `req.ip` resolves to the proxy's IP unless Express is told to trust it — every request looks like it comes from one client and rate limits are useless. Configure `app.set('trust proxy', ...)` with the exact hop count or CIDR, or run the throttler on the proxy. That is enough: the default tracker already reads `req.ip` (grouping IPv6 addresses by /64 subnet), and with a correct setting Express makes `req.ips[0]` equal to `req.ip` — overriding `getTracker()` to read `req.ips[0]` adds nothing. With `trust proxy` set to `true`, both come from the client-controlled `X-Forwarded-For`.
 
 **Incorrect (no rate limiting on sensitive endpoints):**
 
@@ -2242,7 +2302,7 @@ export class ApiController {
 
 ```typescript
 // Configure throttler globally with multiple limits
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard, minutes } from '@nestjs/throttler';
 
 @Module({
   imports: [
@@ -2299,27 +2359,29 @@ export class HealthController {
   }
 }
 
-// Custom throttle per user type — getTracker() is async in v11
+// Track authenticated users by ID — getTracker() is async in @nestjs/throttler 6.x
 @Injectable()
-export class CustomThrottlerGuard extends ThrottlerGuard {
+export class UserAwareThrottlerGuard extends ThrottlerGuard {
   protected async getTracker(req: Record<string, any>): Promise<string> {
-    // Authenticated user → user ID; otherwise client IP behind proxy
+    // req.user only exists if the authentication guard already ran for this request
     if (req.user?.id) return `user:${req.user.id}`;
-    // req.ips is populated when 'trust proxy' is set; fall back to req.ip
-    return req.ips?.[0] ?? req.ip;
-  }
-
-  protected async getLimit(context: ExecutionContext): Promise<number> {
-    const request = context.switchToHttp().getRequest();
-
-    // Higher limits for authenticated users
-    if (request.user) {
-      return request.user.isPremium ? 1000 : 200;
-    }
-
-    return 50; // Anonymous users
+    // Anonymous: keep the default tracker (req.ip, IPv6 grouped by /64 subnet)
+    return super.getTracker(req);
   }
 }
+
+// Limits per user type: `limit` (and `ttl`) accept a function of the ExecutionContext.
+// ThrottlerGuard has no getLimit() hook — a method with that name is never called.
+ThrottlerModule.forRoot([
+  {
+    ttl: minutes(1),
+    limit: (context: ExecutionContext) => {
+      const user = context.switchToHttp().getRequest().user;
+      if (!user) return 50; // Anonymous users
+      return user.isPremium ? 1000 : 200; // Higher limits for authenticated users
+    },
+  },
+]);
 
 // Trust the load balancer so req.ip / req.ips report the real client
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -2480,7 +2542,7 @@ Reference: [OWASP XSS Prevention](https://cheatsheetseries.owasp.org/cheatsheets
 
 Guards determine whether a request should be handled based on authentication state, roles, permissions, or other conditions. They run after middleware but before pipes and interceptors, making them ideal for access control. Use guards instead of manual checks in controllers.
 
-> **NestJS 11 type-inference note:** `Reflector.getAllAndOverride<T>(...)` now returns `T | undefined` (was `T`), and `getAllAndMerge<T>(...)` returns an object instead of an array when there is exactly one entry of object type. Always handle the `undefined` case (treat "no metadata" as a deliberate fallback like `false`/`null`) — `if (isPublic)` already does this safely, but `if (roles.length === 0)` will crash if you forget. Prefer the typed key form `reflector.getAllAndOverride(IS_PUBLIC_KEY, [...])` where `IS_PUBLIC_KEY` is a `Reflector.createDecorator<boolean>()` so the return type is inferred for you.
+> **Reflector typing note (checked against NestJS 12.1.0):** `reflector.getAllAndOverride()` returns `undefined` at runtime when neither the handler nor the class carries the metadata — but neither overload puts `undefined` in its return type (`getAllAndOverride<TResult>(key, targets): TResult`; the `Reflector.createDecorator` form returns the decorator's value type). The compiler will not warn you: write the `undefined` into the type argument yourself (`getAllAndOverride<Role[] | undefined>(...)`) and treat "no metadata" as a deliberate fallback. `if (isPublic)` already does this safely, but `if (roles.length === 0)` throws a `TypeError` on every route without `@Roles()`. `getAllAndMerge()` returns the object itself, not a one-element array, when exactly one target carries a non-array object. Prefer the typed decorator form — `const Roles = Reflector.createDecorator<Role[]>()` and `reflector.getAllAndOverride(Roles, [...])` — so the key and the value type cannot drift apart; the `undefined` check is still yours to write.
 
 **Incorrect (manual auth checks in every handler):**
 
@@ -2525,7 +2587,7 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Check for @Public() decorator
-    const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [
+    const isPublic = this.reflector.getAllAndOverride<boolean | undefined>('isPublic', [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -2558,7 +2620,8 @@ export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<Role[]>('roles', [
+    // `| undefined` is not in the declared return type — without it the check below looks redundant
+    const requiredRoles = this.reflector.getAllAndOverride<Role[] | undefined>('roles', [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -2613,7 +2676,7 @@ Reference: [NestJS Guards](https://docs.nestjs.com/guards)
 
 **Impact: HIGH** — A single line of code blocks a wide class of browser-based attacks
 
-Helmet sets a curated bundle of HTTP response headers that block common browser-based attacks: clickjacking, MIME-type sniffing, cross-origin resource loading, referrer leakage, and (with CSP) most XSS and data-exfiltration payloads. It is the lowest-effort, highest-payoff security middleware you can add to a NestJS app — install it once, configure CSP to match your frontend, and forget about it.
+Helmet sets a curated bundle of HTTP response headers that block common browser-based attacks: clickjacking, MIME-type sniffing, cross-origin resource loading, referrer leakage, and (with CSP) most XSS and data-exfiltration payloads. It is the lowest-effort, highest-payoff security middleware you can add to a NestJS app — install it once, configure CSP to match your frontend, and forget about it. Since NestJS 12.1 the same headers are also available without the dependency, through `app.useSecurityHeaders()` (see below).
 
 Helmet does **not** replace input validation, output encoding, authentication, or CSRF protection. It is the browser-side complement to those server-side controls.
 
@@ -2683,6 +2746,34 @@ async function bootstrap() {
 }
 ```
 
+**Correct (NestJS 12.1+ — built-in `app.useSecurityHeaders()`, no dependency):**
+
+```typescript
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  // Right after create(), once, before app.init() / app.listen() — later, or twice, it throws.
+  // Same headers and defaults as helmet 8, same option names (helmet's legacy aliases such as
+  // `hsts` or `frameguard` are rejected at startup).
+  app.useSecurityHeaders({
+    contentSecurityPolicy: {
+      // Merged into the helmet-8 default policy (useDefaults: true)
+      directives: {
+        connectSrc: ["'self'", 'https://api.example.com'],
+        frameAncestors: ["'none'"],
+      },
+    },
+    strictTransportSecurity: { maxAge: 60 * 60 * 24 * 365, includeSubDomains: true, preload: true },
+    crossOriginResourcePolicy: { policy: 'same-site' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  });
+
+  await app.listen(3000);
+}
+```
+
+It writes the headers on every response — routes, `404`s and errors, including the `403`s of `app.enableCsrfProtection()` — and removes `X-Powered-By`; a route can still override one header with `@Header()`. Two limits keep `helmet` relevant: middleware registered with `app.use()` before the call runs first, so a response it ends itself carries no headers; and directive values are static (`string | string[] | boolean | null`), so a per-request CSP nonce still needs `helmet`'s function-valued directives.
+
 **Correct (Fastify — use `@fastify/helmet`):**
 
 ```typescript
@@ -2716,7 +2807,7 @@ async function bootstrap() {
 
 **CSP rollout strategy:** start in `Content-Security-Policy-Report-Only` mode pointed at a reporting endpoint, fix violations in your frontend, then switch to enforcing mode. A blanket `'unsafe-inline'` defeats most of CSP's value — fix the inline scripts/styles instead.
 
-Reference: [NestJS Security — Helmet](https://docs.nestjs.com/security/helmet) · [helmet docs](https://helmetjs.github.io/) · [MDN: CSP](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP)
+Reference: [NestJS Security — Helmet and built-in security headers](https://docs.nestjs.com/security/helmet) · [helmet docs](https://helmetjs.github.io/) · [MDN: CSP](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP)
 
 ---
 
@@ -2878,15 +2969,23 @@ Reference: [NestJS Validation](https://docs.nestjs.com/techniques/validation)
 
 NestJS lifecycle hooks (`onModuleInit`, `onApplicationBootstrap`, etc.) support async operations. However, misusing them can block application startup or cause race conditions. Understand the lifecycle order and use hooks appropriately.
 
-> **NestJS 11 note:** termination hooks (`onModuleDestroy`, `beforeApplicationShutdown`, `onApplicationShutdown`) now run in **reverse order** of their initialization counterparts. A module that initialized first will tear down last. This makes "destroy after my consumers" guarantees explicit: a database module imported by a feature module is destroyed *after* the feature, so feature-module destroy hooks can still issue queries.
+> **Since v11:** termination hooks (`onModuleDestroy`, `beforeApplicationShutdown`, `onApplicationShutdown`) run in **reverse order** of their initialization counterparts. A module that initialized first will tear down last. This makes "destroy after my consumers" guarantees explicit: a database module imported by a feature module is destroyed *after* the feature, so feature-module destroy hooks can still issue queries.
 
-**Initialization order (still oldest → newest dependency):**
+> **NestJS 12 notes:**
+>
+> - **Hooks run by hierarchy level, also inside a module.** A provider's `onModuleInit` starts only after the `onModuleInit` of the providers it depends on has finished; providers on the same level run concurrently. Termination hooks walk the levels in reverse (consumers first). This can change the order you relied on in v11 — review hooks whose order matters.
+> - **Termination hooks settle with `Promise.allSettled`.** A rejecting `onModuleDestroy`, `beforeApplicationShutdown` or `onApplicationShutdown` is logged with `Logger.error`, the sequence continues and `app.close()` **resolves** (in v11 the rejection failed the shutdown). Handle errors inside the hook; throwing no longer signals anything to your caller.
+> - **Initialization hooks still use `Promise.all`:** a rejecting `onModuleInit` aborts bootstrap — fail fast is preserved.
+
+**Initialization order (deepest dependency first):**
 `onModuleInit` → `onApplicationBootstrap` (after every module is initialized)
 
-**Termination order (NEW in v11 — reversed):**
-`onModuleDestroy` → `beforeApplicationShutdown` → `onApplicationShutdown` (newest dependency tears down first)
+**Termination order (reversed since v11):**
+`onModuleDestroy` → `beforeApplicationShutdown` → *(HTTP server closes, waiting for in-flight requests)* → `onApplicationShutdown` (consumers tear down before their dependencies)
 
-Termination hooks only fire if you call `app.close()` or you've called `app.enableShutdownHooks()` and the process receives `SIGTERM`/`SIGINT`. Shutdown hooks are off by default (they consume memory).
+`onModuleDestroy` fires while requests are still being served: release pools and connections in `onApplicationShutdown`, which runs after the HTTP server has closed.
+
+Termination hooks only fire if you call `app.close()` or the process receives a signal you are listening to — through `app.enableShutdownHooks()` or your own handler, never both (see `devops-graceful-shutdown`). Shutdown hook listeners are off by default because they consume system resources.
 
 **Incorrect (fire-and-forget async without await):**
 
@@ -2922,7 +3021,7 @@ export class ConfigService {
 ```typescript
 // Return promise from async hooks
 @Injectable()
-export class DatabaseService implements OnModuleInit {
+export class DatabaseService implements OnModuleInit, OnApplicationShutdown {
   private pool: Pool;
 
   async onModuleInit(): Promise<void> {
@@ -2931,8 +3030,9 @@ export class DatabaseService implements OnModuleInit {
     console.log('Database connected');
   }
 
-  async onModuleDestroy(): Promise<void> {
-    // Clean up resources on shutdown
+  async onApplicationShutdown(): Promise<void> {
+    // Not onModuleDestroy: that one runs while in-flight requests may still query the pool.
+    // A rejection here is only logged (allSettled) — log with context yourself.
     await this.pool.end();
     console.log('Database disconnected');
   }
@@ -2977,10 +3077,11 @@ export class ConfigService implements OnModuleInit {
   }
 }
 
-// Enable shutdown hooks in main.ts
+// Enable shutdown hooks in main.ts — the only listener for those signals
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableShutdownHooks(); // Enable SIGTERM/SIGINT handling
+  // useProcessExit: exit via process.exit(0) so 'exit' fires; without it Nest re-raises the signal
+  app.enableShutdownHooks(['SIGTERM', 'SIGINT'], { useProcessExit: true });
   await app.listen(3000);
 }
 ```
@@ -2994,6 +3095,10 @@ Reference: [NestJS Lifecycle Events](https://docs.nestjs.com/fundamentals/lifecy
 **Impact: MEDIUM** — Improves startup time for large applications
 
 NestJS supports lazy-loading modules, which defers initialization until first use. This is valuable for large applications where some features are rarely used, serverless deployments where cold start time matters, or when certain modules have heavy initialization costs.
+
+> **Caveats (unchanged in v12):** lifecycle hooks (`onModuleInit`, `onApplicationBootstrap`, …) are **not invoked** in lazily loaded modules and services; controllers, resolvers and gateways cannot be lazy loaded; a lazy module cannot be registered as global, and global enhancers it registers (`APP_GUARD`, `APP_INTERCEPTOR`, …) will not work properly.
+>
+> **Import path:** write the dynamic `import()` with the `.js` extension, as the official docs now do. Under `module`/`moduleResolution: nodenext` an `import()` is resolved with ESM rules even in a CommonJS project, so `import('./reports/reports.module')` fails the typecheck (TS2307) while the `.js` form compiles.
 
 **Incorrect (loading everything eagerly):**
 
@@ -3030,7 +3135,7 @@ export class ReportsService {
 
   async generateReport(type: string): Promise<Report> {
     // Load module only when needed
-    const { ReportsModule } = await import('./reports/reports.module');
+    const { ReportsModule } = await import('./reports/reports.module.js');
     const moduleRef = await this.lazyModuleLoader.load(() => ReportsModule);
 
     const reportsService = moduleRef.get(ReportsGeneratorService);
@@ -3047,7 +3152,7 @@ export class AdminService {
 
   private async getAdminModule(): Promise<ModuleRef> {
     if (!this.adminModule) {
-      const { AdminModule } = await import('./admin/admin.module');
+      const { AdminModule } = await import('./admin/admin.module.js');
       this.adminModule = await this.lazyModuleLoader.load(() => AdminModule);
     }
     return this.adminModule;
@@ -3088,7 +3193,7 @@ export class ModulePreloader implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     setTimeout(async () => {
-      await this.preloadModule(() => import('./reports/reports.module'));
+      await this.preloadModule(() => import('./reports/reports.module.js'));
     }, 5000); // 5 seconds after startup
   }
 
@@ -3114,6 +3219,8 @@ Reference: [NestJS Lazy Loading Modules](https://docs.nestjs.com/fundamentals/la
 
 Select only needed columns, use proper indexes, avoid over-fetching relations, and consider query performance when designing your data access. Most API slowness traces back to inefficient database queries.
 
+> **TypeORM 1.x note:** `@nestjs/typeorm` 12 accepts `typeorm` `^0.3.0 || ^1.0.0-dev`, and TypeORM 1 removed the string-array forms of `select` and `relations` (`select: ['email']` no longer compiles). Use the object form shown below — TypeORM 0.3 accepts it too.
+
 **Incorrect (over-fetching data and missing indexes):**
 
 ```typescript
@@ -3129,7 +3236,7 @@ export class UsersService {
   async getUserSummary(id: string): Promise<UserSummary> {
     const user = await this.repo.findOne({
       where: { id },
-      relations: ['posts', 'posts.comments', 'posts.comments.author', 'followers'],
+      relations: { posts: { comments: { author: true } }, followers: true },
     });
     // Over-fetches massive relation tree
     return { name: user.name, postCount: user.posts.length };
@@ -3155,7 +3262,7 @@ export class Order {
 export class UsersService {
   async findAllEmails(): Promise<string[]> {
     const users = await this.repo.find({
-      select: ['email'], // Only fetch email column
+      select: { email: true }, // Only fetch email column
     });
     return users.map((u) => u.email);
   }
@@ -3176,7 +3283,7 @@ export class UsersService {
   async getFullProfile(id: string): Promise<User> {
     return this.repo.findOne({
       where: { id },
-      relations: ['posts'], // Only immediate relation
+      relations: { posts: true }, // Only immediate relation
       select: {
         id: true,
         name: true,
@@ -3243,7 +3350,9 @@ Reference: [TypeORM Query Builder](https://typeorm.io/select-query-builder)
 
 Implement caching for expensive operations, frequently accessed data, and external API calls. Use NestJS `CacheModule` with appropriate TTLs and cache invalidation strategies. Don't cache everything — focus on high-impact areas.
 
-> **NestJS 11 note:** `@nestjs/cache-manager` migrated to `cache-manager` v6, which is built on top of **Keyv**. The legacy `redisStore` shape (`{ store: redisStore(...) }`) is no longer supported. Configure adapters via the `stores: [...]` array using `KeyvRedis`, `KeyvCacheableMemory`, etc. Cache values are now wrapped in `{ value, expires }` internally — important if you read/write the cache directly or migrate from a v10 deployment that produced the old shape.
+> **Since NestJS 11 (still true in 12):** `@nestjs/cache-manager` runs on `cache-manager` v6+ (7.x today), which is built on top of **Keyv**. The legacy `redisStore` shape (`{ store: redisStore(...) }`) is no longer supported. Configure adapters via the `stores: [...]` array using `KeyvRedis`, `KeyvCacheableMemory`, etc. Cache values are wrapped in `{ value, expires }` internally — important if you read/write the cache directly or migrate from a v10 deployment that produced the old shape.
+
+> **NestJS 12 note:** `@nestjs/cache-manager` jumped from 3.x to **12.0.0** to follow the framework's major, and that is the line to install — 3.1.3 declares peers `@nestjs/common`/`@nestjs/core` `^9 || ^10 || ^11` only, so it conflicts with Nest 12. 12.0.0 keeps the public API of 3.1.3 and its other peers (`cache-manager` `>=6`, `keyv` `>=5`), but ships as ESM only with `engines.node` `^20.19.0 || ^22.12.0 || >=24.0.0` — the versions where the `require(esm)` a CommonJS app relies on to load it works without a flag.
 
 **Incorrect (no caching, caching everything, or legacy redisStore):**
 
@@ -3264,7 +3373,7 @@ export class ProductsService {
   }
 }
 
-// ❌ Legacy v10 shape — no longer works in NestJS 11
+// ❌ Legacy v10 shape — no longer works since NestJS 11 (nor in 12)
 CacheModule.registerAsync({
   useFactory: async () => {
     const store = await redisStore({ socket: { host: 'localhost', port: 6379 } });
@@ -3288,7 +3397,7 @@ export class UsersService {
 **Correct (Keyv-based stores with strategic invalidation):**
 
 ```typescript
-// Setup: install peers — npm i @nestjs/cache-manager cache-manager keyv @keyv/redis cacheable
+// Setup: install peers — npm i @nestjs/cache-manager@^12 cache-manager keyv @keyv/redis cacheable
 import { CacheModule } from '@nestjs/cache-manager';
 import { Keyv } from 'keyv';
 import KeyvRedis from '@keyv/redis';
@@ -3393,7 +3502,7 @@ export class CacheInvalidationService {
 | External API responses (rate-limited / paid) | Strongly time-sensitive data (auth tokens, balances) |
 | Pure functions with bounded input space | Anything where staleness is a correctness bug |
 
-Reference: [NestJS Caching](https://docs.nestjs.com/techniques/caching) · [Migration to cache-manager v6 / Keyv](https://docs.nestjs.com/migration-guide#cache-module)
+Reference: [NestJS Caching](https://docs.nestjs.com/techniques/caching) · [Using alternative Cache stores (Keyv)](https://docs.nestjs.com/techniques/caching#using-alternative-cache-stores)
 
 ---
 
@@ -3406,6 +3515,8 @@ Reference: [NestJS Caching](https://docs.nestjs.com/techniques/caching) · [Migr
 **Impact: HIGH** — Validates the full request/response cycle
 
 End-to-end tests use Supertest to make real HTTP requests against your NestJS application. They test the full stack including middleware, guards, pipes, and interceptors. E2E tests catch integration issues that unit tests miss.
+
+> **NestJS 12 note:** E2E suites load the whole `@nestjs/*` 12.x graph, which ships as ESM only — so they need the same runner setup as unit tests: on Jest in a CommonJS project, Node 24.9+ and `node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./test/jest-e2e.json` (the official v12 template's `test:e2e` script); ESM projects use Vitest. Import Supertest with a **default import**, as both v12 templates do: `import * as request from 'supertest'` yields a namespace object, not the function — natively in ESM and under `esModuleInterop` in CommonJS (the templates enable it) — and the first call throws `TypeError: request is not a function`.
 
 **Incorrect (no proper E2E setup or teardown):**
 
@@ -3440,7 +3551,7 @@ describe('Users API', () => {
 // Proper E2E test setup
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest'; // default import — `import * as` is not callable
 import { AppModule } from '../src/app.module';
 
 describe('UsersController (e2e)', () => {
@@ -3582,6 +3693,8 @@ Reference: [NestJS E2E Testing](https://docs.nestjs.com/fundamentals/testing#end
 **Impact: HIGH** — Ensures fast, reliable, deterministic tests
 
 Never call real external services (APIs, databases, message queues) in unit tests. Mock them to ensure tests are fast, deterministic, and don't incur costs. Use realistic mock data and test edge cases like timeouts and errors.
+
+> **NestJS 12 note:** the `HttpService` mocked below comes from `@nestjs/axios` **12.x** — the package jumped from 4.x to 12.0.0, and 4.0.1 declares its `@nestjs/common` peer as `^10 || ^11` only. Everything `Test.createTestingModule` pulls in is ESM-only in v12, so on Jest in a CommonJS project the suite needs Node 24.9+ and `node --experimental-vm-modules node_modules/jest/bin/jest.js`; in a Vitest project (the ESM default) the `jest.*` helpers used here map to `vi.*` (`vi.fn()`, `vi.useFakeTimers()`, `vi.setSystemTime()`, `vi.advanceTimersByTime()`).
 
 **Incorrect (calling real APIs and databases):**
 
@@ -3760,6 +3873,8 @@ Reference: [Jest Mocking](https://jestjs.io/docs/mock-functions)
 
 Use `@nestjs/testing` module to create isolated test environments with mocked dependencies. This ensures your tests run fast, don't depend on external services, and properly test your business logic in isolation.
 
+> **NestJS 12 note — running the suite:** the testing API below is unchanged in v12; what changed is how Jest loads it. Every `@nestjs/*` 12.x package ships as ESM only, and Jest does not use Node's `require(esm)` but its own loader, which can `require()` an ES module only on **Node 24.9+** and only when Node runs with **`--experimental-vm-modules`** (that flag is what exposes `vm.SourceTextModule`). So a CommonJS project on Jest runs it as `node --experimental-vm-modules node_modules/jest/bin/jest.js` — the form the `test` script of the official v12 CommonJS template uses. A bare `npx jest` dies with `Must use import to load ES Module: …/@nestjs/…/dist/index.js`; on Node < 24.9 it fails with `ERR_REQUIRE_ASYNC_MODULE`. Pin **Jest ≥ 30.5**: 30.4 added the support, but a CommonJS module that `require()`d an ES module mid-graph could get a shared dependency evaluated twice — two instances of the same `@nestjs/*` module in one test (jestjs/jest#16375, shipped in 30.5.0). ESM projects are scaffolded with Vitest instead, where `jest.fn()` / `jest.spyOn()` become `vi.fn()` / `vi.spyOn()`.
+
 **Incorrect (manual instantiation bypassing DI):**
 
 ```typescript
@@ -3915,6 +4030,8 @@ Reference: [NestJS Testing](https://docs.nestjs.com/fundamentals/testing)
 
 N+1 queries occur when you fetch a list of entities, then make an additional query for each entity to load related data. Use eager loading with `relations`, query builder joins, or DataLoader to batch queries efficiently.
 
+> **TypeORM 1.x note:** `@nestjs/typeorm` 12 accepts `typeorm` `^0.3.0 || ^1.0.0-dev`, and TypeORM 1 removed the string-array forms of `relations` and `select` (`relations: ['items', 'items.product']` no longer compiles). Use the object form shown below — TypeORM 0.3 accepts it too.
+
 **Incorrect (lazy loading in loops causes N+1):**
 
 ```typescript
@@ -3956,7 +4073,7 @@ export class OrdersService {
     // Single query with JOIN
     return this.orderRepo.find({
       where: { userId },
-      relations: ['items', 'items.product'],
+      relations: { items: { product: true } },
     });
   }
 }
@@ -3990,7 +4107,7 @@ export class UsersService {
 async getOrderSummaries(userId: string): Promise<OrderSummary[]> {
   return this.orderRepo.find({
     where: { userId },
-    relations: ['items'],
+    relations: { items: true },
     select: {
       id: true,
       total: true,
@@ -4319,11 +4436,11 @@ Reference: [TypeORM Transactions](https://typeorm.io/transactions)
 
 **Impact: HIGH** — Express v5 broke unnamed wildcards — silently mismatched routes are a security hazard
 
-NestJS 11 ships with Express v5 by default, which upgraded `path-to-regexp` to v8. Unnamed wildcards (`*`, `(.*)`) are no longer valid syntax — middleware routes must use **named wildcards** (`*splat` or the more explicit `{*splat}`). NestJS auto-converts the legacy syntax in many cases, but relying on the shim is fragile: you can end up with middleware that silently doesn't run on the routes you expected, which is especially dangerous for auth/rate-limit middleware.
+Since NestJS 11 the default HTTP platform is Express v5, which upgraded `path-to-regexp` to v8 — and NestJS 12 keeps both (`@nestjs/platform-express` 12.1.0 pins `express` 5.2.1 and `path-to-regexp` 8.4.2). Unnamed wildcards (`*`, `(.*)`) are no longer valid syntax — middleware routes must use **named wildcards** (`*splat` or the more explicit `{*splat}`). NestJS still auto-converts the legacy syntax: a bare `'*'` or `'(.*)'` is rewritten to `'{*path}'` **without any warning**, and a prefixed one such as `'api/*'` is rewritten to `'api/{*path}'` with a warning. Relying on the shim is fragile: you can end up with middleware that silently doesn't run on the routes you expected, which is especially dangerous for auth/rate-limit middleware.
 
-The same change affects `@nestjs/platform-fastify` — Fastify v5 also ships in NestJS 11, though Fastify's path matching is less affected outside of middleware.
+The same change affects `@nestjs/platform-fastify` — Fastify v5 ships since NestJS 11 and still in 12 (`@nestjs/platform-fastify` 12.1.x pins `fastify` 5.12.5, `@fastify/middie` 9.3.4 and the same `path-to-regexp` 8.4.2), though Fastify's path matching is less affected outside of middleware.
 
-**Incorrect (Express v4 wildcards — broken or auto-shimmed in NestJS 11):**
+**Incorrect (Express v4 wildcards — auto-shimmed since NestJS 11, still in 12):**
 
 ```typescript
 @Module({})
@@ -4331,20 +4448,20 @@ export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(LoggerMiddleware)
-      .forRoutes('*');           // ❌ Express v5: not a valid pattern
+      .forRoutes('*');           // ❌ invalid in path-to-regexp v8 — only works because Nest silently rewrites it
 
     consumer
       .apply(AuthMiddleware)
-      .forRoutes('(.*)');        // ❌ legacy syntax — NestJS auto-converts but stop relying on this
+      .forRoutes('(.*)');        // ❌ legacy syntax — same silent rewrite; stop relying on it
 
     consumer
       .apply(TrimBodyMiddleware)
-      .forRoutes({ path: '/api/*', method: RequestMethod.ALL }); // ❌ ambiguous
+      .forRoutes({ path: '/api/*', method: RequestMethod.ALL }); // ❌ rewritten (with a warning) to '/api/{*path}' — never runs on GET /api
   }
 }
 ```
 
-**Correct (named wildcards — Express v5 / NestJS 11):**
+**Correct (named wildcards — Express v5, NestJS 11+):**
 
 ```typescript
 @Module({})
@@ -4355,40 +4472,44 @@ export class AppModule implements NestModule {
       .apply(LoggerMiddleware)
       .forRoutes('{*splat}');
 
-    // *splat is sufficient when the root path is acceptable
+    // *splat needs at least one character after the slash: it does NOT run on the bare root '/'
     consumer
       .apply(AuthMiddleware)
       .forRoutes('*splat');
 
-    // Bound wildcards still work for prefixes
+    // A prefix AND everything below it: make the whole tail optional
     consumer
       .apply(TrimBodyMiddleware)
-      .forRoutes({ path: 'api/*splat', method: RequestMethod.ALL });
+      .forRoutes({ path: 'api{/*splat}', method: RequestMethod.ALL });
 
     // Excluding routes follows the same syntax
     consumer
       .apply(SessionMiddleware)
-      .exclude('health', 'metrics', 'api/auth/{*splat}')
+      .exclude('health', 'metrics', 'api/auth{/*splat}')
       .forRoutes('{*splat}');
   }
 }
 ```
 
-**Pattern cheat sheet:**
+**Pattern cheat sheet** (what each pattern runs on, measured with NestJS 12.1.0 + Express 5.2.1):
 
-| Goal | NestJS 11 / Express v5 | Old (v10 / Express v4) |
-|------|------------------------|-------------------------|
-| Match every path including `/` | `'{*splat}'` | `'*'` or `'(.*)'` |
-| Match every path **below** a prefix | `'api/*splat'` | `'api/*'` |
+| Goal | NestJS 11+ / Express v5 | Legacy v10 form → what Nest 11+ rewrites it to |
+|------|-------------------------|------------------------------------------------|
+| Match every path including `/` | `'{*splat}'` | `'*'` / `'(.*)'` → `'{*path}'` (no warning) |
+| Match every path except the bare `/` | `'*splat'` | — |
+| Match a prefix **and** everything below it (`/api`, `/api/`, `/api/x/y`) | `'api{/*splat}'` | — |
+| Match only what is **below** a prefix (not `/api`, not `/api/`) | `'api/*splat'` | — |
+| Match below a prefix, `/api/` included but not `/api` | `'api/{*splat}'` | `'api/*'` / `'api/(.*)'` → `'api/{*path}'` (warning) |
 | Match exactly one extra segment | `'/users/:id'` | unchanged |
 | Match the literal `/` only | `'/'` | unchanged |
-| Exclude a subtree | `.exclude('api/auth/{*splat}')` | `.exclude('api/auth/(.*)')` |
+| Exclude a subtree, prefix included | `.exclude('api/auth{/*splat}')` | — |
+| Exclude only what is below a prefix | `.exclude('api/auth/{*splat}')` | `.exclude('api/auth/(.*)')` → `'api/auth/{*path}'` (warning) |
 
 The token after `*` is just a name — `splat` is convention, not magic. `'{*everything}'` works too.
 
-**Why this is a security concern, not just a syntax change:** auth, CSRF, rate limiting, and request-logging middleware are usually mounted with a wildcard. If the pattern silently mismatches, the middleware doesn't run on the routes you thought it would — but everything compiles and starts. Always add an integration test that hits an unauthenticated route and asserts the auth middleware kicked in.
+**Why this is a security concern, not just a syntax change:** auth, CSRF, rate limiting, and request-logging middleware are usually mounted with a wildcard. If the pattern silently mismatches, the middleware doesn't run on the routes you thought it would — but everything compiles and starts. The classic miss is the bare prefix: `'api/*splat'` and `'api/{*splat}'` both skip `GET /api`, so a controller mounted at `@Controller('api')` with a `@Get()` handler never sees the middleware. Always add an integration test that hits an unauthenticated route — the bare prefix included — and asserts the auth middleware kicked in.
 
-Reference: [NestJS 11 Migration — middleware](https://docs.nestjs.com/migration-guide#express-v5) · [path-to-regexp v8](https://github.com/pillarjs/path-to-regexp)
+Reference: [NestJS Middleware — route wildcards](https://docs.nestjs.com/middleware#route-wildcards) · [path-to-regexp v8](https://github.com/pillarjs/path-to-regexp)
 
 ---
 
@@ -4704,11 +4825,16 @@ export class UsersController {
 }
 
 // Custom cache interceptor with TTL
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+
 @Injectable()
 export class HttpCacheInterceptor implements NestInterceptor {
   constructor(
-    private cacheManager: Cache,
-    private reflector: Reflector,
+    // cache-manager >= 6 (the floor of @nestjs/cache-manager 12) exports `Cache` as a type,
+    // not a class: without @Inject(CACHE_MANAGER) Nest cannot resolve this parameter
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly reflector: Reflector,
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
@@ -4720,7 +4846,8 @@ export class HttpCacheInterceptor implements NestInterceptor {
     }
 
     const cacheKey = this.generateKey(request);
-    const ttl = this.reflector.get<number>('cacheTTL', context.getHandler()) || 300;
+    // cache-manager TTLs are milliseconds
+    const ttl = this.reflector.get<number | undefined>('cacheTTL', context.getHandler()) ?? 300_000;
 
     const cached = await this.cacheManager.get(cacheKey);
     if (cached) {
@@ -4741,7 +4868,7 @@ export class HttpCacheInterceptor implements NestInterceptor {
 
 // Usage with custom TTL
 @Get()
-@SetMetadata('cacheTTL', 600)
+@SetMetadata('cacheTTL', 600_000) // 10 minutes, in milliseconds
 @UseInterceptors(HttpCacheInterceptor)
 async findAll(): Promise<User[]> {
   return this.usersService.findAll();
@@ -5035,9 +5162,9 @@ async function bootstrap() {
   await app.listen(3000);
 }
 
-// Version-specific controllers
-@Controller('users')
-@Version('1')
+// Version-specific controllers: the version goes in @Controller's options.
+// @Version() is a MethodDecorator — on a class it does not compile.
+@Controller({ path: 'users', version: '1' })
 export class UsersV1Controller {
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<UserV1Response> {
@@ -5051,8 +5178,7 @@ export class UsersV1Controller {
   }
 }
 
-@Controller('users')
-@Version('2')
+@Controller({ path: 'users', version: '2' })
 export class UsersV2Controller {
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<UserV2Response> {
@@ -5140,8 +5266,7 @@ export class UsersController {
 }
 
 // Deprecation strategy - mark old versions as deprecated
-@Controller('users')
-@Version('1')
+@Controller({ path: 'users', version: '1' })
 @UseInterceptors(DeprecationInterceptor)
 export class UsersV1Controller {
   // All V1 routes will include deprecation warning
@@ -5160,7 +5285,22 @@ export class DeprecationInterceptor implements NestInterceptor {
 }
 ```
 
-Reference: [NestJS Versioning](https://docs.nestjs.com/techniques/versioning)
+**NestJS 12+: catch overlapping routes at bootstrap.** Adding a version, a `VERSION_NEUTRAL` handler or a literal route next to a parametric one makes overlaps easy to introduce, and on Express the first-registered route silently wins: with `@Get(':id')` declared before `@Get('me')`, `GET /users/me` is served by the `:id` handler. NestJS 12 adds two opt-in `NestApplicationOptions` for that:
+
+```typescript
+const app = await NestFactory.create(AppModule, {
+  // duplicate: same method + path + host + version. shadow: two patterns can match
+  // the same request (/users/me vs /users/:id). Each is 'off' | 'warn' | 'error' (default 'off').
+  routeConflictPolicy: { duplicate: 'error', shadow: 'warn' },
+  // Register literal segments before parametric and wildcard ones on order-sensitive
+  // adapters such as Express (default 'declaration' = the order you wrote them).
+  routeResolutionStrategy: 'specificity',
+});
+```
+
+Measured with NestJS 12.1.0: `shadow: 'warn'` logs `Route GET /users/me (…) is shadowed by GET /users/:id (…)`, `'error'` aborts the bootstrap, and `'specificity'` makes `GET /users/me` reach the `me` handler. Two controllers sharing `path: 'users'` with different `version` values are **not** reported as duplicates, so `duplicate: 'error'` is safe to combine with URI versioning.
+
+Reference: [NestJS Versioning](https://docs.nestjs.com/techniques/versioning) · [NestJS 12 migration — route conflict diagnostics](https://docs.nestjs.com/migration-guide)
 
 ---
 
@@ -5173,6 +5313,13 @@ Reference: [NestJS Versioning](https://docs.nestjs.com/techniques/versioning)
 **Impact: MEDIUM-HIGH** — Health checks enable orchestrators to manage service lifecycle
 
 Implement liveness and readiness probes using `@nestjs/terminus`. Liveness checks determine if the service should be restarted. Readiness checks determine if the service can accept traffic. Proper health checks enable Kubernetes and load balancers to route traffic correctly.
+
+> **Terminus 12 notes:**
+>
+> - **The legacy indicator API is gone.** `HealthIndicator` (the base class) and `HealthCheckError` were deprecated in v11 and are removed in v12: custom indicators inject `HealthIndicatorService` and **return** `up()` / `down()` / `degraded()` — throwing is no longer how you report "down".
+> - **`degraded`** is a third state: the indicator is still serving but impaired; the overall status becomes `degraded` and the HTTP status stays `200`.
+> - **Built-in shutdown readiness.** From `beforeApplicationShutdown` on, `HealthCheckService.check()` answers `503` with `status: 'shutting_down'`; `TerminusModule.forRoot({ gracefulShutdownTimeoutMs })` also delays shutdown on SIGTERM. No hand-rolled flag needed.
+> - **A `down` result carries the error text.** `attempt()`-based checks (such as `TypeOrmHealthIndicator.pingCheck`) add `message: err.message` and `responseTime` — on a public probe that can publish driver or infrastructure details. Strip it or keep the probe off the public surface.
 
 **Incorrect (simple ping that doesn't check dependencies):**
 
@@ -5221,6 +5368,8 @@ export class HealthController {
     private db: TypeOrmHealthIndicator,
     private disk: DiskHealthIndicator,
     private memory: MemoryHealthIndicator,
+    private redis: RedisHealthIndicator, // custom, defined below
+    private queue: QueueHealthIndicator, // custom, defined below
   ) {}
 
   // Liveness probe - is the service alive?
@@ -5238,15 +5387,15 @@ export class HealthController {
   @HealthCheck()
   readiness() {
     return this.health.check([
-      () => this.db.pingCheck('database'),
-      () =>
-        this.http.pingCheck('redis', 'http://redis:6379', { timeout: 1000 }),
+      // v12: pingCheck returns an attempt; chain the timeout (the `timeout` option is deprecated)
+      () => this.db.pingCheck('database').withTimeout(1000),
+      () => this.redis.isHealthy('redis'), // Redis is not HTTP: custom indicator below
       () =>
         this.disk.checkStorage('disk', { path: '/', thresholdPercent: 0.9 }),
     ]);
   }
 
-  // Deep health check for debugging
+  // Deep health check for debugging (HttpHealthIndicator needs @nestjs/axios + axios)
   @Get('deep')
   @HealthCheck()
   deepCheck() {
@@ -5262,45 +5411,54 @@ export class HealthController {
   }
 }
 
-// Custom indicator for business-specific health
+// Custom indicator for business-specific health (Terminus 12: HealthIndicatorService)
+import { HealthIndicatorService } from '@nestjs/terminus';
+
 @Injectable()
-export class QueueHealthIndicator extends HealthIndicator {
-  constructor(private queueService: QueueService) {
-    super();
-  }
+export class QueueHealthIndicator {
+  constructor(
+    private readonly healthIndicatorService: HealthIndicatorService,
+    private readonly queueService: QueueService,
+  ) {}
 
-  async isHealthy(key: string): Promise<HealthIndicatorResult> {
+  async isHealthy(key: string) {
+    const indicator = this.healthIndicatorService.check(key);
     const queueStats = await this.queueService.getStats();
-
-    const isHealthy = queueStats.failedCount < 100;
-    const result = this.getStatus(key, isHealthy, {
+    const data = {
       waiting: queueStats.waitingCount,
       active: queueStats.activeCount,
       failed: queueStats.failedCount,
-    });
+    };
 
-    if (!isHealthy) {
-      throw new HealthCheckError('Queue unhealthy', result);
+    if (queueStats.failedCount >= 100) {
+      return indicator.down(data); // return it: the check turns 503
     }
-
-    return result;
+    if (queueStats.waitingCount > 1_000) {
+      return indicator.degraded(data); // still serving: overall 'degraded', HTTP 200
+    }
+    return indicator.up(data);
   }
 }
 
-// Redis health indicator
+// Redis health indicator: attempt() marks 'up' when the function resolves and
+// 'down' (with message + responseTime) when it throws or times out
 @Injectable()
-export class RedisHealthIndicator extends HealthIndicator {
-  constructor(@InjectRedis() private redis: Redis) {
-    super();
-  }
+export class RedisHealthIndicator {
+  constructor(
+    private readonly healthIndicatorService: HealthIndicatorService,
+    @InjectRedis() private readonly redis: Redis,
+  ) {}
 
-  async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    try {
-      const pong = await this.redis.ping();
-      return this.getStatus(key, pong === 'PONG');
-    } catch (error) {
-      throw new HealthCheckError('Redis check failed', this.getStatus(key, false));
-    }
+  isHealthy(key: string) {
+    return this.healthIndicatorService
+      .check(key)
+      .attempt(async () => {
+        const pong = await this.redis.ping();
+        if (pong !== 'PONG') {
+          throw new Error(`Unexpected PING reply: ${pong}`);
+        }
+      })
+      .withTimeout(1000);
   }
 }
 
@@ -5309,42 +5467,22 @@ export class RedisHealthIndicator extends HealthIndicator {
 @HealthCheck()
 readiness() {
   return this.health.check([
-    () => this.db.pingCheck('database'),
+    () => this.db.pingCheck('database').withTimeout(1000),
     () => this.redis.isHealthy('redis'),
     () => this.queue.isHealthy('job-queue'),
   ]);
 }
 
-// Graceful shutdown handling
-@Injectable()
-export class GracefulShutdownService implements OnApplicationShutdown {
-  private isShuttingDown = false;
-
-  isShutdown(): boolean {
-    return this.isShuttingDown;
-  }
-
-  async onApplicationShutdown(signal: string): Promise<void> {
-    this.isShuttingDown = true;
-    console.log(`Shutting down on ${signal}`);
-
-    // Wait for in-flight requests
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-  }
-}
-
-// Health check respects shutdown state
-@Get('ready')
-@HealthCheck()
-readiness() {
-  if (this.shutdownService.isShutdown()) {
-    throw new ServiceUnavailableException('Shutting down');
-  }
-
-  return this.health.check([
-    () => this.db.pingCheck('database'),
-  ]);
-}
+// Graceful shutdown: Terminus flips every check() to 503 'shutting_down' by itself
+// (from beforeApplicationShutdown on) and, on SIGTERM, waits before the HTTP server closes.
+// Keep the delay below Kubernetes' terminationGracePeriodSeconds. The hooks must receive
+// the signal — see devops-graceful-shutdown for who owns SIGTERM.
+@Module({
+  imports: [TerminusModule.forRoot({ gracefulShutdownTimeoutMs: 5_000 })],
+  controllers: [HealthController],
+  providers: [QueueHealthIndicator, RedisHealthIndicator],
+})
+export class HealthModule {}
 ```
 
 ### Kubernetes Configuration
@@ -5563,7 +5701,9 @@ Reference: [NestJS Microservices](https://docs.nestjs.com/microservices/basics)
 
 Use `@nestjs/bullmq` for background job processing. Queues decouple long-running tasks from HTTP requests, enable retry logic, and distribute workload across workers. Use them for emails, file processing, notifications, and any task that shouldn't block user requests.
 
-> **NestJS 11 note:** the legacy `@nestjs/bull` package wraps Bull (v3, deprecated). For new projects in NestJS 11 use `@nestjs/bullmq` (BullMQ). The BullMQ processor model is **class-based** — extend `WorkerHost` and implement a single `process(job)` method. The `@Process('name')` decorator from Bull does **not** exist in BullMQ; dispatch by `job.name` inside `process()` instead.
+> **Since NestJS 11 (still true in 12):** the legacy `@nestjs/bull` package wraps Bull (v3/v4), which is in maintenance mode — bug fixes only. For new projects use `@nestjs/bullmq` (BullMQ). The BullMQ processor model is **class-based** — extend `WorkerHost` and implement a single `process(job)` method. The `@Process('name')` decorator from Bull does **not** exist in BullMQ; dispatch by `job.name` inside `process()` instead.
+
+> **NestJS 12 note:** install `@nestjs/bullmq` **12.x** — 11.0.5 declares peers `@nestjs/common`/`@nestjs/core` `^10 || ^11` only, so it conflicts with Nest 12. The 12.x line accepts `bullmq` `^3`–`^6` and, like every `@nestjs/*` 12 package, ships as ESM only: a CommonJS app loads it through Node's `require(esm)` (Node 20.19+, 22.12+ or 24+), and Jest needs `--experimental-vm-modules` to load it in tests. **BullMQ 6 removed `repeat` from `Queue.add()`** — schedule repeating jobs with `Queue.upsertJobScheduler()`, which recent BullMQ 5 releases already have, so the same code works on both.
 
 **Incorrect (long-running tasks in HTTP handlers):**
 
@@ -5772,29 +5912,24 @@ export class NotificationService {
   }
 }
 
-// Scheduled / repeatable jobs
+// Scheduled / repeatable jobs — job schedulers, not `add(..., { repeat })`:
+// BullMQ 6 removed `repeat` from Queue.add(); recent BullMQ 5 releases have upsertJobScheduler() too
 @Injectable()
 export class ScheduledJobsService implements OnModuleInit {
   constructor(@InjectQueue('maintenance') private queue: Queue) {}
 
   async onModuleInit(): Promise<void> {
-    // Idempotent registration — `jobId` prevents duplicate repeatables
-    await this.queue.add(
-      'cleanup',
-      {},
-      {
-        repeat: { pattern: '0 0 * * *' }, // BullMQ uses `pattern` (cron) or `every` (ms)
-        jobId: 'daily-cleanup',
-      },
+    // Idempotent registration — upserting an existing scheduler id updates it, never duplicates it
+    await this.queue.upsertJobScheduler(
+      'daily-cleanup', // scheduler id
+      { pattern: '0 0 * * *' }, // `pattern` (cron) or `every` (ms)
+      { name: 'cleanup', data: {} }, // template for every job it produces
     );
 
-    await this.queue.add(
-      'digest',
-      {},
-      {
-        repeat: { every: 60 * 60 * 1000 },
-        jobId: 'hourly-digest',
-      },
+    await this.queue.upsertJobScheduler(
+      'hourly-digest',
+      { every: 60 * 60 * 1000 },
+      { name: 'digest', data: {} },
     );
   }
 }
@@ -5836,11 +5971,12 @@ export class AdminModule {}
 
 | Concern | `@nestjs/bullmq` (recommended) | `@nestjs/bull` (legacy) |
 |---------|--------------------------------|-------------------------|
-| Underlying lib | BullMQ (actively maintained) | Bull v3 (in maintenance) |
+| Underlying lib | BullMQ (actively maintained) | Bull v3/v4 (maintenance mode) |
+| Line for NestJS 12 | `@nestjs/bullmq` 12.x (`bullmq` `^3`–`^6`) | `@nestjs/bull` 12.x (`bull` `^3.3` or `^4`) |
 | Processor API | `extends WorkerHost` + `process()` | `@Process('name')` |
 | Events | `@OnWorkerEvent('completed')` | `@OnQueueCompleted()` |
 | Job progress | `job.updateProgress(n)` | `job.progress(n)` |
-| Repeatable jobs | `repeat: { pattern, every }` | `repeat: { cron, every }` |
+| Repeatable jobs | `queue.upsertJobScheduler(id, { pattern })` or `{ every }` | `repeat: { cron, every }` |
 | TypeScript | Stricter generics | Looser typings |
 
 Reference: [NestJS Queues](https://docs.nestjs.com/techniques/queues)
@@ -5857,7 +5993,26 @@ Reference: [NestJS Queues](https://docs.nestjs.com/techniques/queues)
 
 Handle SIGTERM and SIGINT signals to gracefully shutdown your NestJS application. Stop accepting new requests, wait for in-flight requests to complete, close database connections, and clean up resources. This prevents data loss and connection errors during deployments.
 
-> **NestJS 11 note:** termination hooks (`onModuleDestroy`, `beforeApplicationShutdown`, `onApplicationShutdown`) now run in **reverse order** vs initialization. Take advantage of this: place "first to start, last to stop" infrastructure (logger, database, Redis) at the top of the import graph and they will be available to feature-module destroy hooks. Don't try to manually reorder shutdown — let the framework do it.
+> **Since v11:** termination hooks (`onModuleDestroy`, `beforeApplicationShutdown`, `onApplicationShutdown`) run in **reverse order** vs initialization. Take advantage of this: place "first to start, last to stop" infrastructure (logger, database, Redis) at the top of the import graph and they will be available to feature-module destroy hooks. Don't try to manually reorder shutdown — let the framework do it.
+
+> **NestJS 12 notes:**
+>
+> - **A failing termination hook no longer fails the shutdown.** Each hierarchy level runs with `Promise.allSettled`; a rejection is only logged with `Logger.error` and `app.close()` still **resolves** (in v11 it rejected). A `.catch()` on `close()` does not detect a broken hook.
+> - **`enableShutdownHooks()` owns the signal.** Its listener runs the shutdown sequence and then re-raises the signal with `process.kill(process.pid, signal)` (exit 143 on SIGTERM), or calls `process.exit(0)` when you pass `{ useProcessExit: true }`. Any `process.on(signal)` of yours runs **alongside** it and races it.
+> - **Sequence of `close()`:** arm `return503OnClosing` → `onModuleDestroy` → `beforeApplicationShutdown` → HTTP server closes (waits for in-flight requests) → `onApplicationShutdown`. `onModuleDestroy` fires while requests are still being served, so release pools and connections in `onApplicationShutdown`.
+> - **`return503OnClosing: true`** (`NestFactory.create` option, default `false`): from the start of `close()` until the HTTP server stops listening (right after `beforeApplicationShutdown`), new requests get `503` with `Connection: close`; from then on new connections are refused. In-flight requests finish either way. So the 503 window is as long as your `onModuleDestroy` + `beforeApplicationShutdown` hooks take. That 503 comes from a platform middleware registered before any of yours: on Express it is `text/html` with the body `Service Unavailable` — no error envelope, no request id, no log line — and it pre-empts Terminus' `shutting_down` JSON too.
+
+**Pick exactly one owner of the signal:**
+
+| | A — your handler owns it (no `enableShutdownHooks`) | B — `enableShutdownHooks(signals, { useProcessExit: true })` |
+| --- | --- | --- |
+| Exit code on SIGTERM | 143 (`128 + 15`) — the conventional one | 0 |
+| `'exit'` event emitted (async loggers such as pino transports flush on it) | Yes | Yes |
+| Watchdog and your own logs | Yes | No — the orchestrator's kill timeout is the watchdog |
+| Hooks receive the signal | Yes, through `close(signal)` | Yes |
+| Repeated signal during shutdown (one Ctrl+C under `nest start` arrives twice) | Ignored by your guard — requires `process.on`, never `process.once` | Ignored by Nest's own guard |
+
+Plain `enableShutdownHooks()` without options exits by the re-raised signal: correct code (143), but **no `'exit'` event**, so a logger that flushes on `'exit'` can lose its last lines.
 
 **Incorrect (ignoring shutdown signals):**
 
@@ -5884,56 +6039,173 @@ export class ProcessingService {
 }
 ```
 
-**Correct (enable shutdown hooks and handle cleanup):**
+**Incorrect (two owners of the same signal — dead code in NestJS 12):**
 
 ```typescript
-// Enable shutdown hooks in main.ts
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
-  // Enable shutdown hooks
-  app.enableShutdownHooks();
-
-  // Optional: Add timeout for forced shutdown
+  app.enableShutdownHooks(); // Nest's listener is registered first...
   const server = await app.listen(3000);
-  server.setTimeout(30000); // 30 second timeout
 
-  // Handle graceful shutdown
-  const signals = ['SIGTERM', 'SIGINT'];
-  signals.forEach((signal) => {
-    process.on(signal, async () => {
-      console.log(`Received ${signal}, starting graceful shutdown...`);
-
-      // Stop accepting new connections
-      server.close(async () => {
-        console.log('HTTP server closed');
-        await app.close();
-        process.exit(0);
-      });
-
-      // Force exit after timeout
-      setTimeout(() => {
-        console.error('Forced shutdown after timeout');
-        process.exit(1);
-      }, 30000);
-    });
+  process.on('SIGTERM', () => {
+    // ...and this one runs next to it, racing it
+    server.close(async () => {
+      await app.close(); // awaits the shutdown Nest already started
+      process.exit(0); // with process.once(): never reached — Nest re-raises the
+    }); //                  signal and the default action kills the process first.
+    //                      with process.on(): wins the race and exits 0, even
+    //                      when a hook failed.
   });
+  // A .catch(() => process.exit(1)) here never sees a failing hook in v12:
+  // close() resolves (allSettled).
 }
 
-// Lifecycle hooks for cleanup
+// Readiness flag flipped in onApplicationShutdown: too late — by then the HTTP
+// server is already closed, so the probe can no longer reach it.
+@Injectable()
+export class AppShutdownService implements OnApplicationShutdown {
+  async onApplicationShutdown(): Promise<void> {
+    this.shutdownService.startShutdown();
+    await this.sleep(5000); // delays exit, drains nothing
+  }
+}
+
+// Hand-rolled in-flight tracking: redundant — close() already waited for the
+// in-flight requests (HTTP server close) before onApplicationShutdown runs.
+@Injectable()
+export class RequestTracker implements NestMiddleware, OnApplicationShutdown {
+  /* counts requests, 503s new ones, waits in onApplicationShutdown */
+}
+```
+
+**Correct — option A (recommended): your handler is the only listener:**
+
+```typescript
+// main.ts
+import { Logger } from '@nestjs/common';
+import { NestFactory, type NestApplication } from '@nestjs/core';
+import { constants } from 'node:os';
+import { AppModule } from './app.module';
+
+const SHUTDOWN_TIMEOUT_MS = 25_000; // below Kubernetes' terminationGracePeriodSeconds (30 s)
+
+async function bootstrap(): Promise<void> {
+  // `NestApplication`, not the default `INestApplication`: only the class declares
+  // `close(signal?: string)`; on the interface `close()` takes no argument (TS2554).
+  const app = await NestFactory.create<NestApplication>(AppModule, {
+    return503OnClosing: true, // 503 to new requests until the server stops listening
+  });
+  // No app.enableShutdownHooks(): Nest would register a second listener and re-raise the signal.
+  await app.listen(3000);
+
+  const logger = new Logger('Shutdown');
+  let shuttingDown = false;
+
+  const shutdown = (signal: 'SIGTERM' | 'SIGINT'): void => {
+    if (shuttingDown) return; // a repeated signal is ignored: the watchdog is the limit
+    shuttingDown = true;
+    logger.log(`Received ${signal}, starting graceful shutdown`);
+
+    // Watchdog: a hook that never settles must not hold the pod until SIGKILL
+    const watchdog = setTimeout(() => {
+      logger.fatal(`Shutdown exceeded ${SHUTDOWN_TIMEOUT_MS} ms, forcing exit`);
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    watchdog.unref();
+
+    app
+      .close(signal) // hooks receive the signal (Terminus only waits on 'SIGTERM')
+      .then(() => {
+        clearTimeout(watchdog);
+        // 128 + signal number keeps the conventional status (SIGTERM → 143, SIGINT → 130),
+        // and process.exit() emits 'exit' so async loggers can flush.
+        process.exit(128 + constants.signals[signal]);
+      })
+      // A failing hook does NOT land here (it is only logged); this only catches a
+      // failure outside the hooks, such as a connected microservice rejecting on close.
+      .catch((err: unknown) => {
+        logger.error('Graceful shutdown failed', { err }); // v12: plain object → structured params
+        process.exit(1);
+      });
+  };
+
+  // process.on, NOT once — the guard above makes a repeated signal a no-op. One Ctrl+C under
+  // `nest start` (or any wrapper that forwards signals) reaches the child TWICE: the terminal
+  // sends SIGINT to the whole process group and the CLI forwards its own copy. With once(), the
+  // second copy finds no listener, Node's default action kills the process mid-shutdown and the
+  // in-flight requests, the remaining hooks and the 'exit' event are all lost. Nest's own
+  // enableShutdownHooks() listener uses the same process.on + "already shutting down" guard.
+  // Manual escape hatch while the watchdog runs: SIGKILL.
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
+```
+
+**Correct — option B: Nest owns the signal and exits with `process.exit(0)`:**
+
+```typescript
+// main.ts
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap(): Promise<void> {
+  const app = await NestFactory.create(AppModule, { return503OnClosing: true });
+  // useProcessExit: process.exit(0) instead of re-raising the signal, so 'exit' fires
+  // (async loggers flush) — at the price of SIGTERM's 143 becoming 0.
+  app.enableShutdownHooks(['SIGTERM', 'SIGINT'], { useProcessExit: true });
+  await app.listen(3000);
+  // Do NOT add process.on('SIGTERM', ...) here: that is two owners again.
+}
+```
+
+**Correct (readiness during shutdown with Terminus 12):**
+
+```typescript
+// health.module.ts — no hand-rolled "isShuttingDown" flag needed
+@Module({
+  imports: [TerminusModule.forRoot({ gracefulShutdownTimeoutMs: 5_000 })],
+  controllers: [HealthController],
+})
+export class HealthModule {}
+// From beforeApplicationShutdown on, every HealthCheckService.check() answers
+// 503 { status: 'shutting_down' }, and on SIGTERM Terminus waits 5 s so the load
+// balancer can withdraw the pod while it keeps serving traffic.
+//
+// ⚠️ return503OnClosing is armed EARLIER (at the start of close()), so combined with
+// this delay it answers 503 to ALL traffic during those 5 s. Use one or the other:
+// the Terminus delay, or a Kubernetes preStop sleep plus return503OnClosing for stragglers.
+```
+
+**Correct (lifecycle hooks for cleanup):**
+
+```typescript
+// Release connections in onApplicationShutdown: it runs after the HTTP server
+// has closed, so no in-flight request can still need them
 @Injectable()
 export class DatabaseService implements OnApplicationShutdown {
+  private readonly logger = new Logger(DatabaseService.name);
   private readonly connections: Connection[] = [];
 
   async onApplicationShutdown(signal?: string): Promise<void> {
-    console.log(`Database service shutting down on ${signal}`);
+    this.logger.log(`Closing connections on ${signal}`);
+    await Promise.all(this.connections.map((conn) => conn.close()));
+  }
+}
 
-    // Close all connections gracefully
-    await Promise.all(
-      this.connections.map((conn) => conn.close()),
-    );
+// Long-running work: cancel cooperatively at the first shutdown hook
+@Injectable()
+export class ProcessingService implements OnModuleDestroy {
+  private readonly abort = new AbortController();
 
-    console.log('All database connections closed');
+  onModuleDestroy(): void {
+    this.abort.abort();
+  }
+
+  async processLargeFile(file: File): Promise<void> {
+    for (const chunk of file.chunks) {
+      this.abort.signal.throwIfAborted(); // stop between chunks; re-queue the rest
+      await this.processChunk(chunk);
+    }
   }
 }
 
@@ -5973,117 +6245,28 @@ export class EventsGateway implements OnApplicationShutdown {
     this.server.disconnectSockets();
   }
 }
-
-// Health check integration
-@Injectable()
-export class ShutdownService {
-  private isShuttingDown = false;
-
-  startShutdown(): void {
-    this.isShuttingDown = true;
-  }
-
-  isShutdown(): boolean {
-    return this.isShuttingDown;
-  }
-}
-
-@Controller('health')
-export class HealthController {
-  constructor(private shutdownService: ShutdownService) {}
-
-  @Get('ready')
-  @HealthCheck()
-  readiness(): Promise<HealthCheckResult> {
-    // Return 503 during shutdown - k8s stops sending traffic
-    if (this.shutdownService.isShutdown()) {
-      throw new ServiceUnavailableException('Shutting down');
-    }
-
-    return this.health.check([
-      () => this.db.pingCheck('database'),
-    ]);
-  }
-}
-
-// Integrate with shutdown
-@Injectable()
-export class AppShutdownService implements OnApplicationShutdown {
-  constructor(private shutdownService: ShutdownService) {}
-
-  async onApplicationShutdown(): Promise<void> {
-    // Mark as unhealthy first
-    this.shutdownService.startShutdown();
-
-    // Wait for k8s to update endpoints
-    await this.sleep(5000);
-
-    // Then proceed with cleanup
-  }
-}
-
-// Request tracking for in-flight requests
-@Injectable()
-export class RequestTracker implements NestMiddleware, OnApplicationShutdown {
-  private activeRequests = 0;
-  private isShuttingDown = false;
-  private shutdownPromise: Promise<void> | null = null;
-  private resolveShutdown: (() => void) | null = null;
-
-  use(req: Request, res: Response, next: NextFunction): void {
-    if (this.isShuttingDown) {
-      res.status(503).send('Service Unavailable');
-      return;
-    }
-
-    this.activeRequests++;
-
-    res.on('finish', () => {
-      this.activeRequests--;
-      if (this.isShuttingDown && this.activeRequests === 0 && this.resolveShutdown) {
-        this.resolveShutdown();
-      }
-    });
-
-    next();
-  }
-
-  async onApplicationShutdown(): Promise<void> {
-    this.isShuttingDown = true;
-
-    if (this.activeRequests > 0) {
-      console.log(`Waiting for ${this.activeRequests} requests to complete`);
-      this.shutdownPromise = new Promise((resolve) => {
-        this.resolveShutdown = resolve;
-      });
-
-      // Wait with timeout
-      await Promise.race([
-        this.shutdownPromise,
-        new Promise((resolve) => setTimeout(resolve, 30000)),
-      ]);
-    }
-
-    console.log('All requests completed');
-  }
-}
 ```
 
-Reference: [NestJS Lifecycle Events](https://docs.nestjs.com/fundamentals/lifecycle-events)
+Reference: [NestJS Lifecycle Events](https://docs.nestjs.com/fundamentals/lifecycle-events) · [NestJS Terminus — graceful shutdown](https://docs.nestjs.com/recipes/terminus) · [NestJS v12 migration guide](https://docs.nestjs.com/migration-guide)
 
 ---
 
 ### 10.2 Run on a Supported Node.js LTS
 
-**Impact: CRITICAL** — NestJS 11 dropped Node.js 16 and 18 — older runtimes will not start
+**Impact: CRITICAL** — NestJS 12 packages are ESM-only — a CommonJS app on Node below 20.19 / 22.12 dies at the first require
 
-NestJS 11 requires **Node.js v20 or higher**. Node.js 16 reached EOL in September 2023 and Node.js 18 lost security support in April 2025, so neither is supported. Pin the runtime in `package.json`, your Dockerfile, and CI so dev, test, and prod cannot drift onto an unsupported version. Older Node will fail with cryptic `Symbol`/`URLPattern`/`async-hooks` errors at startup, not a clean message.
+NestJS 12 ships every `@nestjs/*` package as **ESM only**. A CommonJS application — most existing apps; migrating your own code to ESM is optional and not part of the upgrade — keeps working because Node loads those packages through `require(esm)`, which runs **without a flag only from Node.js 20.19 and 22.12** onwards. That, not `@nestjs/core`'s `engines` field (`>= 20`), is the real floor. The ecosystem around it is often stricter: `nestjs-pino` 5 declares `>=22.12.0`, `nestjs-cls` 7 `>=22`, and the CLI's `@nestjs/schematics` 12 (`nest new`, `nest generate`) `^22.22.3 || ^24.15.0 || >=26.0.0`. Your floor is the strictest of all of them.
 
-**Incorrect (no engine pin, mismatched runtimes, EOL Node):**
+Node.js 20 reached end-of-life on 2026-04-30, so the practical choice is the **24.x LTS** (supported until 2028-04-30), or 22.12+ (until 2027-04-30) if you cannot move yet. Pin it in `package.json`, your Dockerfile, CI and `.nvmrc` so dev, test and prod cannot drift onto an unsupported version.
+
+> **Since v11:** Node.js 16 and 18 are unsupported (both are EOL).
+
+**Incorrect (no engine pin, mismatched runtimes, Node without unflagged `require(esm)`):**
 
 ```dockerfile
 # Dockerfile
-FROM node:18-alpine     # ❌ unsupported on NestJS 11
+FROM node:18-alpine     # ❌ unsupported since NestJS 11
+# FROM node:20.11-alpine  ❌ NestJS 12 in a CJS app: no unflagged require(esm) before 20.19
 WORKDIR /app
 COPY . .
 RUN npm ci && npm run build
@@ -6095,28 +6278,35 @@ CMD ["node", "dist/main"]
 {
   "name": "api",
   "scripts": { "start": "node dist/main" }
-  // no "engines" field — npm/pnpm will install on Node 16, 18, 20, 21, ...
+  // no "engines" field — the package manager installs on any Node
+}
+```
+
+```jsonc
+// package.json — a floor copied from @nestjs/core's engines: too low for NestJS 12
+{
+  "engines": { "node": ">=20" } // ❌ admits 20.0–20.18, which cannot require() the ESM packages
 }
 ```
 
 ```yaml
 # .github/workflows/ci.yml
-- uses: actions/setup-node@v4
+- uses: actions/setup-node@v7
   with:
-    node-version: 18    # ❌ tests pass on 18, prod runs on 20 — drift
+    node-version: 22.11    # ❌ tests run on one version, prod on another — and 22.11 lacks unflagged require(esm)
 ```
 
-**Correct (pin LTS in every layer):**
+**Correct (pin the LTS in every layer):**
 
 ```jsonc
 // package.json
 {
   "name": "api",
   "engines": {
-    "node": ">=20.11.0",
-    "pnpm": ">=9"
+    "node": "^24.15.0", // strictest of: require(esm) (20.19 / 22.12), your deps' engines, the CLI's
+    "pnpm": ">=11"
   },
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@11.28.0",
   "scripts": {
     "start": "node dist/main"
   }
@@ -6124,15 +6314,15 @@ CMD ["node", "dist/main"]
 ```
 
 ```dockerfile
-# Dockerfile — match the LTS line you support
-FROM node:20-alpine AS build
+# Dockerfile — same LTS line in build and runtime (pin an exact version or digest in real images)
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
@@ -6144,7 +6334,7 @@ CMD ["node", "dist/main"]
 
 ```yaml
 # .github/workflows/ci.yml — same Node as production
-- uses: actions/setup-node@v4
+- uses: actions/setup-node@v7
   with:
     node-version-file: '.nvmrc'    # single source of truth
     cache: 'pnpm'
@@ -6152,24 +6342,28 @@ CMD ["node", "dist/main"]
 
 ```text
 # .nvmrc
-20.11.0
+24.21.0
 ```
 
 ```bash
 # Local dev: nvm + .nvmrc keeps every contributor on the same Node
 $ nvm use
-Found '/path/to/repo/.nvmrc' with version <20.11.0>
-Now using node v20.11.0
+Found '/path/to/repo/.nvmrc' with version <24.21.0>
+Now using node v24.21.0
+
+# Detect the capability NestJS 12 needs in a CJS app (true from 20.19 / 22.12)
+$ node -p "process.features.require_module"
+true
 ```
 
 **Why this matters:**
 
 - **Security patches** stop landing on EOL Node — staying current is the only way to get them.
-- **NestJS 11's transitive deps** (path-to-regexp v8, `node:test`, `AsyncLocalStorage` improvements, native `fetch`) assume Node 20+ APIs.
-- **Cryptic startup errors:** running NestJS 11 on Node 18 surfaces as `TypeError: Cannot read properties of undefined (reading 'createServer')` or weird module-resolution failures, not "you need newer Node."
+- **The failure is at startup, not at install time.** Without unflagged `require(esm)`, the first `require('@nestjs/core')` throws `Error [ERR_REQUIRE_ESM]: require() of ES Module …/@nestjs/core/index.js … not supported.` The message names a file, not the Node version you need.
+- **`@nestjs/core`'s `engines` (`>= 20`) is not the answer.** It still admits the versions that cannot load it from CommonJS; take the floor from `require(esm)` and from the strictest `engines` in your dependency tree.
 - **Drift between dev and prod** is the source of "works on my machine" bugs around `URL`, `crypto.subtle`, and timing. The `engines` field + lockfile + Dockerfile + `.nvmrc` together prevent it.
 
-Reference: [NestJS Migration Guide — Node.js](https://docs.nestjs.com/migration-guide#nodejs-v16-and-v18-no-longer-supported) · [Node.js release schedule](https://github.com/nodejs/release#release-schedule)
+Reference: [NestJS v12 migration guide](https://docs.nestjs.com/migration-guide) · [Node.js — Loading ECMAScript modules using `require()`](https://nodejs.org/api/modules.html#loading-ecmascript-modules-using-require) · [Node.js release schedule](https://github.com/nodejs/release#release-schedule)
 
 ---
 
@@ -6178,6 +6372,8 @@ Reference: [NestJS Migration Guide — Node.js](https://docs.nestjs.com/migratio
 **Impact: LOW-MEDIUM** — Proper configuration prevents deployment failures
 
 Use `@nestjs/config` for environment-based configuration. Validate configuration at startup to fail fast on misconfigurations. Use namespaced configuration for organization and type safety.
+
+> **NestJS 12 note:** `@nestjs/config` 12 moves from Joi-specific validation to **Standard Schema**. `validationSchema` accepts any Standard Schema-compatible schema (Zod, Valibot, ArkType, …). Joi still works but needs **Joi v18 or later**, which implements the spec, and Joi's own settings move from `validationOptions` to `validationOptions.libraryOptions` — the v11 shape `validationOptions: { abortEarly, allowUnknown }` no longer compiles (TS2353). For Joi, `@nestjs/config` keeps its historical defaults `allowUnknown: true` and `abortEarly: false` and merges yours on top.
 
 **Incorrect (accessing process.env directly):**
 
@@ -6210,8 +6406,8 @@ export class EmailService {
 
 ```typescript
 // Setup validated configuration
-import { ConfigModule, ConfigService, registerAs } from '@nestjs/config';
-import * as Joi from 'joi';
+import { ConfigModule, ConfigService, registerAs, type ConfigType } from '@nestjs/config';
+import { z } from 'zod';
 
 // config/database.config.ts
 export const databaseConfig = registerAs('database', () => ({
@@ -6229,20 +6425,20 @@ export const appConfig = registerAs('app', () => ({
   apiPrefix: process.env.API_PREFIX || 'api',
 }));
 
-// config/validation.schema.ts
-export const validationSchema = Joi.object({
-  NODE_ENV: Joi.string()
-    .valid('development', 'production', 'test')
-    .default('development'),
-  PORT: Joi.number().default(3000),
-  DB_HOST: Joi.string().required(),
-  DB_PORT: Joi.number().default(5432),
-  DB_USERNAME: Joi.string().required(),
-  DB_PASSWORD: Joi.string().required(),
-  DB_NAME: Joi.string().required(),
-  JWT_SECRET: Joi.string().min(32).required(),
-  REDIS_URL: Joi.string().uri().required(),
+// config/validation.schema.ts — any Standard Schema library (Zod shown)
+export const validationSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.coerce.number().int().positive().default(3000),
+  DB_HOST: z.string().min(1),
+  DB_PORT: z.coerce.number().int().default(5432),
+  DB_USERNAME: z.string().min(1),
+  DB_PASSWORD: z.string().min(1),
+  DB_NAME: z.string().min(1),
+  JWT_SECRET: z.string().min(32),
+  REDIS_URL: z.url(),
 });
+// A missing JWT_SECRET aborts bootstrap:
+// Error: Config validation error: JWT_SECRET: Invalid input: expected string, received undefined
 
 // app.module.ts
 @Module({
@@ -6251,10 +6447,7 @@ export const validationSchema = Joi.object({
       isGlobal: true, // Available everywhere without importing
       load: [databaseConfig, appConfig],
       validationSchema,
-      validationOptions: {
-        abortEarly: true, // Stop on first error
-        allowUnknown: true, // Allow other env vars
-      },
+      // Undeclared variables stay available: @nestjs/config merges them back after validation
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -6315,6 +6508,14 @@ export class DatabaseService {
   }
 }
 
+// Joi (v18+ only): library-specific options go under libraryOptions
+ConfigModule.forRoot({
+  validationSchema: Joi.object({ PORT: Joi.number().default(3000) }),
+  validationOptions: {
+    libraryOptions: { abortEarly: true }, // v11 put this directly under validationOptions
+  },
+});
+
 // Environment files support
 ConfigModule.forRoot({
   envFilePath: [
@@ -6344,7 +6545,9 @@ Reference: [NestJS Configuration](https://docs.nestjs.com/techniques/configurati
 
 Use NestJS Logger with structured JSON output in production. Include contextual information (request ID, user ID, operation) to trace requests across services. Avoid `console.log` and implement proper log levels.
 
-> **NestJS 11 note:** the framework added a **`fatal` log level** (above `error`) and the built-in `ConsoleLogger` now natively supports **JSON output** plus knobs for `colors`, `compact`, `breakLength`, and `depth`. For many services this removes the need to ship Pino purely for JSON output — reach for Pino when you also need very low overhead, redaction, or HTTP request logging.
+> **Since v11:** the framework has a **`fatal` log level** (above `error`) and the built-in `ConsoleLogger` natively supports **JSON output** plus knobs for `colors`, `compact`, `breakLength`, and `depth`. For many services this removes the need to ship Pino purely for JSON output — reach for Pino when you also need very low overhead, redaction, or HTTP request logging.
+
+> **NestJS 12 note:** `ConsoleLogger` treats **plain objects passed after the message as structured params** of the same entry (`structuredParams`, default `true`) instead of printing each one as a separate record. In JSON mode they are nested under `params`, or spread into the root object with `flattenParams: true` (framework fields such as `message` or `level` win on key collisions). Only `error()` recognises a stack-trace string argument; `fatal()` does not, so pass the error inside an object there (`logger.fatal('Out of memory', { error })`).
 
 **Incorrect (using console.log in production):**
 
@@ -6379,7 +6582,7 @@ logger.log('User ' + userId + ' created at ' + new Date());
 
 ```typescript
 // Configure logger in main.ts
-// NestJS 11: 'fatal' is now a real level (above 'error'), include it in production
+// Since v11: 'fatal' is a real level (above 'error'), include it in production
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger:
@@ -6389,7 +6592,7 @@ async function bootstrap() {
   });
 }
 
-// Built-in JSON output with ConsoleLogger (NestJS 11+)
+// Built-in JSON output with ConsoleLogger (v11+)
 // Replaces ad-hoc JsonLogger implementations for most use cases
 import { ConsoleLogger } from '@nestjs/common';
 
@@ -6406,19 +6609,29 @@ async function bootstrap() {
   // {"level":"log","pid":1,"timestamp":1735689600000,"message":"Listening","context":"NestApplication"}
 }
 
+// v12: plain objects after the message become structured params of the same entry
+const logger = new ConsoleLogger('UsersService', { json: true });
+logger.log('User created', { userId: 'u-1' });
+// {"level":"log",…,"message":"User created","context":"UsersService","params":{"userId":"u-1"}}
+
+const flat = new ConsoleLogger('UsersService', { json: true, flattenParams: true });
+flat.log('User created', { userId: 'u-1' });
+// {"level":"log",…,"message":"User created","context":"UsersService","userId":"u-1"}
+
 // Use NestJS Logger with context
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
   async createUser(dto: CreateUserDto): Promise<User> {
-    this.logger.log('Creating user', { email: dto.email });
+    this.logger.log('Creating user', { email: dto.email }); // v12: → "params": { "email": … }
 
     try {
       const user = await this.repo.save(dto);
       this.logger.log('User created', { userId: user.id });
       return user;
     } catch (error) {
+      // error(): the stack string goes to "stack", the object to "params"
       this.logger.error('Failed to create user', error.stack, {
         email: dto.email,
       });
@@ -6427,7 +6640,7 @@ export class UsersService {
   }
 }
 
-// Custom logger for JSON output
+// Custom logger for JSON output — only if you need a shape ConsoleLogger cannot produce
 @Injectable()
 export class JsonLogger implements LoggerService {
   log(message: string, context?: object): void {
@@ -6542,6 +6755,9 @@ export class ContextLogger {
 }
 
 // Pino integration for high-performance logging
+// Transports (pino-pretty, file, …) flush on the process 'exit' event: end the process
+// with process.exit() on shutdown — see devops-graceful-shutdown (plain
+// enableShutdownHooks() re-raises the signal and 'exit' never fires).
 import { LoggerModule } from 'nestjs-pino';
 
 @Module({
@@ -6591,10 +6807,10 @@ Reference: [NestJS Logger](https://docs.nestjs.com/techniques/logger)
 ## References
 
 - [NestJS Documentation](https://docs.nestjs.com)
-- [NestJS 11 Migration Guide](https://docs.nestjs.com/migration-guide)
+- [NestJS 12 Migration Guide](https://docs.nestjs.com/migration-guide)
 - [NestJS Lifecycle Events](https://docs.nestjs.com/fundamentals/lifecycle-events)
 - [NestJS Injection Scopes (incl. Durable Providers)](https://docs.nestjs.com/fundamentals/injection-scopes)
-- [NestJS Caching (cache-manager v6 / Keyv)](https://docs.nestjs.com/techniques/caching)
+- [NestJS Caching (cache-manager v6+ / Keyv)](https://docs.nestjs.com/techniques/caching)
 - [NestJS Queues (BullMQ)](https://docs.nestjs.com/techniques/queues)
 - [NestJS Validation](https://docs.nestjs.com/techniques/validation)
 - [NestJS Configuration](https://docs.nestjs.com/techniques/configuration)
@@ -6602,10 +6818,13 @@ Reference: [NestJS Logger](https://docs.nestjs.com/techniques/logger)
 - [NestJS Versioning](https://docs.nestjs.com/techniques/versioning)
 - [NestJS Microservices](https://docs.nestjs.com/microservices/basics)
 - [NestJS Terminus (Health Checks)](https://docs.nestjs.com/recipes/terminus)
-- [NestJS Security — Helmet](https://docs.nestjs.com/security/helmet)
-- [NestJS Security — CSRF (csrf-csrf)](https://docs.nestjs.com/security/csrf)
+- [NestJS Security — Helmet and built-in security headers (12.1+)](https://docs.nestjs.com/security/helmet)
+- [NestJS Security — CSRF (built-in since 12.1, csrf-csrf)](https://docs.nestjs.com/security/csrf)
 - [NestJS Throttler](https://docs.nestjs.com/security/rate-limiting)
+- [Node.js — Loading ECMAScript modules using require()](https://nodejs.org/api/modules.html#loading-ecmascript-modules-using-require)
+- [Node.js release schedule](https://github.com/nodejs/release#release-schedule)
+- [Jest — ECMAScript Modules](https://jestjs.io/docs/ecmascript-modules)
 
 ---
 
-*Generated by build-agents.ts on 2026-04-25*
+*Generated by build-agents.ts on 2026-09-29*

@@ -8,7 +8,7 @@ import { setupOpenApi } from '../../src/bootstrap/openapi';
 import type { AppConfig } from '../../src/config/app.config';
 import type { CorsConfig } from '../../src/config/cors.config';
 import type { DocsConfig } from '../../src/config/docs.config';
-import { applyGlobals } from '../../src/main';
+import { applyGlobals, NEST_APP_OPTIONS } from '../../src/main';
 
 export type TestApp = {
   app: INestApplication<App>;
@@ -43,7 +43,12 @@ export async function createTestApp({
     imports: [AppModule],
   }).compile();
 
+  // Las mismas opciones de creación que `bootstrap()`: con ellas, cada E2E que arranca la app
+  // comprueba de paso que las rutas reales no chocan (`routeConflictPolicy` aborta `app.init()`).
+  // `createNestApplication` las respeta igual que `NestFactory.create`: ambos las pasan al
+  // constructor de `NestApplication`.
   const app = moduleRef.createNestApplication<INestApplication<App>>({
+    ...NEST_APP_OPTIONS,
     bufferLogs: false,
     logger: false,
   });
