@@ -166,9 +166,9 @@ This skill provides **rule-level checks** (DI, security, performance, API). The 
 | Layer | Rules that apply | Rules that do NOT apply |
 |-------|------------------|--------------------------|
 | `domain/` | None of these (domain has zero NestJS dependencies) | All — domain is pure TS, no `@Injectable()`, no `class-validator` decorators, no HTTP/DB |
-| `application/` | `arch-single-responsibility`, `arch-use-events`, `di-*` (all), `error-throw-http-exceptions` only via filter, `test-use-testing-module` | `api-*`, `db-*`, `security-rate-limiting`, `security-csrf-protection` (those are adapter concerns) |
+| `application/` | `arch-single-responsibility`, `arch-use-events`, `di-*` (all), `error-throw-http-exceptions` only via filter | `api-*`, `db-*`, `security-rate-limiting`, `security-csrf-protection` (those are adapter concerns); `test-use-testing-module` — in this repo a use case is built with `new` over hand-written port fakes, never `Test.createTestingModule` with `jest.fn()` mocks (`CLAUDE.md`, «Mocking by layer») |
 | `infrastructure/http/` | `api-*` (all), `security-*` (all), `error-use-exception-filters`, `perf-use-caching` for read endpoints | `arch-use-repository-pattern` (already abstracted by domain port) |
-| `infrastructure/persistence/` | `arch-use-repository-pattern`, `db-*` (all), `perf-optimize-database`, `test-mock-external-services` | `api-*`, `security-validate-all-input` |
+| `infrastructure/persistence/` | `arch-use-repository-pattern`, `db-*` (all), `perf-optimize-database` | `api-*`, `security-validate-all-input`; `test-mock-external-services` — repositories are tested against real PostgreSQL in the E2E suite, never a mocked repository (`CLAUDE.md`, «Mocking by layer») |
 | `infrastructure/messaging/` | `micro-*` (all), `arch-use-events`, `error-handle-async-errors` | `api-versioning`, `security-csrf-protection` |
 | `bootstrap/` & `main.ts` | `devops-*` (all), `security-use-helmet`, `security-rate-limiting`, `perf-async-hooks` | Domain/application rules |
 

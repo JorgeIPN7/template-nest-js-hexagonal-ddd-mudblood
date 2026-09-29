@@ -11,7 +11,7 @@ Agent({
   subagent_type: "general-purpose",
   description: "Review plan document",
   prompt: |
-    You are a plan document reviewer. Verify this plan is complete and ready for implementation in a NestJS 12 + TypeScript 6.0 codebase (hexagonal layout per `clean-ddd-hexagonal/references/NESTJS-MAPPING.md`).
+    You are a plan document reviewer. Verify this plan is complete and ready for implementation in a NestJS 12 + TypeScript 6.0 codebase (hexagonal layout per `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md`).
 
     **Plan to review:** [PLAN_FILE_PATH]
     **Spec for reference:** [SPEC_FILE_PATH]

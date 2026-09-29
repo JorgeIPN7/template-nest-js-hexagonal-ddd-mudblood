@@ -21,7 +21,7 @@ Agent({
 
     NestJS 12, TypeScript 6.0, pnpm, Jest, Supertest. The codebase follows the
     hexagonal layout from the `clean-ddd-hexagonal` skill (see
-    `clean-ddd-hexagonal/references/NESTJS-MAPPING.md`), the rule codes from
+    `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md`), the rule codes from
     `nestjs-best-practices`, and the Jest conventions from
     `javascript-typescript-jest`.
 
@@ -35,8 +35,15 @@ Agent({
 
     ## Diff scope
 
-    [BASE_SHA or `git diff <base>..HEAD -- <paths>` instructions; if no SHAs,
-    list the files the implementer reported and instruct the reviewer to inspect them.]
+    [The files the implementer reported (created AND modified), plus the base commit.]
+
+    Nothing is committed while a plan executes (no-commit policy), so
+    `git diff <base>..HEAD` is EMPTY for this task's work and never lists new files.
+    Build your scope from the working tree instead:
+    - `git status --porcelain -- <paths>` → new files show as `??`, modified as ` M`;
+    - `git diff -- <paths>` → changes to files that were already tracked;
+    - read every new file in full — no diff will show it to you.
+    If a file the implementer reported is missing from `git status`, flag it.
 
     ## Layer of this Task
 
@@ -112,7 +119,8 @@ Agent({
     pnpm typecheck
     pnpm lint:check
     grep -R "@nestjs" src/modules/<context>/domain/   # must be empty
-    git diff <base>..HEAD -- src/modules/<context>/    # to scope your read
+    git status --porcelain -- src/modules/<context>/  # new (??) and modified ( M) files
+    git diff -- src/modules/<context>/                 # changes to tracked files only
     ```
 
     ## Git policy (NON-NEGOTIABLE)

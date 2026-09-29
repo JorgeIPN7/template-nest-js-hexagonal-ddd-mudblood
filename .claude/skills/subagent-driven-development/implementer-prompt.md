@@ -14,14 +14,14 @@ Agent({
 
     ## Stack
 
-    NestJS 12, TypeScript 6.0, Node 24, pnpm 11, Jest, Supertest, Pino, Zod, class-validator,
+    NestJS 12, TypeScript 6.0, Node 24, pnpm, Jest, Supertest, Pino, Zod, class-validator,
     TypeORM + PostgreSQL (exact versions: the «Stack» line of CLAUDE.md, package.json, .nvmrc).
     NestJS 12 packages are ESM-only and this repo stays CommonJS: run tests ONLY through
     `pnpm test <path>` / `pnpm test:e2e` (they add `--experimental-vm-modules`); a bare
     `jest` / `npx jest` fails to load them. Import `@nestjs/*` from the package root only.
 
     Companion skills (read for context, do not invoke as steps):
-    - clean-ddd-hexagonal — for layer rules. Read `clean-ddd-hexagonal/references/NESTJS-MAPPING.md`.
+    - clean-ddd-hexagonal — for layer rules. Read `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md`.
     - nestjs-best-practices — for the rule codes attached to this task.
     - javascript-typescript-jest — for test naming (`*.spec.ts` / `*.e2e-spec.ts`),
       layer-aware mocking (no mocks in domain, hand-written port fakes in application,

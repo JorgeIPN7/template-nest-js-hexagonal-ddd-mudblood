@@ -13,7 +13,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
-**Stack assumed:** NestJS 12, TypeScript 6.0, Node 24, pnpm 11, SWC, Jest, Supertest, Pino, Zod, class-validator, TypeORM + PostgreSQL. Plans must use this stack — no Python, no other test runners. Exact versions live in the «Stack» line of `CLAUDE.md`, `package.json`, `.nvmrc` and `packageManager`; cite those instead of copying a version that the next bump will make stale. NestJS 12 packages are ESM-only and the repo stays CommonJS, so every test command in a plan goes through `pnpm test` / `pnpm test:e2e` (they start Jest with `--experimental-vm-modules`), never a bare `jest`.
+**Stack assumed:** NestJS 12, TypeScript 6.0, Node 24, pnpm, SWC, Jest, Supertest, Pino, Zod, class-validator, TypeORM + PostgreSQL. Plans must use this stack — no Python, no other test runners. Exact versions live in the «Stack» line of `CLAUDE.md`, `package.json`, `.nvmrc` and `packageManager`; cite those instead of copying a version that the next bump will make stale. NestJS 12 packages are ESM-only and the repo stays CommonJS, so every test command in a plan goes through `pnpm test` / `pnpm test:e2e` (they start Jest with `--experimental-vm-modules`), never a bare `jest`.
 
 **Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
 
@@ -56,7 +56,7 @@ This structure informs the task decomposition. Each task should produce self-con
 ## Casos acordados (contrato de comportamiento)
 
 Antes de redactar las tareas, el plan pasa por la **fase de contrato** del modelo de colaboración
-(spec `docs/specs/2026-08-04-roadmap-and-collaboration-model-design.md`): una ronda de preguntas
+(`CLAUDE.md`, sección «Modelo de colaboración»): una ronda de preguntas
 y respuestas con el usuario fija los casos de prueba de cada tarea con lógica de negocio. La
 tabla resultante vive en la tarea del plan — artefacto versionado, no conversación perdida.
 

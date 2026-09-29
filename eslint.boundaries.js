@@ -1,7 +1,8 @@
 // eslint.boundaries.js
 /**
- * Fronteras de módulo y de capa — las 5 reglas de la spec
- * `docs/specs/2026-08-04-module-boundaries-design.md`, en la API VIGENTE del
+ * Fronteras de módulo y de capa — las 5 reglas de la spec de fronteras del
+ * 2026-08-04 (perdida en la reconstrucción del historial del 2026-08-08, backlog
+ * #29: este archivo y su suite son la única fuente), en la API VIGENTE del
  * plugin 7.x: `boundaries/dependencies` con `policies`. Las reglas
  * `element-types`/`external` y la clave `mode` están deprecadas y aquí NO se
  * usan — criterio de la enmienda: cero warnings de deprecación en la salida.

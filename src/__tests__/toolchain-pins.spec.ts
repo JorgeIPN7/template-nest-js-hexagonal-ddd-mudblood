@@ -27,7 +27,7 @@ const renovate = JSON.parse(read('renovate.json')) as { customManagers: RegexMan
 // equivocada prerellenada hace lo contrario de su trabajo; la línea de Stack de `CLAUDE.md` es
 // lo primero que lee un agente antes de tocar nada.
 const NODE_DOCS = ['README.md', '.github/ISSUE_TEMPLATE/bug_report.yml', 'CLAUDE.md'];
-// `CLAUDE.md` cita pnpm solo por su major («pnpm 11»): no hay literal de versión que mantener.
+// `CLAUDE.md` cita pnpm solo por su major («pnpm 12»): no hay literal de versión que mantener.
 const PNPM_DOCS = ['README.md', '.github/ISSUE_TEMPLATE/bug_report.yml'];
 
 /**

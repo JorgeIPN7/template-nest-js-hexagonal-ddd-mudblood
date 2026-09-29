@@ -26,7 +26,7 @@ These are the rules the test runner enforces — match them or your tests won't 
 
 **Naming consequence:** never name a test file `*.test.ts`. The runner won't pick it up. Always `*.spec.ts` or `*.e2e-spec.ts`.
 
-**Runner consequence (NestJS 12):** every `@nestjs/*` 12.x package is ESM-only and this repo stays CommonJS. Jest can only load those packages with Node's `--experimental-vm-modules`, so the `test*` scripts in `package.json` run `node --experimental-vm-modules node_modules/jest/bin/jest.js` (the rationale lives in `jest.config.mjs`). A bare `npx jest` dies with `Must use import to load ES Module: …/@nestjs/…`. The official migration guide adds the Node floor for Jest itself: the ESM-only v12 packages load only on Node 24.9+ (https://docs.nestjs.com/migration-guide) — the repo's Node is pinned in `.nvmrc`. Pass paths and Jest flags straight after the script, **without** `--`: `pnpm test src/modules/users --verbose`. With `pnpm test -- …`, pnpm 11 forwards a literal `--` and Jest reads every flag after it as one more path pattern (measured: `pnpm test -- src/shared --listTests` runs the suites instead of listing them).
+**Runner consequence (NestJS 12):** every `@nestjs/*` 12.x package is ESM-only and this repo stays CommonJS. Jest can only load those packages with Node's `--experimental-vm-modules`, so the `test*` scripts in `package.json` run `node --experimental-vm-modules node_modules/jest/bin/jest.js` (the rationale lives in `jest.config.mjs`). A bare `npx jest` dies with `Must use import to load ES Module: …/@nestjs/…`. The official migration guide adds the Node floor for Jest itself: the ESM-only v12 packages load only on Node 24.9+ (https://docs.nestjs.com/migration-guide) — the repo's Node is pinned in `.nvmrc`. Pass paths and Jest flags straight after the script, **without** `--`: `pnpm test src/modules/users --verbose`. With `pnpm test -- …`, pnpm forwards a literal `--` (measured with pnpm 11; not re-measured on 12) and Jest reads every flag after it as one more path pattern (measured: `pnpm test -- src/shared --listTests` runs the suites instead of listing them).
 
 **Why the branches threshold is lower:** SWC instruments the code it generates for `emitDecoratorMetadata` and property defaults, and those synthetic branches are unreachable from a test. Files without decorators (`src/config/**`) reach 88-100 % branches; decorator-heavy files plateau near 50 %. Don't write filler tests chasing that number.
 
@@ -60,7 +60,7 @@ src/modules/billing/
     └── billing.e2e-spec.ts             ← E2E ships with its module too
 ```
 
-- **One test file per code file (1:1)**, same base name: `invoice.entity.ts` ↔ `invoice.entity.spec.ts`.
+- **One test file per code file (1:1)**, same base name: `invoice.entity.ts` ↔ `invoice.entity.spec.ts`. Ports (`domain/ports/`, abstract classes with no logic) are the one exemption; errors and events do get their spec — they carry messages and data that Stryker mutates.
 - **Import the SUT with a relative path** (`../../../domain/entities/invoice.entity`), never an alias — a relative path survives the module being moved, `@modules/billing/...` does not.
 - **Module-wide helpers** (port fakes, factories, `arbitraries.ts`) live in `<module>/__tests__/helpers/`; **cross-cutting ones** in `test/helpers/`, imported via the `@test/` alias. `test/helpers/` is the only test code outside `src/`. Never copy a builder into several specs.
 - **Module wiring is proven by the E2E suite.** `*.module.ts` is excluded from unit coverage and measured by `test/jest-e2e.config.mjs`: compiling a context module with persistence opens real connections, so `<context>.e2e-spec.ts` is what shows the wiring works.
@@ -89,10 +89,10 @@ describe('Invoice', () => {
 });
 ```
 
-- **`describe` in code, `it` in Spanish.** The `describe` keeps the real identifier (`Invoice`, `issue()`, `PaginationDto`) so the Jest output maps straight back to the symbol. The `it` is a Spanish sentence that always starts with **`debería…`**. Prefer `it` over `test`.
-- **Code stays in English** — variables, helpers, fakes, comments about implementation. Only the `it` description is Spanish.
+- **`describe` in code, `it` in Spanish.** The `describe` keeps the real identifier (`Invoice`, `issue()`, `PaginationDto`) so the Jest output maps straight back to the symbol. A nested `describe` that groups by scenario rather than by method is a Spanish phrase instead (`describe('con la factura ya emitida')`). The `it` is a Spanish sentence that always starts with **`debería…`**. Prefer `it` over `test`.
+- **Code in English, comments in Spanish.** Variables, helpers and fakes are English; every comment — implementation notes, JSDoc on a fake or a helper — is Spanish, like the rest of the repo's prose (`CLAUDE.md`, «Code in English, prose in Spanish»). The only fixed English markers are `// Arrange`, `// Act`, `// Assert` and `// Helpers`.
 - **Caso acordado ↔ `it`, 1:1.** Cuando la tarea del plan trae tabla «Casos acordados» (modelo
-  de colaboración — spec `docs/specs/2026-08-04-roadmap-and-collaboration-model-design.md`),
+  de colaboración — `CLAUDE.md`, sección «Modelo de colaboración»),
   cada caso puntual produce exactamente un `it` cuyo texto es el caso, y cada fila `P` un `it`
   de propiedad con `@fast-check/jest`. Ningún `it` extra sin fila (o sin adición JIT registrada
   en el plan); ninguna fila sin `it`. La validación humana es cotejar la tabla contra
@@ -100,7 +100,7 @@ describe('Invoice', () => {
 - **No implementar sin rojo previo.** Con tabla de casos, los tests se escriben primero y se
   ejecutan para verlos fallar; la salida en rojo es evidencia que el implementador reporta.
   Implementar antes del rojo invalida el ciclo.
-- **AAA pattern is mandatory.** Every `it` includes the three comments `// Arrange`, `// Act`, `// Assert` to mark the phases:
+- **AAA pattern is mandatory: the three comments in every `it`, always.** `// Arrange`, `// Act` and `// Assert`, each on its own line, mark the phases — even when a phase has no code:
 
 ```ts
 it('debería calcular el offset a partir de page y limit', () => {
@@ -115,7 +115,19 @@ it('debería calcular el offset a partir de page y limit', () => {
 });
 ```
 
-When Act and Assert are a single statement (e.g., `expect(fn).toThrow()`), the comment `// Act + Assert` on one line is acceptable.
+With nothing to prepare, `// Arrange` stays, empty. When the action is what the assertion checks (a throw), capture it in a function under `// Act` and assert on it under `// Assert`. A combined `// Act + Assert` is **not** allowed — about 200 legacy tests still use it or skip `// Arrange` (`docs/backlog.md` #30); don't copy them:
+
+```ts
+it('debería rechazar un importe negativo', () => {
+  // Arrange
+
+  // Act
+  const act = () => OrderAmount.from(-1);
+
+  // Assert
+  expect(act).toThrow(InvalidOrderAmountError);
+});
+```
 
 - **Order: documentation tests first, edge cases later.** Don't add separator comments like `// Edge cases` — the reading order alone signals the progression.
 - **One precise assertion per `it` when the assertion is the SUT's contract.** Multiple assertions are fine when they describe a single observable outcome.
@@ -401,19 +413,27 @@ describe('Money.add', () => {
 - **Don't generate inputs directly.** If you write `fc.string()` and then call the SUT, you risk re-implementing the SUT inside the test to compute the expected value. Construct inputs _around_ a known outcome:
 
 ```ts
-// Bad: rebuilds substring search inside the test
+// Mal: el test reimplementa la búsqueda del substring para calcular lo esperado
 it.prop([fc.string(), fc.string()])('debería detectar el substring', (text, pattern) => {
-  expect(isSubstring(text, pattern)).toBe(text.includes(pattern));
+  // Arrange
+
+  // Act
+  const result = isSubstring(text, pattern);
+
+  // Assert
+  expect(result).toBe(text.includes(pattern));
 });
 
-// Good: assemble an input we know contains the pattern
+// Bien: se construye un input que, por construcción, contiene el patrón
 it.prop([fc.string(), fc.string(), fc.string()])(
   'debería detectar un substring construido dentro del input',
   (a, b, c) => {
     // Arrange
     const text = a + b + c;
+
     // Act
     const result = isSubstring(text, b);
+
     // Assert
     expect(result).toBe(true);
   },
@@ -425,19 +445,19 @@ it.prop([fc.string(), fc.string(), fc.string()])(
 - **Avoid `.filter` and `fc.pre`.** They throw away generated values and slow runs. Prefer arbitrary options or `.map`:
 
 ```ts
-// Bad
+// Mal
 fc.integer().filter((n) => n >= 0);
-// Good
+// Bien
 fc.nat();
 
-// Bad
+// Mal
 fc.string().filter((s) => s.length >= 2);
-// Good
+// Bien
 fc.string({ minLength: 2 });
 
-// Bad
+// Mal
 fc.integer().filter((n) => n % 2 === 0);
-// Good (map trick)
+// Bien (truco del map)
 fc.nat().map((n) => n * 2);
 ```
 
@@ -473,14 +493,16 @@ describe('queue', () => {
 
 `s.scheduleFunction` wraps an async function so its resolution can be interleaved by fast-check; `s.waitFor` drives the scheduler until the promises settle. Vanilla `fast-check` form (no `@fast-check/jest`) requires `fc.assert(fc.asyncProperty(fc.scheduler(), async (s) => { … }))` and `await`.
 
-### Faker integration (active)
+### Faker integration (not wired yet)
+
+> **Status (2026-09-29):** `@faker-js/faker` is installed, but nothing in `src/` or `test/` imports it and `test/helpers/faker-arb.ts` does **not** exist. The first spec that needs realistic data creates that helper from the snippet below; until then, don't import `@test/helpers/faker-arb`.
 
 `@faker-js/faker` produces realistic data (`'María González'`, `'jgarcia+test@empresa.com.mx'`). Wire it into `fast-check` so you keep shrinking and seed reproducibility while gaining realistic inputs. The `FakerBuilder` class below is the canonical adapter:
 
 Shared test helpers live under `test/helpers/` and are imported via the `@test/` alias — **not** `@/`, which maps to `src/`.
 
 ```ts
-// test/helpers/faker-arb.ts (one place; share across specs)
+// test/helpers/faker-arb.ts (un único sitio, compartido por todos los specs)
 import { Faker, type Randomizer, base } from '@faker-js/faker';
 import fc from 'fast-check';
 
@@ -540,32 +562,60 @@ itProp.prop([fakerToArb((f) => f.person.firstName()), fakerToArb((f) => f.person
 Both work. Prefer `@fast-check/jest` for readability; fall back to vanilla when the test predicate doesn't fit the `it.prop` shape.
 
 ```ts
-// Synchronous, with arbitraries
-// @fast-check/jest
+// Síncrono, con arbitrarios
+// Con @fast-check/jest
 import { fc, it as itProp } from '@fast-check/jest';
 itProp.prop([fc.integer(), fc.integer()])('debería ser conmutativa', (a, b) => {
-  expect(add(a, b)).toBe(add(b, a));
+  // Arrange
+
+  // Act
+  const ab = add(a, b);
+  const ba = add(b, a);
+
+  // Assert
+  expect(ab).toBe(ba);
 });
-// Vanilla
+// Con fast-check a secas: los marcadores AAA van dentro del predicado
 import fc from 'fast-check';
 it('debería ser conmutativa', () => {
   fc.assert(
     fc.property(fc.integer(), fc.integer(), (a, b) => {
-      expect(add(a, b)).toBe(add(b, a));
+      // Arrange
+
+      // Act
+      const ab = add(a, b);
+      const ba = add(b, a);
+
+      // Assert
+      expect(ab).toBe(ba);
     }),
   );
 });
 
-// Async predicate
-// @fast-check/jest
+// Predicado asíncrono
+// Con @fast-check/jest
 itProp.prop([fc.string()])('debería hashear de forma determinista', async (s) => {
-  expect(await hash(s)).toBe(await hash(s));
+  // Arrange
+
+  // Act
+  const first = await hash(s);
+  const second = await hash(s);
+
+  // Assert
+  expect(first).toBe(second);
 });
-// Vanilla
+// Con fast-check a secas
 it('debería hashear de forma determinista', async () => {
   await fc.assert(
     fc.asyncProperty(fc.string(), async (s) => {
-      expect(await hash(s)).toBe(await hash(s));
+      // Arrange
+
+      // Act
+      const first = await hash(s);
+      const second = await hash(s);
+
+      // Assert
+      expect(first).toBe(second);
     }),
   );
 });

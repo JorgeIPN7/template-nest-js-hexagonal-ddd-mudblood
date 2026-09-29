@@ -60,7 +60,7 @@ Agent({
     - Verify rule codes:
       - `di-use-interfaces-tokens` → each port is an `abstract class` (its own token) under
         `domain/ports/`; the module binds `{ provide: Port, useClass: Adapter }`; no
-        `Symbol` token and no `@Inject` for ports (see `NESTJS-MAPPING.md` §2)
+        `Symbol` token and no `@Inject` for ports (see `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md` §2)
       - `security-validate-all-input` → DTOs use class-validator decorators
       - `arch-use-repository-pattern` → adapter `implements` the domain port class
       - …and so on for the codes the plan lists
@@ -93,7 +93,7 @@ Agent({
     - Confirm the implementer's report includes the captured RED output from before the
       implementation. This is evidence-based — a past red run cannot be reproduced from
       the final diff — so a report missing the RED evidence fails the review.
-    - Any mismatch here FAILS spec compliance (see SKILL.md, «Casos primero»).
+    - Any mismatch here FAILS spec compliance (see `.claude/skills/subagent-driven-development/SKILL.md`, «Casos primero»).
 
     **Layer purity:**
     - Any forbidden imports leaking across layers?

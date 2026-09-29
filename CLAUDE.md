@@ -143,7 +143,9 @@ brainstorming  →  writing-plans  →  subagent-driven-development  (recommende
 
 ## Modelo de colaboración — casos primero, TDD después, mutación como auditor
 
-Definido en `docs/specs/2026-08-04-roadmap-and-collaboration-model-design.md`. Tres fases:
+Esta sección es la definición vigente del modelo. La spec donde nació
+(`2026-08-04-roadmap-and-collaboration-model-design.md`) se quedó en el historial anterior a la
+reconstrucción del 2026-08-08 y no existe en el repo (backlog #29). Tres fases:
 
 1. **Contrato:** al escribir el plan, humano e IA acuerdan por preguntas/respuestas la tabla
    «Casos acordados» de cada tarea con lógica en `domain/` o `application/` (casos puntuales +
@@ -165,6 +167,11 @@ silencio.
 Infra, config, wiring y docs quedan exentas de la tabla. El resto de convenciones de testing
 (AAA, 1:1 spec↔archivo, mocking por capa) no cambia: el modelo añade el origen de los casos y
 el auditor, no cómo se escribe un test.
+
+**Referencias históricas en `src/`.** Los comentarios y tests que citan «Tabla D…R», «fila R11»,
+«caso E5» o «spec §N» apuntan a planes y specs de aquel ciclo, perdidos en la misma
+reconstrucción: no los busques. El caso vive en el texto del `it`; de esas tablas, la suite es la
+única fuente que queda.
 
 ## Architecture rules
 
@@ -438,7 +445,8 @@ Related: Zod's `.default()` only fires on `undefined`, so a variable that is pre
 - **No barrels in `src/` — the lint verifies it.** No `index.ts` anywhere: every import targets
   the concrete file, and across modules only the `*.module.ts` is importable. The 5 boundary
   rules live in `eslint.boundaries.js` (shared with its suite,
-  `src/__tests__/eslint-boundaries.spec.ts`) — spec `docs/specs/2026-08-04-module-boundaries-design.md`.
+  `src/__tests__/eslint-boundaries.spec.ts`); their original design spec was lost in the
+  2026-08-08 history rebuild (backlog #29), so those two files are the only source.
 - **Only the root of a `@nestjs/*` package is importable — the lint verifies it.**
   `no-restricted-imports` in `eslint.config.mjs` bans every subpath (`^@nestjs/[^/]+/`,
   case-insensitive, `import type` included). Nest 12's `exports` map keeps `./*` and `./internal`
@@ -450,8 +458,9 @@ Related: Zod's `.default()` only fires on `undefined`, so a variable that is pre
   `import()` is the one form the rule doesn't see. Spec: `src/__tests__/eslint-config.spec.ts`.
 - **Type-only imports are explicit** — `consistent-type-imports` with inline style: `import { ValidationPipe, type INestApplication }`.
 - **Tests live in a `__tests__/` folder at the root of each module**, replicating the module's internal structure, so moving a module moves its tests with it. Unit specs are `*.spec.ts`, E2E are `*.e2e-spec.ts`, and both ship inside the module. Only shared helpers live outside `src/`, in `test/helpers/` (imported via `@test/`).
-- **`describe` in code, `it` in Spanish.** The root `describe` keeps the real identifier; nested `describe`s group cases and are Spanish, like every `it` — a Spanish sentence starting with `debería…`. Code, variables and helpers stay in English. AAA comments (`// Arrange`, `// Act`, `// Assert`) are mandatory.
-- **One spec per source file (1:1)**, same base name and same relative path inside `__tests__/`. Don't group several SUTs in one file.
+- **`describe` in code, `it` in Spanish.** The root `describe` keeps the real identifier; a nested `describe` is named after the method it groups (`describe('cancel()')`), or is a Spanish phrase when it groups by scenario rather than by method. Every `it` is a Spanish sentence starting with `debería…`. Code, variables and helpers stay in English; comments are Spanish.
+- **AAA: the three comments in every `it`, always.** `// Arrange`, `// Act` and `// Assert`, each on its own line, even when a phase has no code — with nothing to prepare, `// Arrange` stays, empty. When the action is what the assertion checks (a throw), capture it under `// Act` (`const act = () => OrderAmount.from(-1);`) and assert under `// Assert` (`expect(act).toThrow(InvalidOrderAmountError);`): a combined `// Act + Assert` is not allowed. About 200 legacy tests predate this rule (heuristic count, backlog #30).
+- **One spec per source file (1:1)**, same base name and same relative path inside `__tests__/`. Don't group several SUTs in one file. Ports (`domain/ports/`, abstract classes with no logic) are exempt; errors and events are not — they carry messages and data that Stryker mutates (4 legacy files lack theirs, backlog #30).
 - **Mocking by layer:** no mocks in `domain/`; hand-written port fakes in `application/` (see `__tests__/helpers/in-memory-user.repository.ts`), never `jest.mock`; repositories are tested against real PostgreSQL in the E2E suite. Modules, TypeORM repositories, `data-source.ts`, seeds, the outbox CLI and migrations are excluded from _unit_ coverage on purpose, and `test/jest-e2e.config.mjs` measures them with its own threshold — **except `src/database/migrations/**`, which no suite measures**. That exception is deliberate and now written down: they are one-shot DDL run by the CLI, and the fact that nothing exercises them directly is open debt with its own entry (`docs/backlog.md` #17), not something the E2E config quietly covers. Until 2026-08-19 this sentence claimed the E2E suite measured "exactly those files" while its list held two of the six patterns, so four groups were measured by neither.
 - **Shared fixtures:** module-wide helpers go in `<module>/__tests__/helpers/` (e.g. `user.factory.ts`, `arbitraries.ts`); cross-cutting ones in `test/helpers/` (e.g. `config.factory.ts`), imported via `@test/`. Never copy a builder into several specs.
 - **Property-based testing with `fast-check`** for value objects, pure functions and mapping round-trips. Arbitraries are **constructed**, never `.filter()`-ed out of `fc.string()`.

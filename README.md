@@ -529,9 +529,9 @@ src/modules/users/
     └── users.e2e-spec.ts
 ```
 
-- **Un spec por archivo de código**, con el mismo nombre base y la misma ruta relativa dentro de `__tests__/`.
-- `describe` raíz con el identificador real del código (en inglés); los `describe` anidados agrupan casos y van en español, igual que cada `it`, que es una frase que empieza por **`debería…`**. Código, variables y helpers siguen en inglés.
-- **AAA obligatorio**: cada `it` marca `// Arrange`, `// Act`, `// Assert`.
+- **Un spec por archivo de código**, con el mismo nombre base y la misma ruta relativa dentro de `__tests__/`. Los puertos (`domain/ports/`, clases abstractas sin lógica) quedan exentos; los errores y los eventos no, porque llevan mensajes y datos que Stryker muta.
+- `describe` raíz con el identificador real del código (en inglés); un `describe` anidado lleva el nombre del método que agrupa (`describe('cancel()')`), o una frase en español si agrupa por escenario. Cada `it` es una frase en español que empieza por **`debería…`**. Código, variables y helpers siguen en inglés; los comentarios, en español.
+- **AAA obligatorio, los tres siempre**: cada `it` marca `// Arrange`, `// Act` y `// Assert`, cada uno en su línea, aunque una fase quede vacía. Si lo que se comprueba es un lanzamiento, la acción se captura en `// Act` (`const act = () => …`) y se afirma en `// Assert`: no se admite `// Act + Assert` combinado.
 - **Mocking por capa**: sin mocks en `domain/`; fakes escritos a mano en `application/` (nunca `jest.mock`); los repositorios se prueban contra PostgreSQL real en los E2E.
 - **Property-based con `fast-check`** en value objects, funciones puras y round-trips de mapeo. Los arbitrarios se **construyen**, nunca se filtran con `.filter()`.
 - Helpers compartidos por un módulo en `<módulo>/__tests__/helpers/`; los transversales en `test/helpers/`, importados por `@test/`.

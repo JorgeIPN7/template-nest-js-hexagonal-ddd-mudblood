@@ -15,7 +15,7 @@ Agent({
 
     **Spec to review:** [SPEC_FILE_PATH]
     **Stack:** NestJS 12 + TypeScript 6.0, hexagonal/DDD layout under src/modules/<context>/
-    (concrete shape: `clean-ddd-hexagonal/references/NESTJS-MAPPING.md`).
+    (concrete shape: `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md`).
 
     ## What to Check
 

@@ -17,7 +17,7 @@ Execute a plan by dispatching a fresh subagent per task, with two-stage review a
 
 - All subagent dispatches use the **`Agent` tool** with `subagent_type: "general-purpose"` unless noted.
 - For pure research dispatches (read-only investigation, no edits), prefer `subagent_type: "Explore"`.
-- For architectural / design subagents (e.g., the final reviewer), prefer `subagent_type: "Plan"`.
+- The final reviewer is `general-purpose` too. `Plan` and `Explore` subagents do **not** load `CLAUDE.md` (measured 2026-09-29: ≈16–19k tokens of initial context, against ≈48–50k for `general-purpose`), and the final review has to judge this repo's own conventions. Use `Plan` only for design work whose prompt carries every rule it needs.
 - The implementer subagent is `general-purpose` — it must be allowed to read, edit, and run tests.
 
 ## When to Use
@@ -89,8 +89,8 @@ digraph process {
 
 ## Casos primero (modelo de colaboración)
 
-Cuando una tarea del plan trae tabla **«Casos acordados»** (spec
-`docs/specs/2026-08-04-roadmap-and-collaboration-model-design.md`), el ciclo del implementer es
+Cuando una tarea del plan trae tabla **«Casos acordados»** (`CLAUDE.md`, sección «Modelo de
+colaboración»), el ciclo del implementer es
 fijo: confirmación JIT con el controller → tests en ROJO 1:1 con la tabla (con evidencia de la
 salida) → implementación a verde → refactor. El reporte incluye el mapeo casos ↔ suite y el
 score de mutación del módulo (`pnpm test:mutation --mutate "src/modules/<context>/…"`).
@@ -204,7 +204,7 @@ Quality reviewer:
 
 …
 
-[After all tasks: dispatch final reviewer with subagent_type=Plan]
+[After all tasks: dispatch final reviewer with subagent_type=general-purpose]
 Final reviewer: All tasks complete, layers respected, rule codes honored.
 
 [Run DoD inline: typecheck/lint:check/format:check/test/test:e2e/build all pass]

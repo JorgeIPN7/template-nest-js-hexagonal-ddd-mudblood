@@ -1351,6 +1351,65 @@ formar un grafo mixto.
 
 ---
 
+## 29. Las specs y los planes del ciclo original se perdieron en la reconstrucción del historial
+
+**Qué pasa.** El historial se reconstruyó el 2026-08-08 a partir de los 52 commits de `main`
+hasta `fcaebc0` (`CHANGELOG.md`). Las specs y los planes de aquel ciclo no se trajeron:
+`docs/specs/` y `docs/plans/` solo tienen `.gitkeep` desde `5b22e19`, y tampoco están en disco.
+Entre ellos estaban la spec del roadmap y del modelo de colaboración
+(`2026-08-04-roadmap-and-collaboration-model-design.md`), la de fronteras
+(`2026-08-04-module-boundaries-design.md`), la de auth (`2026-08-05-auth-minimal-design.md`) y los
+planes que citan #4, #5 y #6. Siete referencias activas seguían apuntando a ellas (`CLAUDE.md`
+dos veces, `stryker.config.mjs`, `eslint.boundaries.js` y tres skills), y el código cita tablas de
+casos («Tabla D…R», «fila R11», «caso E5») que vivían en esos planes. Un agente que siguiera la
+referencia gastaba turnos buscando un archivo que no existe.
+
+**Criterio ya decidido.** No se reconstruyen. La definición vigente del modelo de colaboración es
+su sección de `CLAUDE.md`; la de las fronteras, `eslint.boundaries.js` y su suite. Las siete
+referencias apuntan ahora ahí, y `CLAUDE.md` avisa de que las citas de tablas en `src/` son
+históricas. Reescribir la spec duplicaría lo que ya dice `CLAUDE.md` y abriría una segunda fuente
+que puede divergir. Las entradas de este backlog que citan esos archivos (#3, #4, #5 y #6) se
+quedan como están: son registro de lo que pasó.
+
+**Cómo se sabrá que está hecho.** Cerrada el 2026-09-29: fuera de este backlog, ninguna
+referencia a `docs/specs/2026-08-0…` o `docs/plans/2026-08-0…` apunta a un archivo, y
+`CLAUDE.md` lleva el aviso de referencias históricas.
+
+---
+
+## 30. Deuda de convenciones de test tras fijar AAA estricto y la regla 1:1 con puertos exentos
+
+**Qué pasa.** El 2026-09-29 se fijaron tres reglas de test (`CLAUDE.md`, «Code conventions») que
+el código anterior no cumple del todo. Conteos heurísticos sobre `bc66bce`:
+
+- **AAA con los tres marcadores siempre**, sin `// Act + Assert`: unos 207 tests incumplen. 105 no
+  llevan `// Arrange` (22 archivos; los que más, `pino-options` 19, `users.e2e` 13, `auth.e2e` 9,
+  `database.config` 9, `email.vo` 8, `user-id.vo` 7, `user.entity` 6 y `orders.e2e` 5) y 102 usan
+  un marcador combinado.
+- **1:1 con los puertos exentos**: faltan 4 specs, las de `auth/domain/errors/auth.errors.ts`,
+  `orders/domain/errors/order.errors.ts`, `users/domain/errors/user.errors.ts` y
+  `orders/domain/events/order-placed.event.ts`. Los errores sin spec coinciden con los
+  supervivientes que documenta la cabecera de `stryker.config.mjs` (4 en `order.errors.ts` y 3 en
+  `user.errors.ts`).
+- **`describe` anidado con el nombre del método**: la regla se alineó con lo que ya hacía la suite
+  (95 de 139 anidados), así que no deja deuda.
+
+De paso: `user-id.vo.spec.ts:103` filtra un `fc.string()` con `.filter()`, contra la regla de
+construir los arbitrarios.
+
+**Criterio ya decidido.** El código nuevo cumple desde ya; lo existente queda como deuda y no se
+arregla dentro de una feature. Pagarla es mecánico: añadir `// Arrange` vacío donde falta, partir
+cada `// Act + Assert` en `const act = () => …` bajo `// Act` y `expect(act)…` bajo `// Assert`,
+y escribir las 4 specs (los errores, con su mensaje, que es lo que Stryker muta). Si se hace esa
+ronda, se valora cerrarla con una guarda automática que recorra los `*.spec.ts`, como hace
+`language-convention.spec.ts` con los identificadores; hoy nada verifica AAA, «debería» ni el
+idioma de los comentarios.
+
+**Cómo se sabrá que está hecho.** El conteo de tests sin los tres marcadores separados llega a 0,
+existen las 4 specs y la mutación de `orders` sube de su 85.94 % (55/64) documentado.
+
+---
+
 ## Cerrado al verificarlo
 
 - **`operationIdFactory` colisionando entre controllers con métodos homónimos.** No estaba latente:
