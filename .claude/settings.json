@@ -1,5 +1,49 @@
 {
   "enabledPlugins": {
     "context7@claude-plugins-official": true
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git add *)",
+      "Bash(git -C * add *)",
+      "Bash(git commit *)",
+      "Bash(git -C * commit *)",
+      "Bash(git push *)",
+      "Bash(git -C * push *)",
+      "Bash(git pull *)",
+      "Bash(git -C * pull *)",
+      "Bash(git tag *)",
+      "Bash(git -C * tag *)",
+      "Bash(git rebase *)",
+      "Bash(git -C * rebase *)",
+      "Bash(git merge *)",
+      "Bash(git -C * merge *)",
+      "Bash(git cherry-pick *)",
+      "Bash(git -C * cherry-pick *)",
+      "Bash(git revert *)",
+      "Bash(git -C * revert *)",
+      "Bash(git am *)",
+      "Bash(git -C * am *)",
+      "Bash(git stash *)",
+      "Bash(git -C * stash *)",
+      "Bash(git reset *)",
+      "Bash(git -C * reset *)",
+      "Bash(git checkout *)",
+      "Bash(git -C * checkout *)",
+      "Bash(git switch *)",
+      "Bash(git -C * switch *)",
+      "Bash(git restore *)",
+      "Bash(git -C * restore *)",
+      "Bash(git clean *)",
+      "Bash(git -C * clean *)",
+      "Bash(git branch -d *)",
+      "Bash(git branch -D *)",
+      "Bash(git branch --delete *)",
+      "Bash(git branch -m *)",
+      "Bash(git branch -M *)",
+      "Bash(git branch --move *)",
+      "Bash(git branch -f *)",
+      "Bash(git branch --force *)"
+    ]
   }
 }
