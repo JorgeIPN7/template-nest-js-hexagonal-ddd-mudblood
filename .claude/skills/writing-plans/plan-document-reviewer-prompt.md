@@ -28,9 +28,14 @@ Agent({
     | Ports & DI | Every port is an `abstract class` under `domain/ports/` (it is its own token — a `Symbol` token or `@Inject` is a finding); every adapter `implements` it and a module task binds it with `{ provide: Port, useClass: Adapter }` |
     | Use cases | One use case per file under `application/use-cases/`, with its `…Input` type in the same file — no `commands/`, `queries/` or `handlers/` |
     | Test commands | Tests run through `pnpm test <path>` / `pnpm test:e2e`, never a bare `jest` (NestJS 12 packages are ESM-only; the scripts add `--experimental-vm-modules`) |
-    | Rule-code coverage | Each Nest artifact lists rule codes from `nestjs-best-practices` |
+    | No code | No production code or finished tests beyond the **Interfaces** declarations and fragments of ≤15 lines whose shape is not deducible from CLAUDE.md; no file path as the first line inside a code block |
+    | Casos acordados | Every task touching `domain/` or `application/` has a case table, one `it` per row, with `P` rows for «always/never» requirements |
+    | Red by assertion | Every task with a case table starts with a stub step, so its red run fails on an assertion and not on a missing module |
+    | Contract reachability | Every endpoint task has a contract table whose rows name the input/state and code path that produce each response today; a response no request can produce is a finding |
+    | Guard tests | Every guarantee in the spec (concurrency, ownership, authorization, atomicity, anti-enumeration, idempotency) has a test and a step that proves it fails without the protection |
+    | Rule codes | Rule codes are cited where they change what the implementer does (cross-cutting concerns), not on every task by ritual |
     | Test stack | Tests use Jest + Supertest only — not Python/pytest, not Mocha |
-    | No autocommit | No task contains `git commit` or `git push` instructions |
+    | No autocommit | No task contains `git commit`, `git add` or `git push` instructions |
 
     ## Calibration
 
@@ -40,7 +45,8 @@ Agent({
 
     Approve unless there are serious gaps — missing requirements from the spec,
     contradictory steps, placeholder content, tasks so vague they can't be acted on,
-    layer-rule violations, or any embedded `git commit` instruction.
+    layer-rule violations, production code pasted into tasks, an unreachable declared
+    response, or any embedded `git commit` instruction.
 
     ## Output Format
 

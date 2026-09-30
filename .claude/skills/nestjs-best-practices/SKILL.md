@@ -182,10 +182,11 @@ This skill provides **rule-level checks** (DI, security, performance, API). The 
 
 ## Workflow Integration
 
-This skill is consulted at three points:
+This skill is consulted — never invoked as a step — when the work touches a NestJS-specific concern (`docs/development-workflows.md`):
 
-1. **brainstorming** — when the design touches a NestJS-specific concern (auth, caching, queues, validation, throttling), cite the relevant rule code (e.g. `security-auth-jwt`) when proposing tradeoffs.
-2. **writing-plans** — every task that creates Nest artifacts (controllers, providers, modules, filters) lists the applicable rule codes inline so the implementer can verify against them.
-3. **execution (executing-plans / subagent-driven-development)** — code-quality review checks the changed files against the rule codes the plan attached to each task.
+1. **brainstorming** (full flow) — when the design touches auth, caching, queues, validation or throttling, cite the relevant rule code (e.g. `security-auth-jwt`) when proposing tradeoffs.
+2. **writing-plans** (full flow) — a task cites the rule codes that change what the implementer does; don't tag every task by ritual.
+3. **express** and the executors — only for a concern the module doesn't already solve; `CLAUDE.md` and the module's own files cover the rest.
+4. **adversarial-review** — the reviewer judges against `CLAUDE.md`; a rule code is useful evidence in a finding.
 
 Pair this skill with `clean-ddd-hexagonal` — they are designed to be used together in this repo.

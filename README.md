@@ -81,7 +81,7 @@ Lo que **no** hace: tocar git, ajustar el `scope-enum` de `commitlint.config.cjs
 - [Convenciones](#convenciones)
 - [Endpoints base](#endpoints-base)
 - [Deploy notes](#deploy-notes)
-- [Skills de IA](#skills-de-ia)
+- [Skills de IA y flujos de trabajo](#skills-de-ia-y-flujos-de-trabajo) — cómo se trabaja con un asistente de IA en este repo
 
 ---
 
@@ -536,7 +536,7 @@ src/modules/users/
 - **Property-based con `fast-check`** en value objects, funciones puras y round-trips de mapeo. Los arbitrarios se **construyen**, nunca se filtran con `.filter()`.
 - Helpers compartidos por un módulo en `<módulo>/__tests__/helpers/`; los transversales en `test/helpers/`, importados por `@test/`.
 
-**Cómo se decide qué se prueba:** el modelo de colaboración —tabla de casos acordados, TDD y mutación como auditor— está en [`CLAUDE.md`](./CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor). La mutación es un gate real: `pnpm test:mutation` con `break: 85` y job propio en CI.
+**Cómo se decide qué se prueba:** el modelo de colaboración —tabla de casos acordados, TDD con rojo por aserción y mutación como auditor— está en [`CLAUDE.md`](./CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor), y cómo lo aplica cada flujo de trabajo, en [`docs/development-workflows.md`](./docs/development-workflows.md). La mutación es un gate real: `pnpm test:mutation` con `break: 85` y job propio en CI; `pnpm test:mutation:changed` audita solo el código nuevo de una rama.
 
 ### Base de datos de los tests
 
@@ -572,6 +572,7 @@ El umbral de `branches` (50) es más bajo que el resto a propósito: SWC instrum
 | `pnpm test:e2e`                | E2E — **requiere la base levantada y migrada**                                |
 | `pnpm test:e2e:ci`             | E2E para CI, con su propia cobertura                                          |
 | `pnpm test:mutation`           | Stryker. `break: 85` es un gate, no una sugerencia                            |
+| `pnpm test:mutation:changed`   | Stryker solo sobre lo que cambió desde una base (por defecto, desde `main`)   |
 | `pnpm db:up` / `db:down`       | Levanta / detiene PostgreSQL. `db:up` bloquea hasta que la base responde      |
 | `pnpm db:reset`                | Borra el volumen, arranca limpio y **migra las dos bases**                    |
 | `pnpm db:migrate:test`         | Aplica las migraciones a la base de tests                                     |
@@ -780,34 +781,41 @@ Los `/health` están exentos del throttler (`@SkipThrottle`) y del `TransformInt
 
 ---
 
-## Skills de IA
+## Skills de IA y flujos de trabajo
 
-Una **skill** es un manual que se le carga a un asistente de IA para que trabaje como se trabaja aquí, en vez de improvisar. Son archivos de texto: viven en [`.claude/skills/`](./.claude/skills/), se leen igual que cualquier documento y no ejecutan nada por su cuenta. Hay siete, en dos grupos.
+Una **skill** es un manual que se le carga a un asistente de IA para que trabaje como se trabaja aquí, en vez de improvisar. Son archivos de texto: viven en [`.claude/skills/`](./.claude/skills/), se leen igual que cualquier documento y no ejecutan nada por su cuenta. Hay nueve.
 
-**Las cuatro del flujo de trabajo**, en este orden para cualquier cambio no trivial. Cada una produce algo escrito que alimenta a la siguiente:
+**Qué flujo usar depende del tamaño y del riesgo del cambio.** La guía completa —cómo elegir según el tipo de tarea, qué hace el asistente en cada paso, qué te toca a ti, qué deja escrito, cuánto cuesta y las mediciones que lo justifican— está en **[`docs/development-workflows.md`](./docs/development-workflows.md)**. En resumen:
 
-```
-brainstorming  →  writing-plans  →  subagent-driven-development   (preferido)
-   (spec)           (plan)      └→  executing-plans               (alternativa)
-```
+| Nivel                           | Para qué                                                                                                                                 | Cómo se arranca                                                                           |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **Trivial**                     | Errata, docs, configuración, bump de dependencia, bug de una línea                                                                       | Pídelo sin skill; el asistente aplica `CLAUDE.md` y la DoD                                |
+| **Exprés** (por defecto)        | Una feature o un bug con lógica dentro de **un** contexto que ya existe (hasta ~8 tareas)                                                | `/express <qué quieres>`                                                                  |
+| **Completo** (casos especiales) | Contexto nuevo, cambios entre contextos, migración destructiva, auth o seguridad, más de ~10 tareas, trabajo que continuará otra persona | `/brainstorming <idea>` → plan sin código → `/executing-plans <plan>` en una sesión nueva |
 
-| Skill                                                                                               | Qué hace                                                                        | Cuándo                                                            |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| [`brainstorming`](https://www.skills.sh/obra/superpowers/brainstorming)                             | Convierte una idea en una spec escrita, preguntando de una en una               | **Antes de escribir código nuevo.** Deja la spec en `docs/specs/` |
-| [`writing-plans`](https://www.skills.sh/obra/superpowers/writing-plans)                             | Parte la spec en tareas, con qué archivo tocar y cómo probar cada una           | Cuando ya hay spec. Deja el plan en `docs/plans/`                 |
-| [`subagent-driven-development`](https://www.skills.sh/obra/superpowers/subagent-driven-development) | Ejecuta el plan tarea a tarea, cada una con un asistente nuevo y dos revisiones | **La opción por defecto** si las tareas son independientes        |
-| [`executing-plans`](https://www.skills.sh/obra/superpowers/executing-plans)                         | El mismo plan, pero en la conversación actual y sin delegar                     | Planes pequeños o con tareas muy acopladas                        |
+**Todos terminan igual:** mutación del código nuevo (`pnpm test:mutation:changed`), una revisión adversarial y la DoD. **El asistente nunca hace commits**: [`.claude/settings.json`](./.claude/settings.json) le deniega el git que escribe, y los commits los haces tú desde tu terminal con el mensaje que te propone.
 
-**Las tres que se consultan** mientras se escribe código, para no reinventar criterios ya decididos:
+**Las seis del flujo de trabajo:**
 
-| Skill                                                                                                   | Manda sobre                                                                        |
-| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| [`clean-ddd-hexagonal`](https://www.skills.sh/ccheney/robust-skills/clean-ddd-hexagonal)                | Dónde va cada archivo, qué capa puede importar a cuál, cómo se modela un dominio   |
-| [`nestjs-best-practices`](https://www.skills.sh/kadajett/agent-nestjs-skills/nestjs-best-practices)     | 45 reglas de NestJS 12: módulos, inyección de dependencias, seguridad, rendimiento |
-| [`javascript-typescript-jest`](https://www.skills.sh/github/awesome-copilot/javascript-typescript-jest) | Cómo se escriben los tests aquí: nombres, estructura AAA, qué mockear en cada capa |
+| Skill                                                                                               | Qué hace                                                                                                             |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| [`express`](./.claude/skills/express/SKILL.md) _(propia)_                                           | El flujo por defecto: mini-diseño, spec corta con su tabla de casos, TDD, mutación, revisión y DoD, en una sesión    |
+| [`brainstorming`](https://www.skills.sh/obra/superpowers/brainstorming)                             | Flujo completo, paso 1: convierte una idea en una spec aprobada en `docs/specs/`                                     |
+| [`writing-plans`](https://www.skills.sh/obra/superpowers/writing-plans)                             | Flujo completo, paso 2: un plan **sin código** en `docs/plans/` — archivos, firmas, decisiones y casos de cada tarea |
+| [`executing-plans`](https://www.skills.sh/obra/superpowers/executing-plans)                         | Flujo completo, paso 3 (por defecto): ejecuta el plan en la sesión y lo audita una vez al final                      |
+| [`subagent-driven-development`](https://www.skills.sh/obra/superpowers/subagent-driven-development) | Flujo completo, paso 3 para planes grandes de tareas independientes: un asistente nuevo por tarea                    |
+| [`adversarial-review`](./.claude/skills/adversarial-review/SKILL.md) _(propia)_                     | El último paso de todos los flujos, o suelta antes de un PR: un revisor que busca defectos reales, no aprobar        |
 
-[`skills-lock.json`](./skills-lock.json) fija el origen y un hash de contenido de cada una — el equivalente a un `pnpm-lock.yaml` para las skills.
+**Las tres que se consultan** cuando el trabajo las necesita, para no reinventar criterios ya decididos:
 
-> **⚠️ Las siete están adaptadas a este repositorio y ninguna es la versión original.** Las cuatro del flujo están hechas a este stack y a su forma de trabajar (`docs/specs/`, `docs/plans/`, la tabla «Casos acordados»); `clean-ddd-hexagonal` y `javascript-typescript-jest` se reescribieron para este stack y estas convenciones, y `nestjs-best-practices` lleva las reglas alineadas con NestJS 12. Traerse la versión de arriba sin más **pisaría esas adaptaciones**. Compara antes de actualizar. La revisión para la 12, que la migración (backlog #27) dejó fuera a propósito, se hizo el 2026-09-28: cambiaron 24 de las 45 reglas, las otras seis skills dejaron de anunciar NestJS 11, y la referencia de forma de código (`NESTJS-MAPPING.md`), la skill de tests y los prompts de revisión dejaron de enseñar tokens `Symbol` y carpetas `handlers/`.
+| Skill                                                                                                   | Manda sobre                                                                             |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [`clean-ddd-hexagonal`](https://www.skills.sh/ccheney/robust-skills/clean-ddd-hexagonal)                | Dónde va cada archivo, qué capa puede importar a cuál, cómo se modela un dominio        |
+| [`nestjs-best-practices`](https://www.skills.sh/kadajett/agent-nestjs-skills/nestjs-best-practices)     | 45 reglas de NestJS 12: módulos, inyección de dependencias, seguridad, rendimiento      |
+| [`javascript-typescript-jest`](https://www.skills.sh/github/awesome-copilot/javascript-typescript-jest) | Lo que `CLAUDE.md` no cubre de los tests: mocking por capa, property-based testing, E2E |
+
+[`skills-lock.json`](./skills-lock.json) fija el origen y un hash de contenido de las siete que vienen de fuera — el equivalente a un `pnpm-lock.yaml` para las skills. `express` y `adversarial-review` son de este repo y no tienen entrada.
+
+> **⚠️ Las siete de origen externo están adaptadas a este repositorio y ninguna es la versión original.** Las cuatro del flujo completo están hechas a este stack y a su forma de trabajar (`docs/specs/`, `docs/plans/`, la tabla «Casos acordados») y, desde el 2026-09-30, a los ajustes que midió el experimento de flujos: plan sin código, ejecución inline por defecto, una revisión adversarial en lugar de revisores por tarea. `clean-ddd-hexagonal` y `javascript-typescript-jest` se reescribieron para este stack y estas convenciones, y `nestjs-best-practices` lleva las reglas alineadas con NestJS 12. Traerse la versión de arriba sin más **pisaría esas adaptaciones**. Compara antes de actualizar. La revisión para la 12, que la migración (backlog #27) dejó fuera a propósito, se hizo el 2026-09-28: cambiaron 24 de las 45 reglas, las otras seis skills dejaron de anunciar NestJS 11, y la referencia de forma de código (`NESTJS-MAPPING.md`), la skill de tests y los prompts de revisión dejaron de enseñar tokens `Symbol` y carpetas `handlers/`.
 
 El lint y Prettier ignoran `.claude/` a propósito: son documentación, no código del proyecto.

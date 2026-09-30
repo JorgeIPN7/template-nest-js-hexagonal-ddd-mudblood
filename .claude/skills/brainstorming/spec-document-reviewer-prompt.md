@@ -29,6 +29,8 @@ Agent({
     | Layer placement | Each piece of behavior assigned to domain / application / infrastructure correctly |
     | Ports declared | Every external dependency expressed as a port, named as its `abstract class` (the class is its own injection token — no `Symbol`) |
     | Rule-code coverage | Cross-cutting concerns (auth, validation, errors, logging, throttling, caching) tagged with `nestjs-best-practices` rule codes |
+    | Contract reachability | Every declared response names the input/state and code path that produce it today; a response no request can produce is a finding (CLAUDE.md: «a declared-but-impossible response is the same defect as an undeclared one») |
+    | Guarantees | Every guarantee (concurrency, ownership, authorization, atomicity, anti-enumeration, idempotency) names the test that will protect it |
 
     ## Calibration
 

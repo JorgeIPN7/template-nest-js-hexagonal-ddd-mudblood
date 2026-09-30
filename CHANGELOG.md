@@ -109,6 +109,36 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **Tres niveles de flujo de trabajo con IA, elegidos con mediciones** (2026-09-30). La guía
+  completa está en `docs/development-workflows.md`, y `CLAUDE.md` («Skills and development flows»)
+  lleva la tabla de niveles.
+  - **Qué se midió.** La misma feature, cancelar un pedido, se implementó cinco veces desde el
+    mismo commit, y cada rama pasó una revisión adversarial a ciegas.
+    - La cadena completa con subagentes costó ~3 h 30 min y 52,54 USD. El mismo plan ejecutado
+      inline, 23,19 USD. Solo la spec, sin skills, ≈8,3 USD, pero perdió dos casos y la
+      documentación.
+    - Un flujo exprés nuevo tardó 41 min y costó 11,82 USD, con TDD real (5 de 5 specs con rojo
+      por aserción) y mutación del código nuevo al 100 %.
+    - Los 16 revisores por tarea encontraron 0 defectos; la revisión adversarial final los
+      encontró en todas las ramas.
+  - **Qué cambia.**
+    - Dos skills nuevas: `express`, el flujo por defecto para features dentro de un contexto, y
+      `adversarial-review`, la revisión final única.
+    - `brainstorming` queda solo para la cadena completa y pregunta en rondas agrupadas.
+    - `writing-plans` escribe planes **sin código de producción**.
+    - `executing-plans` pasa a ser el ejecutor por defecto, con una auditoría al final.
+    - `subagent-driven-development` queda para planes grandes de tareas independientes, sin
+      revisores por tarea.
+    - `javascript-typescript-jest` pierde las convenciones que ya fija `CLAUDE.md`.
+  - **Dos comprobaciones en todos los flujos:** cada respuesta declarada tiene que poder
+    producirse hoy, y cada test de guarda tiene que fallar sin su protección. Cada una nació de un
+    defecto real que la revisión encontró en la rama exprés.
+  - **`.claude/settings.json` deniega a los agentes el git que escribe**, en las formas
+    `git <sub>` y `git -C <dir> <sub>`, y `src/__tests__/claude-settings.spec.ts` fija la lista.
+    Medido con Claude Code 2.1.283 en un repo desechable.
+  - **`pnpm test:mutation:changed [base]`** muta solo las líneas nuevas de `domain/` y
+    `application/`; sobre la cancelación, 36 mutantes en 8 segundos.
+  - **Límite.** Una sola ejecución por rama. La cadena completa ajustada todavía no se ha medido.
 - **La skill `nestjs-best-practices` se alinea con NestJS 12, y su regla de apagado deja de
   recomendar dos dueños para la misma señal** (2026-09-28). Se revisaron sus 45 reglas contra los
   paquetes 12.1.0 instalados y docs.nestjs.com; cambian 24.
