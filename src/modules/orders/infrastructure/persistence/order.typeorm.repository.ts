@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 
 import type { Order, OrderEvent } from '../../domain/entities/order.entity';
 import { OrderVersionConflictError } from '../../domain/errors/order.errors';
@@ -12,6 +12,15 @@ import { OrderRepository } from '../../domain/ports/order.repository';
 import { OrderMapper } from './order.mapper';
 import { OrderOrmEntity } from './order.orm-entity';
 import { OutboxMessageOrmEntity } from './outbox-message.orm-entity';
+
+/** `unique_violation` de PostgreSQL: https://www.postgresql.org/docs/current/errcodes-appendix.html */
+const PG_UNIQUE_VIOLATION = '23505';
+
+// Copia de la de `user.typeorm.repository.ts`: un módulo no puede importar de otro, y tres
+// líneas no justifican un módulo compartido de infraestructura.
+const isUniqueViolation = (error: unknown): boolean =>
+  error instanceof QueryFailedError &&
+  (error.driverError as { code?: string } | undefined)?.code === PG_UNIQUE_VIOLATION;
 
 /**
  * Adaptador de salida. `save` escribe la orden Y sus filas de outbox dentro de
@@ -23,7 +32,13 @@ import { OutboxMessageOrmEntity } from './outbox-message.orm-entity';
  * en la versión 1; las siguientes, un UPDATE condicionado a la versión con la que se leyó el
  * pedido. Si otro proceso guardó entre medias, el UPDATE no casa ninguna fila —PostgreSQL
  * re-evalúa el WHERE tras esperar el bloqueo de la fila— y lanzar dentro de la transacción la
- * revierte entera: ni fila ni outbox, así que nunca hay un segundo `OrderCancelled`.
+ * revierte entera: ni fila ni outbox, así que nunca hay un segundo `OrderCancelled`. Depende de
+ * READ COMMITTED: en REPEATABLE READ el UPDATE que esperaba recibiría un `40001` en vez de
+ * re-evaluar, y el E2E de la cancelación bloqueada lo detecta.
+ *
+ * Un INSERT cuyo id ya existe (`23505`) es el mismo conflicto visto desde la versión 0: alguien
+ * guardó ese pedido después de que esta instancia naciera. Se traduce igual que el UPDATE que no
+ * casa, que es lo que ya hace el fake de los tests de aplicación.
  */
 @Injectable()
 export class OrderTypeOrmRepository implements OrderRepository {
@@ -52,7 +67,14 @@ export class OrderTypeOrmRepository implements OrderRepository {
     await this.dataSource.transaction(async (manager) => {
       if (orderRow.version === 0) {
         orderRow.version = 1;
-        await manager.insert(OrderOrmEntity, orderRow);
+        try {
+          await manager.insert(OrderOrmEntity, orderRow);
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new OrderVersionConflictError(orderRow.id);
+          }
+          throw error;
+        }
       } else {
         // Solo lo mutable: concepto, importe y cliente no cambian después de colocar.
         const result = await manager.update(

@@ -39,6 +39,8 @@ export class OrdersDomainExceptionFilter implements ExceptionFilter {
     if (exception instanceof OrderNotFoundError) {
       throw new NotFoundException(exception.message);
     }
+    // Defensa, hoy inalcanzable desde HTTP: el reintento de `CancelOrderUseCase` absorbe el
+    // conflicto. No se publica en el contrato mientras no haya una petición que lo produzca.
     if (exception instanceof OrderVersionConflictError) {
       throw new ConflictException(exception.message);
     }

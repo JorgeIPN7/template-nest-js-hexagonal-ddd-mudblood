@@ -316,7 +316,7 @@ Para cada módulo que quites:
 
 1. Borra `src/modules/<contexto>/` entera — los tests van dentro, así que se van con ella.
 2. Quita su import y su entrada en `imports:` de [`src/app.module.ts`](src/app.module.ts).
-3. Borra sus migraciones y las tablas que crearon. Las de `orders` son dos: [`1786076763455-create-orders-and-outbox.ts`](src/database/migrations/1786076763455-create-orders-and-outbox.ts) y [`1790796856575-add-cancellation-to-orders.ts`](src/database/migrations/1790796856575-add-cancellation-to-orders.ts); si ya las aplicaste, `pnpm migration:revert` antes de borrar los archivos. Con la base todavía sin datos, `pnpm db:reset` es más rápido.
+3. Borra sus migraciones y las tablas que crearon. Las de `orders` son dos: [`1786076763455-create-orders-and-outbox.ts`](src/database/migrations/1786076763455-create-orders-and-outbox.ts) y [`1790796856575-add-cancellation-to-orders.ts`](src/database/migrations/1790796856575-add-cancellation-to-orders.ts). Con la base todavía sin datos, borra los archivos y corre `pnpm db:reset`. Si ya tiene datos, **no uses `pnpm migration:revert`**: deshace solo la última migración aplicada, y entre las dos de `orders` hay dos de `auth` (`1786210289581` y `1786210349581`) que se desharían por el camino. Borra las tablas a mano (`DROP TABLE orders_outbox, orders;`) y las dos filas de `orders` en la tabla `migrations`, y después los archivos.
 4. Quita su scope del `scope-enum` de [`commitlint.config.cjs`](commitlint.config.cjs).
 5. Si era `orders`, quita también `pnpm outbox:relay` de `package.json` y `src/database/outbox/`.
 6. Revisa las secciones que lo describen en este README y en [`CLAUDE.md`](CLAUDE.md).

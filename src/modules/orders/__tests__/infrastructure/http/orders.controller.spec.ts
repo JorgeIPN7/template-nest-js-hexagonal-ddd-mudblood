@@ -1,3 +1,5 @@
+import { declaredResponses } from '@common/__tests__/helpers/swagger-metadata';
+
 import { CancelOrderUseCase } from '../../../application/use-cases/cancel-order.use-case';
 import { PlaceOrderUseCase } from '../../../application/use-cases/place-order.use-case';
 import { OrderNotFoundError } from '../../../domain/errors/order.errors';
@@ -9,6 +11,8 @@ const CUSTOMER_ID = '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012';
 const OTHER_CUSTOMER_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const CLAIMS = { sub: CUSTOMER_ID, email: 'maria.gonzalez@empresa.com.mx', role: 'user' };
 const OTHER_CLAIMS = { sub: OTHER_CUSTOMER_ID, email: 'otra@empresa.com.mx', role: 'user' };
+const PLACED_AT = new Date('2026-09-30T09:00:00.000Z');
+const CANCELLED_AT = new Date('2026-09-30T09:05:00.000Z');
 
 describe('OrdersController', () => {
   describe('place()', () => {
@@ -53,10 +57,29 @@ describe('OrdersController', () => {
   });
 
   describe('cancel()', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('debería declarar solo los códigos que la cancelación puede producir hoy', () => {
+      // Arrange: la tabla «Contrato» de docs/specs/2026-09-30-cancel-order-express.md. Sin 409:
+      // el reintento del caso de uso absorbe el conflicto (comentario junto a `cancel`).
+      const reachable = ['200', '400', '401', '403', '404', '429', '500'];
+
+      // Act
+      const declared = Object.keys(declaredResponses(OrdersController, 'cancel'));
+
+      // Assert
+      expect(declared.sort()).toEqual(reachable);
+    });
+
     it('debería cancelar el pedido del cliente del token y devolverlo con su fecha de cancelación', async () => {
-      // Arrange
+      // Arrange: dos instantes distintos, para que un DTO que publicara `placedAt` como
+      // `cancelledAt` no pasara; con uno solo, las dos fechas coincidirían.
+      jest.useFakeTimers({ now: PLACED_AT });
       const controller = buildController();
       const placed = await controller.place({ concept: 'Plan Pro', amountCents: 100 }, CLAIMS);
+      jest.setSystemTime(CANCELLED_AT);
 
       // Act
       const result = await controller.cancel(placed.id, CLAIMS);
@@ -64,7 +87,8 @@ describe('OrdersController', () => {
       // Assert
       expect(result.id).toBe(placed.id);
       expect(result.status).toBe('cancelled');
-      expect(result.cancelledAt).toBeInstanceOf(Date);
+      expect(result.placedAt).toEqual(PLACED_AT);
+      expect(result.cancelledAt).toEqual(CANCELLED_AT);
     });
 
     it('debería exponer cancelledAt en un pedido cancelado y nunca la versión', async () => {

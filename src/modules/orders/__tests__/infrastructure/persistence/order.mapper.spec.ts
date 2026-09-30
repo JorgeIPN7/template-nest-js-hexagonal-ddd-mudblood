@@ -1,6 +1,7 @@
 import { test as fcTest, fc } from '@fast-check/jest';
 
 import { Order } from '../../../domain/entities/order.entity';
+import { OrderDomainError } from '../../../domain/errors/order.errors';
 import { OrderAmount } from '../../../domain/value-objects/order-amount.vo';
 import { OrderConcept } from '../../../domain/value-objects/order-concept.vo';
 import { OrderId } from '../../../domain/value-objects/order-id.vo';
@@ -71,6 +72,60 @@ describe('OrderMapper', () => {
       });
       expect(order.pullEvents()).toEqual([]);
     });
+
+    it('debería rechazar una fila con un estado que este código no conoce', () => {
+      // Arrange: lo que dejaría una versión futura con un tercer estado tras volver atrás. Si
+      // pasara, `cancel()` —que solo mira `=== 'cancelled'`— cancelaría un pedido enviado.
+      const row = buildRow();
+      row.status = 'shipped';
+
+      // Act
+      const act = () => OrderMapper.toDomain(row);
+
+      // Assert
+      expect(act).toThrow(`El pedido ${row.id} tiene un estado desconocido: "shipped"`);
+    });
+
+    it('debería rechazar una fila cancelada sin fecha de cancelación', () => {
+      // Arrange: publicaría un pedido cancelado sin `cancelledAt`, contra lo que dice el DTO.
+      const row = buildRow();
+      row.cancelledAt = null;
+
+      // Act
+      const act = () => OrderMapper.toDomain(row);
+
+      // Assert
+      expect(act).toThrow(`El pedido ${row.id} está en "cancelled" y no tiene cancelled_at`);
+    });
+
+    it('debería rechazar una fila colocada con fecha de cancelación', () => {
+      // Arrange
+      const row = buildRow();
+      row.status = 'placed';
+
+      // Act
+      const act = () => OrderMapper.toDomain(row);
+
+      // Assert
+      expect(act).toThrow(`El pedido ${row.id} está en "placed" y tiene cancelled_at`);
+    });
+
+    it('debería fallar cerrado ante una fila que las reglas actuales del dominio rechazan', () => {
+      // Arrange: un importe que una versión futura admitiera y esta no. Como error de dominio,
+      // el filter lo publicaría como 400 con el importe en el mensaje, también para un pedido
+      // ajeno, porque el mapper corre antes de comprobar el dueño.
+      const row = buildRow();
+      row.amountCents = 0;
+
+      // Act
+      const act = () => OrderMapper.toDomain(row);
+
+      // Assert
+      expect(act).toThrow(
+        `El pedido ${row.id} tiene datos que el dominio rechaza: 0 is not a valid order amount in cents`,
+      );
+      expect(thrownBy(act)).not.toBeInstanceOf(OrderDomainError);
+    });
   });
 
   describe('toDomain() ∘ toPersistence() (property-based)', () => {
@@ -108,6 +163,15 @@ describe('OrderMapper', () => {
 });
 
 // Helpers
+
+const thrownBy = (fn: () => unknown): unknown => {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('Se esperaba que la función lanzara y no lo hizo');
+};
 
 const buildOrder = (
   overrides: Partial<

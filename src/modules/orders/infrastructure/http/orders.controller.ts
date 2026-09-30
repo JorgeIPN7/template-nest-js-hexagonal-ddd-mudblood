@@ -2,7 +2,6 @@ import { Body, Controller, HttpCode, HttpStatus, Param, Post, UseFilters } from 
 import {
   ApiBadRequestResponse,
   ApiBody,
-  ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOperation,
@@ -174,17 +173,11 @@ export class OrdersController {
     type: ErrorResponseDto,
     example: errorExample(404, `Order ${ORDER_ID_EXAMPLE} was not found`, CANCEL_PATH),
   })
-  @ApiConflictResponse({
-    description:
-      'El pedido cambió mientras se cancelaba y el reintento interno también chocó. Repetir ' +
-      'la petición es seguro: la cancelación es idempotente.',
-    type: ErrorResponseDto,
-    example: errorExample(
-      409,
-      `Order ${ORDER_ID_EXAMPLE} was modified concurrently, retry the request`,
-      CANCEL_PATH,
-    ),
-  })
+  // Sin 409, a propósito: hoy ninguna petición lo produce. La única escritura posible sobre un
+  // pedido existente es otra cancelación, así que el reintento de `CancelOrderUseCase` siempre
+  // relee un pedido ya cancelado y responde 200. Publicarlo sería un contrato imposible
+  // (CLAUDE.md, «Endpoint documentation»). Cuando exista un tercer estado, el 409 será alcanzable
+  // y habrá que declararlo aquí: el filter ya lo traduce.
   // Como en `GET /users/:id`: el 400 no lo produce `ValidationPipe` sino `OrderId.from()`,
   // que el filter traduce. Mismo código y misma forma de cuerpo, mensaje propio.
   @ApiBadRequestResponse({

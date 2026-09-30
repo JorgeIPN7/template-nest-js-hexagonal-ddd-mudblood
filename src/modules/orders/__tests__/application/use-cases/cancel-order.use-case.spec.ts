@@ -16,10 +16,16 @@ import { FakeCustomerDirectory } from '../../helpers/fake-customer.directory';
 import { InMemoryOrderRepository } from '../../helpers/in-memory-order.repository';
 
 const CUSTOMER_ID = '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012';
+const OTHER_CUSTOMER_ID = '3f0c8b6e-2d4a-4c1e-8b7f-5a9d1e2c3b40';
 const FIRST_CANCELLED_AT = new Date('2026-09-30T08:00:00.000Z');
+const NOW = new Date('2026-09-30T12:00:00.000Z');
 
 describe('CancelOrderUseCase', () => {
   describe('execute()', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     it('debería cancelar el pedido del cliente y guardarlo con su OrderCancelled en la misma llamada', async () => {
       // Arrange
       const { useCase, repository } = buildUseCase([CUSTOMER_ID]);
@@ -39,7 +45,9 @@ describe('CancelOrderUseCase', () => {
     });
 
     it('debería devolver el pedido cancelado con su fecha de cancelación', async () => {
-      // Arrange
+      // Arrange: reloj fijo, para exigir el instante exacto y no solo «una Date» — con
+      // `toBeInstanceOf(Date)`, un `order.cancel(order.placedAt)` pasaba la suite entera.
+      jest.useFakeTimers({ now: NOW });
       const { useCase, repository } = buildUseCase([CUSTOMER_ID]);
       const orderId = await seedPlacedOrder(repository, CUSTOMER_ID);
 
@@ -49,7 +57,7 @@ describe('CancelOrderUseCase', () => {
       // Assert
       expect(order.id.value).toBe(orderId.value);
       expect(order.status).toBe('cancelled');
-      expect(order.cancelledAt).toBeInstanceOf(Date);
+      expect(order.cancelledAt).toEqual(NOW);
     });
 
     it('debería devolver tal cual un pedido ya cancelado, con su fecha original y sin guardar nada', async () => {
@@ -191,6 +199,25 @@ describe('CancelOrderUseCase', () => {
       // Assert
       await expect(act).rejects.toThrow(CustomerGoneError);
       expect(findById).not.toHaveBeenCalled();
+    });
+
+    it('debería leer el pedido una sola vez tanto si es ajeno como si no existe', async () => {
+      // Arrange: el mismo id, de otro cliente en un repositorio e inexistente en el otro.
+      const orderId = OrderId.generate();
+      const foreign = buildUseCase([CUSTOMER_ID]);
+      await foreign.repository.save(placedOrder(orderId, OTHER_CUSTOMER_ID), []);
+      const missing = buildUseCase([CUSTOMER_ID]);
+      const foreignReads = jest.spyOn(foreign.repository, 'findById');
+      const missingReads = jest.spyOn(missing.repository, 'findById');
+      const input = { customerId: CUSTOMER_ID, orderId: orderId.value };
+
+      // Act
+      await captureRejection(foreign.useCase.execute(input));
+      await captureRejection(missing.useCase.execute(input));
+
+      // Assert: una lectura de más en un solo camino reabriría la enumeración por tiempo.
+      expect(foreignReads).toHaveBeenCalledTimes(1);
+      expect(missingReads).toHaveBeenCalledTimes(1);
     });
   });
 });

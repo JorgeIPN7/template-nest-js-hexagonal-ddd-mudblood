@@ -1390,7 +1390,12 @@ el código anterior no cumple del todo. Conteos heurísticos sobre `bc66bce`:
   `orders/domain/errors/order.errors.ts`, `users/domain/errors/user.errors.ts` y
   `orders/domain/events/order-placed.event.ts`. Los errores sin spec coinciden con los
   supervivientes que documenta la cabecera de `stryker.config.mjs` (4 en `order.errors.ts` y 3 en
-  `user.errors.ts`).
+  `user.errors.ts`). **Actualización del 2026-09-30:** la cancelación de pedidos creó
+  `orders/__tests__/domain/errors/order.errors.spec.ts`, pero solo para sus 2 errores nuevos
+  (`OrderNotFoundError`, `OrderVersionConflictError`). De los 4 antiguos, dos quedaron fijados de
+  paso por tests de la cancelación que publican su mensaje: `InvalidOrderIdError` (el del filter) e
+  `InvalidOrderAmountError` (el del mapper que falla cerrado). Siguen vivos, medido con Stryker ese
+  día, los mensajes de `InvalidOrderConceptError` (línea 21) y `CustomerGoneError` (línea 34).
 - **`describe` anidado con el nombre del método**: la regla se alineó con lo que ya hacía la suite
   (95 de 139 anidados), así que no deja deuda.
 
@@ -1405,8 +1410,58 @@ ronda, se valora cerrarla con una guarda automática que recorra los `*.spec.ts`
 `language-convention.spec.ts` con los identificadores; hoy nada verifica AAA, «debería» ni el
 idioma de los comentarios.
 
-**Cómo se sabrá que está hecho.** El conteo de tests sin los tres marcadores separados llega a 0,
-existen las 4 specs y la mutación de `orders` sube de su 85.94 % (55/64) documentado.
+**Cómo se sabrá que está hecho.** El conteo de tests sin los tres marcadores separados llega a 0;
+`auth.errors.ts`, `user.errors.ts` y `order-placed.event.ts` tienen su spec; cada error antiguo de
+los tres archivos de errores tiene un `it` que fija su mensaje, y la mutación de esos tres
+archivos no deja ningún superviviente. (La condición original —«existen las 4 specs» y «la
+mutación de `orders` sube de su 85.94 %»— dejó de medir la deuda el 2026-09-30: la spec de
+`order.errors.ts` ya existe, y el porcentaje de `orders` sube por el código nuevo de la
+cancelación, no por la deuda pagada.)
+
+---
+
+## 31. Con relojes desfasados, el outbox puede publicar `OrderCancelled` antes que `OrderPlaced`
+
+**Qué pasa.** `Order.cancel(now)` sella `cancelledAt` con el reloj de la réplica que atiende la
+cancelación, y el relay (`src/database/outbox/relay-orders-outbox.ts`) publica los pendientes con
+`ORDER BY occurred_at`. Si la réplica que colocó el pedido tiene el reloj adelantado respecto a
+la que lo cancela, y la cancelación llega dentro de ese margen, queda `cancelledAt < placedAt` y
+el relay publica `OrderCancelled` antes que `OrderPlaced`. Lo encontró la segunda revisión
+adversarial de la cancelación (M4, 2026-09-30). Hoy no hace daño: el outbox no tiene consumidores.
+
+**Criterio ya decidido.** No se toca el dominio: forzar `cancelledAt = max(now, placedAt)`
+falsearía el instante de negocio para arreglar un problema de entrega. Cuando llegue el primer
+consumidor de `OrderCancelled` (o el publisher de BullMQ del Tier 2), el orden de publicación deja
+de depender de relojes:
+
+- `orders_outbox` gana una columna de secuencia de inserción (`bigserial`), y el relay ordena por
+  ella. Dentro de un mismo pedido la secuencia sigue el orden causal, porque la cancelación lee el
+  pedido ya confirmado antes de escribir su evento.
+- El consumidor sigue siendo idempotente: el relay es at-least-once.
+
+**Cómo se sabrá que está hecho.** El relay ordena por la secuencia y no por `occurred_at`, y un E2E
+del relay publica en orden causal dos eventos del mismo pedido con el `occurred_at` al revés.
+
+---
+
+## 32. Adelgazar `CLAUDE.md`, en una PR propia tras fusionar las de flujos y cancelación
+
+**Qué pasa.** `CLAUDE.md` pesa ~57 KB y entra en cada sesión y en cada subagente
+`general-purpose`. En el experimento de flujos del 2026-09-30 fue el 7,7–12,6 % del contexto,
+frente a ~1 % de las skills (`docs/development-workflows.md`, §12). Buena parte es historia y
+medición que explica por qué existe una regla, no la regla.
+
+**Criterio ya decidido.**
+
+- Se hace después de fusionar las PR de `docs/development-workflows` y `feat/cancel-order-4`, en
+  una rama propia desde `main`. Las dos tocan `CLAUDE.md`: recortarlo en paralelo provocaría
+  conflictos y mezclaría una reescritura editorial con cambios de fondo.
+- En `CLAUDE.md` se queda cada regla, con su porqué en una línea y un enlace. La historia, las
+  mediciones y los ejemplos trabajados pasan a `docs/`, donde se leen cuando hacen falta.
+- La PR incluye la lista de reglas antes y después, cotejada una a una: no se pierde ninguna.
+
+**Cómo se sabrá que está hecho.** `CLAUDE.md` pesa la mitad o menos, y el cotejo de reglas no deja
+ninguna sin su sitio.
 
 ---
 

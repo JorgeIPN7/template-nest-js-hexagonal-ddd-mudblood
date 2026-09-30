@@ -21,9 +21,12 @@ describe('Orders (e2e)', () => {
     ({ app, prefix } = await createTestApp());
     dataSource = app.get(DataSource);
 
-    // Arranque limpio de la cuenta (perfil + credencial, dos tablas desde el ciclo 4) y UN
-    // solo login para toda la suite (presupuesto del throttler). La fila de este usuario
-    // debe sobrevivir a los beforeEach: el directorio de clientes la consulta en cada orden.
+    // Arranque limpio de las cuentas (perfil + credencial, dos tablas desde el ciclo 4) y un
+    // login por cliente para toda la suite, no por test: `/auth/register` y `/auth/login`
+    // tienen 10/min cada uno. Contando los tests que registran cuentas propias, la suite gasta
+    // 5 de cada 10: cabe, pero cada cuenta nueva consume uno de cada, así que un test que pueda
+    // usar estas dos no debería registrar otra. Las filas deben sobrevivir a los beforeEach: el
+    // directorio de clientes las consulta en cada orden.
     await dataSource.query('TRUNCATE TABLE auth_credentials');
     await dataSource.query('TRUNCATE TABLE users CASCADE');
     ({ token: userToken, id: customerId } = await registerAndLogin('cliente@example.com'));

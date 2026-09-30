@@ -24,9 +24,13 @@ export type CancelOrderInput = {
  *
  * Un solo reintento ante `OrderVersionConflictError`, y solo ante ese error. Quien pierde
  * la carrera de dos cancelaciones simultáneas relee el pedido, lo encuentra ya cancelado y,
- * como `cancel()` es idempotente, lo devuelve sin guardar ni emitir un segundo evento. Si
- * el reintento vuelve a chocar, el conflicto se propaga: reintentar sin límite escondería un
- * pedido que no deja de cambiar.
+ * como `cancel()` es idempotente, lo devuelve sin guardar ni emitir un segundo evento.
+ *
+ * Con dos estados, un segundo conflicto es imposible: la única escritura sobre un pedido que
+ * existe es otra cancelación, así que el reintento siempre relee uno cancelado y no guarda. Por
+ * eso el contrato no publica un 409. Si algún día vuelve a chocar (con un tercer estado, por
+ * ejemplo), el conflicto se propaga en vez de reintentar sin límite, que escondería un pedido que
+ * no deja de cambiar, y entonces sí hay que declarar el 409.
  */
 @Injectable()
 export class CancelOrderUseCase {

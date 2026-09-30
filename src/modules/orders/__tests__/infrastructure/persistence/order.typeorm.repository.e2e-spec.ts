@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types';
-import { DataSource } from 'typeorm';
+import { DataSource, type QueryRunner } from 'typeorm';
 
 import { createTestApp } from '@test/helpers/create-test-app';
 
@@ -31,6 +31,8 @@ describe('OrderTypeOrmRepository (e2e)', () => {
   let app: INestApplication<App>;
   let dataSource: DataSource;
   let repository: OrderTypeOrmRepository;
+  /** La conexión que retiene el bloqueo de una fila en los tests de concurrencia. */
+  let rival: QueryRunner | undefined;
 
   beforeAll(async () => {
     ({ app } = await createTestApp());
@@ -40,6 +42,17 @@ describe('OrderTypeOrmRepository (e2e)', () => {
 
   beforeEach(async () => {
     await dataSource.query('TRUNCATE TABLE orders, orders_outbox');
+  });
+
+  // Un rival que se quedara con la transacción abierta bloquearía el TRUNCATE del siguiente test.
+  afterEach(async () => {
+    if (rival?.isTransactionActive) {
+      await rival.rollbackTransaction();
+    }
+    if (rival && !rival.isReleased) {
+      await rival.release();
+    }
+    rival = undefined;
   });
 
   afterAll(async () => {
@@ -61,6 +74,53 @@ describe('OrderTypeOrmRepository (e2e)', () => {
       throw new Error(`El pedido ${id.value} debería existir`);
     }
     return order;
+  };
+
+  const countEvents = async (eventType: string): Promise<number> => {
+    const rows = await dataSource.query<{ count: number }[]>(
+      'SELECT COUNT(*)::int AS count FROM orders_outbox WHERE event_type = $1',
+      [eventType],
+    );
+    return rows[0]?.count ?? 0;
+  };
+
+  /**
+   * Otra conexión cancela el pedido SIN confirmar: la fila queda bloqueada hasta que el test
+   * decida. Es SQL crudo y no el repositorio porque `save` abre y cierra su transacción entera, y
+   * aquí hace falta tenerla abierta mientras el otro guardado espera.
+   */
+  const cancelWithoutCommitting = async (id: OrderId, at: Date): Promise<QueryRunner> => {
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    await runner.query(
+      `UPDATE orders SET status = 'cancelled', cancelled_at = $2, version = version + 1 WHERE id = $1`,
+      [id.value, at],
+    );
+    return runner;
+  };
+
+  /**
+   * Espera hasta que alguna conexión esté bloqueada por la del rival. Sin esta espera el test
+   * dependería del reparto de tiempos: si el guardado llegara después de la confirmación, sería
+   * el caso secuencial de la copia obsoleta y no comprobaría el intercalado.
+   */
+  const waitUntilBlockedBy = async (blocker: QueryRunner): Promise<void> => {
+    // `QueryRunner.query` no es genérico en TypeORM 1: la forma de la fila se afirma aquí.
+    const [blockerRow] = (await blocker.query('SELECT pg_backend_pid() AS pid')) as {
+      pid: number;
+    }[];
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+      const rows = await dataSource.query<{ waiting: number }[]>(
+        'SELECT COUNT(*)::int AS waiting FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))',
+        [blockerRow?.pid],
+      );
+      if ((rows[0]?.waiting ?? 0) > 0) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error('El guardado nunca llegó a esperar el bloqueo de la fila');
   };
 
   describe('save()', () => {
@@ -183,34 +243,44 @@ describe('OrderTypeOrmRepository (e2e)', () => {
       expect(cancelled[0]?.count).toBe(1);
     });
 
-    it('debería dejar ganar a una sola de dos cancelaciones simultáneas y rechazar la otra con conflicto', async () => {
-      // Arrange: dos copias en la versión 1 que se guardan A LA VEZ, cada una en su conexión
-      // del pool. El orden no es determinista; el resultado sí. Si alguien subiera el
-      // aislamiento a REPEATABLE READ, la perdedora recibiría un 40001 y no el conflicto.
+    it('debería rechazar con conflicto la cancelación que esperaba el bloqueo de otra, sin tocar la fila ni el outbox', async () => {
+      // Arrange: la copia obsoleta se leyó en la versión 1; otra conexión cancela a la vez y
+      // retiene el bloqueo de la fila. Este es el intercalado real que la versión optimista
+      // resuelve: el UPDATE bloqueado re-evalúa su WHERE sobre la fila ya confirmada (READ
+      // COMMITTED). En REPEATABLE READ recibiría un 40001 en vez del conflicto, y este test falla.
       const placed = await savePlacedOrder();
-      const first = await loadOrder(placed.id);
-      const second = await loadOrder(placed.id);
-      first.cancel(CANCELLED_AT);
-      second.cancel(LATER);
+      const stale = await loadOrder(placed.id);
+      stale.cancel(LATER);
+      rival = await cancelWithoutCommitting(placed.id, CANCELLED_AT);
 
-      // Act
-      const results = await Promise.allSettled([
-        repository.save(first, first.pullEvents()),
-        repository.save(second, second.pullEvents()),
-      ]);
+      // Act: el guardado queda esperando detrás del bloqueo, y solo entonces el rival confirma.
+      const outcome = repository.save(stale, stale.pullEvents()).then(
+        () => 'guardado',
+        (error: unknown) => error,
+      );
+      await waitUntilBlockedBy(rival);
+      await rival.commitTransaction();
 
       // Assert
-      const rejected = results.filter(
-        (result): result is PromiseRejectedResult => result.status === 'rejected',
-      );
-      expect(rejected).toHaveLength(1);
-      expect(rejected[0]?.reason).toBeInstanceOf(OrderVersionConflictError);
-      const rows = await readOrderRows();
-      expect(rows.map((row) => row.version)).toEqual([2]);
-      const cancelled = await dataSource.query<{ count: number }[]>(
-        `SELECT COUNT(*)::int AS count FROM orders_outbox WHERE event_type = 'OrderCancelled'`,
-      );
-      expect(cancelled[0]?.count).toBe(1);
+      expect(await outcome).toBeInstanceOf(OrderVersionConflictError);
+      expect(await readOrderRows()).toEqual([
+        { status: 'cancelled', cancelled_at: CANCELLED_AT, version: 2 },
+      ]);
+      expect(await countEvents('OrderCancelled')).toBe(0);
+    });
+
+    it('debería rechazar con conflicto guardar dos veces un pedido nuevo, sin tocar el outbox', async () => {
+      // Arrange: la misma instancia sin releer conserva la versión 0 con la que nació. El puerto
+      // prohíbe reutilizarla; el fake responde con conflicto y el adaptador tiene que coincidir.
+      const order = placeOrder();
+      await repository.save(order, order.pullEvents());
+
+      // Act
+      const act = repository.save(order, []);
+
+      // Assert
+      await expect(act).rejects.toThrow(OrderVersionConflictError);
+      expect(await countEvents('OrderPlaced')).toBe(1);
     });
 
     it('debería no dejar la cancelación cuando la escritura del outbox falla', async () => {

@@ -13,9 +13,9 @@ import {
   OrderNotFoundError,
   OrderVersionConflictError,
 } from '../../../domain/errors/order.errors';
+import { OrdersDomainExceptionFilter } from '../../../infrastructure/http/orders-domain-exception.filter';
 
 const ORDER_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
-import { OrdersDomainExceptionFilter } from '../../../infrastructure/http/orders-domain-exception.filter';
 
 describe('OrdersDomainExceptionFilter', () => {
   describe('catch()', () => {
