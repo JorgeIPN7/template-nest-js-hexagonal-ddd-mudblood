@@ -145,6 +145,42 @@
  * El umbral y su aritmética no cambian (≥252 detectados de 296). Si un día esos timeouts se
  * volvieran «survived», eso sí sería una regresión: significaría que el test dejó de detectar
  * el mutante, no que tardó más.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Remedición del 2026-09-30 (cancelación de pedidos, `POST /orders/:id/cancel`). El censo crece
+ * por primera vez desde el ciclo 4: **+37 mutantes válidos, todos de `orders`**. Medido con
+ * `pnpm test:mutation` sobre el scope completo y la máquina sin otra carga —una corrida anterior,
+ * con la suite unitaria en paralelo, subió los timeouts y contó como detectados 2 supervivientes
+ * de `users`—, copiado de la salida de Stryker:
+ * **95.20 %** global — 295 killed, 22 timeout, 16 survived, 0 sin cobertura, 7 error (317/333).
+ *
+ *     auth     100.00 %   47/47     ( 47 válidos, 14.1 % del censo)
+ *     users     93.21 %  151/162    (162 válidos, 48.6 %)
+ *     orders    95.05 %   96/101    (101 válidos, 30.3 %)
+ *     shared   100.00 %   23/23     ( 23 válidos,  6.9 %)
+ *
+ * Los supervivientes bajan de 20 a 16, todos en `orders`:
+ *
+ * - `order-id.vo.ts` pasa de 2 a 0: dos casos nuevos fijan las anclas de la regex, que ahora
+ *   valida el `:id` del endpoint.
+ * - `order.errors.ts` pasa de 4 a 2: los tests del filter y del mapper publican los mensajes de
+ *   `InvalidOrderIdError` e `InvalidOrderAmountError`.
+ *
+ * Los 11 de `users` son los mismos de siempre. El código nuevo de la cancelación entra al 100 %
+ * (`pnpm test:mutation:changed`: 36/36).
+ *
+ * **El umbral se queda en `break: 85`, y el margen crece.** Hacen falta ≥284 detectados (85 % de
+ * 333), así que caben 33 kills perdidos antes del rojo, frente a los 24 de antes. Para tumbar el
+ * global él solo:
+ *
+ * - `orders` tendría que caer de 95.05 % a ~61 %;
+ * - `users`, de 93.21 % a ~72 %;
+ * - `auth`, a ~28 %;
+ * - `shared`, con 23 mutantes, ya no puede.
+ *
+ * Subir el techo sigue aplazado hasta que los 16 supervivientes conocidos tengan casos
+ * aprobados.
  */
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {

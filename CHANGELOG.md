@@ -56,6 +56,28 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
   ejercita las tres costuras que un contexto único no puede: paso cross-módulo por la puerta
   pública, eventos de dominio (`OrderPlaced`) y outbox transaccional con relay por CLI
   (`pnpm outbox:relay`).
+- **Cancelar un pedido: `POST /orders/:id/cancel`** (2026-09-30). Segundo caso de uso de
+  `orders`, y la primera feature hecha con el flujo exprés (`docs/development-workflows.md`); spec
+  en `docs/specs/2026-09-30-cancel-order-express.md`.
+  - **Qué hace.** Pasa un pedido colocado a `cancelled`, sella `cancelledAt` y escribe
+    `OrderCancelled` en el outbox en la misma transacción. Es idempotente: sobre un pedido ya
+    cancelado responde 200 con la fecha original y sin segundo evento. Solo el dueño: el pedido
+    de otro cliente responde el mismo 404, con el mismo cuerpo, que uno inexistente.
+  - **Concurrencia optimista.** El agregado lleva la versión con la que se leyó y el adaptador
+    escribe con `UPDATE … WHERE version = v`; un solo reintento convierte el doble clic en un 200.
+    Con dos estados el segundo conflicto es imposible, así que **el contrato no publica un 409**.
+    Un E2E determinista (bloqueo de fila desde otra conexión y espera observada en
+    `pg_blocking_pids`) falla si se quita la versión del `WHERE` o se sube el aislamiento a
+    REPEATABLE READ.
+  - **⚠️ Cambio en una respuesta existente.** `OrderResponseDto` gana `status` (siempre) y
+    `cancelledAt` (solo si está cancelado), así que el 201 de `POST /orders` trae ahora
+    `status: 'placed'`. Es aditivo.
+  - **Migración aditiva** `1790796856575-add-cancellation-to-orders` (`status`, `cancelled_at`,
+    `version`, con `DEFAULT` para que las réplicas viejas sigan insertando durante el despliegue).
+  - **Revisión adversarial, dos veces.** La primera encontró un 409 imposible y un E2E de
+    concurrencia que no discriminaba; se corrigieron junto con seis menores. La segunda no
+    encontró críticos ni importantes. Sus menores se corrigieron salvo uno, anotado con su
+    decisión en el backlog (#31): el orden de publicación de los eventos con relojes desfasados.
 - **Shared kernel de dominio** (2026-08-07). `src/shared/domain/` con `value-object.base.ts` y
   `aggregate-root.ts`, y su propio element type en la matriz de fronteras.
 - **Regla de migraciones destructivas: expand/contract** (2026-08-08, backlog #12). Documentada en

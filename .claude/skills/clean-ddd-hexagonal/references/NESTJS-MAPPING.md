@@ -146,7 +146,7 @@ export class InvoiceAmount extends ValueObject<number> {
 
 `ValueObject` compara con `===`: todos los VOs del repo envuelven un primitivo. Uno que envolviera un objeto tendría que sobrescribir `equals()`.
 
-**Aggregate root:** constructor privado, una factoría que aplica las reglas de creación y otra, `rehydrate()`, que reconstituye desde persistencia sin reaplicarlas ni re-emitir eventos; `toSnapshot()` entrega primitivos al mapper. Si emite eventos, extiende `AggregateRoot<TEvent>` (`@shared/domain/aggregate-root`), que aporta `record()` (protegido) y `pullEvents()` (drena).
+**Aggregate root:** constructor privado, una factoría que aplica las reglas de creación y otra, `rehydrate()`, que reconstituye desde persistencia sin reaplicarlas ni re-emitir eventos; `toSnapshot()` entrega primitivos al mapper. Si emite eventos, extiende `AggregateRoot<TEvent>` (`@shared/domain/aggregate-root`), que aporta `record()` (protegido) y `pullEvents()` (drena). **Si tiene transiciones que se guardan** (`issue()`, `cancel()`), lleva la `version` con la que se leyó —0 si aún no se ha guardado—: es la versión esperada del `UPDATE` condicionado del adaptador (§6). Sin ella, dos peticiones concurrentes emiten dos eventos.
 
 ```ts
 // src/modules/billing/domain/entities/invoice.entity.ts
@@ -164,6 +164,7 @@ export type InvoiceSnapshot = {
   id: string;
   amountCents: number;
   status: InvoiceStatus;
+  version: number;
 };
 
 export class Invoice extends AggregateRoot<InvoiceIssued> {
@@ -171,12 +172,14 @@ export class Invoice extends AggregateRoot<InvoiceIssued> {
     readonly id: InvoiceId,
     readonly amount: InvoiceAmount,
     private status: InvoiceStatus,
+    /** La versión con la que se LEYÓ (0 = aún no guardada), no un contador: `issue()` no la toca. */
+    readonly version: number,
   ) {
     super();
   }
 
   static draft(params: { id: InvoiceId; amount: InvoiceAmount }): Invoice {
-    return new Invoice(params.id, params.amount, 'draft');
+    return new Invoice(params.id, params.amount, 'draft', 0);
   }
 
   /** Reconstituye desde persistencia: ni reglas de creación ni eventos, ya ocurrieron. */
@@ -184,8 +187,9 @@ export class Invoice extends AggregateRoot<InvoiceIssued> {
     id: InvoiceId;
     amount: InvoiceAmount;
     status: InvoiceStatus;
+    version: number;
   }): Invoice {
-    return new Invoice(params.id, params.amount, params.status);
+    return new Invoice(params.id, params.amount, params.status, params.version);
   }
 
   issue(now: Date): void {
@@ -197,7 +201,12 @@ export class Invoice extends AggregateRoot<InvoiceIssued> {
   }
 
   toSnapshot(): InvoiceSnapshot {
-    return { id: this.id.value, amountCents: this.amount.value, status: this.status };
+    return {
+      id: this.id.value,
+      amountCents: this.amount.value,
+      status: this.status,
+      version: this.version,
+    };
   }
 }
 ```
@@ -241,6 +250,8 @@ export class IssueInvoiceUseCase {
   }
 }
 ```
+
+**Sin reintento, un conflicto de versión llega al cliente** como 409 (§8), y ahí es alcanzable: dos `issue()` a la vez, y el segundo choca. Si la operación es idempotente, el caso de uso puede reintentar **una** vez releyendo, como `CancelOrderUseCase`; entonces comprueba si el 409 sigue siendo alcanzable antes de declararlo (en orders dejó de serlo: el reintento siempre relee un pedido ya cancelado).
 
 **La fachada no es un caso de uso.** Cuando otro contexto necesita algo de este, la puerta es `application/<context>.facade.ts`, suelta fuera de `use-cases/` (ver §10). Crece por método, no por archivo.
 
@@ -292,9 +303,10 @@ import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 
 import type { Invoice } from '../../domain/entities/invoice.entity';
+import { InvoiceVersionConflictError } from '../../domain/errors/invoice.errors';
 import type { InvoiceIssued } from '../../domain/events/invoice-issued.event';
 import { InvoiceRepository } from '../../domain/ports/invoice.repository';
 import type { InvoiceId } from '../../domain/value-objects/invoice-id.vo';
@@ -302,6 +314,10 @@ import type { InvoiceId } from '../../domain/value-objects/invoice-id.vo';
 import { InvoiceMapper } from './invoice.mapper';
 import { InvoiceOrmEntity } from './invoice.orm-entity';
 import { InvoiceOutboxMessageOrmEntity } from './invoice-outbox-message.orm-entity';
+
+const isUniqueViolation = (error: unknown): boolean =>
+  error instanceof QueryFailedError &&
+  (error.driverError as { code?: string } | undefined)?.code === '23505';
 
 @Injectable()
 export class InvoiceTypeOrmRepository implements InvoiceRepository {
@@ -316,24 +332,46 @@ export class InvoiceTypeOrmRepository implements InvoiceRepository {
     return row ? InvoiceMapper.toDomain(row) : null;
   }
 
-  /** Agregado y outbox en UNA transacción: si una escritura falla, no queda ninguna. */
+  /**
+   * Agregado y outbox en UNA transacción: si una escritura falla, no queda ninguna.
+   * Concurrencia optimista: la versión 0 se INSERTA en la 1; el resto, UPDATE condicionado a la
+   * versión leída. 0 filas afectadas —o un `23505` al insertar— es que otro proceso guardó antes:
+   * conflicto, y lanzarlo dentro de la transacción revierte también el outbox.
+   */
   async save(invoice: Invoice, events: readonly InvoiceIssued[]): Promise<void> {
+    const invoiceRow = InvoiceMapper.toPersistence(invoice);
     const outboxRows = events.map((event) => {
       const row = new InvoiceOutboxMessageOrmEntity();
       row.id = randomUUID();
       row.eventType = event.constructor.name;
-      row.payload = {
-        invoiceId: event.invoiceId,
-        amountCents: event.amountCents,
-        occurredAt: event.occurredAt,
-      };
+      row.payload = { ...event }; // el evento es plano: viaja tal cual (§7)
       row.occurredAt = event.occurredAt;
       row.processedAt = null;
       return row;
     });
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.save(InvoiceMapper.toPersistence(invoice));
+      if (invoiceRow.version === 0) {
+        invoiceRow.version = 1;
+        try {
+          await manager.insert(InvoiceOrmEntity, invoiceRow);
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new InvoiceVersionConflictError(invoiceRow.id);
+          }
+          throw error;
+        }
+      } else {
+        // Solo lo mutable, y solo si la fila sigue en la versión que se leyó.
+        const result = await manager.update(
+          InvoiceOrmEntity,
+          { id: invoiceRow.id, version: invoiceRow.version },
+          { status: invoiceRow.status, version: invoiceRow.version + 1 },
+        );
+        if (result.affected !== 1) {
+          throw new InvoiceVersionConflictError(invoiceRow.id);
+        }
+      }
       await manager.save(outboxRows);
     });
   }
@@ -341,6 +379,8 @@ export class InvoiceTypeOrmRepository implements InvoiceRepository {
 ```
 
 - El puerto se importa **como valor** aunque solo aparezca en el `implements` (regla de §2); las entidades, eventos y VOs usados solo como tipo, con `import type`.
+- **Nunca `manager.save()` para el agregado**: es un upsert, y un id duplicado sobrescribiría en silencio en vez de fallar. `version` es una columna normal y no un `@VersionColumn`, que la incrementaría sin comprobar nada: la comprobación es el `WHERE version = …`.
+- **Depende de READ COMMITTED.** El `UPDATE` que espera el bloqueo de la fila re-evalúa su `WHERE` sobre la fila ya confirmada y afecta 0 filas; en REPEATABLE READ recibiría un `40001`. Un test de concurrencia tiene que **demostrar el intercalado**, no esperarlo: `order.typeorm.repository.e2e-spec.ts` bloquea la fila desde otra conexión, espera a ver el guardado bloqueado en `pg_blocking_pids` y solo entonces confirma. Dos `save` lanzados a la vez con `Promise.all` casi nunca se intercalan y el test pasa igual sin la protección.
 - **Los errores del driver se traducen aquí.** `UserTypeOrmRepository.save()` convierte el `23505` de PostgreSQL en `EmailAlreadyTakenError`: sin eso, una inserción concurrente saldría como 500 en vez del 409 del contrato. El pre-check del caso de uso es una cortesía, no la defensa.
 - **Cambios de esquema, por migración**: `pnpm migration:generate src/database/migrations/<Name>` tras tocar una entidad ORM. Un `DROP`/rename se parte en expand/contract (`CLAUDE.md`, «Destructive migrations»).
 
@@ -398,6 +438,13 @@ export class InvalidInvoiceAmountError extends InvoiceDomainError {
     super(`${value} is not a valid invoice amount in cents`);
   }
 }
+
+/** Lo lanza el adaptador (§6) cuando la fila ya no está en la versión con la que se leyó. */
+export class InvoiceVersionConflictError extends InvoiceDomainError {
+  constructor(readonly invoiceId: string) {
+    super(`Invoice ${invoiceId} was modified concurrently, retry the request`);
+  }
+}
 ```
 
 La traducción a HTTP es de un filtro **del propio contexto**, en `infrastructure/http/`, aplicado con `@UseFilters` en su controller (§5). Relanza una excepción de Nest y el `AllExceptionsFilter` global (`APP_FILTER` en `app.module.ts`) da forma a la respuesta.
@@ -417,6 +464,7 @@ import {
   InvoiceDomainError,
   InvoiceNotDraftError,
   InvoiceNotFoundError,
+  InvoiceVersionConflictError,
 } from '../../domain/errors/invoice.errors';
 
 @Catch(InvoiceDomainError)
@@ -425,7 +473,10 @@ export class InvoiceDomainExceptionFilter implements ExceptionFilter {
     if (exception instanceof InvoiceNotFoundError) {
       throw new NotFoundException(exception.message);
     }
-    if (exception instanceof InvoiceNotDraftError) {
+    if (
+      exception instanceof InvoiceNotDraftError ||
+      exception instanceof InvoiceVersionConflictError
+    ) {
       throw new ConflictException(exception.message);
     }
     // Un error de dominio sin mapeo explícito es entrada inválida, no fallo del servidor.

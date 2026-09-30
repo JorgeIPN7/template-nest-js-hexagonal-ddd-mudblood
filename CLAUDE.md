@@ -242,10 +242,10 @@ The split is what makes the two-context seam real: `users` owns the **profile** 
 
 ## Orders
 
-Second bounded context (`src/modules/orders/`), one use case: place an order
+Second bounded context (`src/modules/orders/`), two use cases: place an order
 (`POST /orders`, `@Auth()` — the first real consumer of `@CurrentUser()`: `customerId` comes
-from the token's `sub`, never from the body). It exercises the three seams a single context
-cannot:
+from the token's `sub`, never from the body) and cancel one (`POST /orders/:id/cancel`,
+`@Auth()`, 200 with the order). It exercises the three seams a single context cannot:
 
 - **Cross-module via the public gate — segregated by intention.** `orders` defines the
   `CustomerDirectory` port; its adapter injects `UsersLookup`, which `users.module.ts`
@@ -265,12 +265,33 @@ cannot:
   The #13 split needed zero new rules either, for the same reason: it changes the published
   surface, not the boundaries.
   A deactivated user keeps a valid JWT until it expires: `orders` re-checks the directory on
-  every order and translates `CustomerGoneError` to 403 in its own filter (string-constructed,
-  canonical message).
-- **Domain events.** `Order.place()` emits `OrderPlaced` and collects it; `pullEvents()`
-  drains, and the use case hands the events to the repository **in the same
-  `save(order, events)` call** — the port's signature carries them so atomicity is the
-  adapter's job.
+  every placement and every cancellation, and translates `CustomerGoneError` to 403 in its own
+  filter (string-constructed, canonical message).
+- **Domain events.** `Order.place()` emits `OrderPlaced` and `Order.cancel()` emits
+  `OrderCancelled`, both collected; `pullEvents()` drains, and the use case hands the events to
+  the repository **in the same `save(order, events)` call** — the port's signature carries them
+  so atomicity is the adapter's job. The outbox payload is the event spread as-is, so a new
+  field on an event reaches consumers: the adapter E2E pins both payloads with an exact
+  `toEqual`.
+- **Cancellation: idempotent, owner-only, optimistic version.** Two states, `placed` →
+  `cancelled`, no time window. `cancel()` on a cancelled order is a no-op in the domain — 200
+  with the original `cancelledAt`, no second event — and the use case only saves when the
+  aggregate produced events. Another customer's order throws the same `OrderNotFoundError`, with
+  the same message, as a missing one: 404 either way. The aggregate carries the `version` it was
+  **read** with (0 = never saved); the adapter INSERTs new rows at 1 and writes the rest with
+  `UPDATE … WHERE version = v`, and 0 affected rows throws `OrderVersionConflictError` inside the
+  transaction, so the outbox rolls back too; an INSERT whose id already exists (`23505`) is the
+  same conflict. `CancelOrderUseCase` retries **once**, on that error only: the loser of a
+  double click re-reads a cancelled order and gets 200 with the winner's `cancelledAt`. With two
+  states a second conflict cannot happen — the only write to an existing order is a
+  cancellation — so **the contract publishes no 409**; the filter still maps it, as a defence
+  that a third state would make reachable (and then it gets declared). That relies on READ
+  COMMITTED — under REPEATABLE READ the blocked loser gets a `40001` instead. The adapter E2E
+  proves it deterministically: another connection holds the row lock, the save is seen waiting
+  in `pg_blocking_pids`, and only then the rival commits. The mapper **fails closed**: an unknown
+  `status`, or a status that disagrees with `cancelled_at`, throws on read. `cancelledAt` is
+  **omitted**, not `null`, on a placed order: the contract guard's Ajv ignores `nullable`, so a
+  `null` example would break the build.
 - **Transactional outbox.** `OrderTypeOrmRepository.save` writes the order and its
   `orders_outbox` rows inside one `dataSource.transaction`. The relay is a CLI
   (`pnpm outbox:relay`, `src/database/outbox/` — a module cannot import `database`, same
@@ -486,7 +507,7 @@ Related: Zod's `.default()` only fires on `undefined`, so a variable that is pre
 - **Tests live in a `__tests__/` folder at the root of each module**, replicating the module's internal structure, so moving a module moves its tests with it. Unit specs are `*.spec.ts`, E2E are `*.e2e-spec.ts`, and both ship inside the module. Only shared helpers live outside `src/`, in `test/helpers/` (imported via `@test/`).
 - **`describe` in code, `it` in Spanish.** The root `describe` keeps the real identifier; a nested `describe` is named after the method it groups (`describe('cancel()')`), or is a Spanish phrase when it groups by scenario rather than by method. Every `it` is a Spanish sentence starting with `debería…`. Code, variables and helpers stay in English; comments are Spanish. File-local helpers go at the bottom of the spec, under a `// Helpers` line.
 - **AAA: the three comments in every `it`, always.** `// Arrange`, `// Act` and `// Assert`, each on its own line, even when a phase has no code — with nothing to prepare, `// Arrange` stays, empty. When the action is what the assertion checks (a throw), capture it under `// Act` (`const act = () => OrderAmount.from(-1);`) and assert under `// Assert` (`expect(act).toThrow(InvalidOrderAmountError);`): a combined `// Act + Assert` is not allowed. About 200 legacy tests predate this rule (heuristic count, backlog #30).
-- **One spec per source file (1:1)**, same base name and same relative path inside `__tests__/`. Don't group several SUTs in one file. Ports (`domain/ports/`, abstract classes with no logic) are exempt; errors and events are not — they carry messages and data that Stryker mutates (4 legacy files lack theirs, backlog #30).
+- **One spec per source file (1:1)**, same base name and same relative path inside `__tests__/`. Don't group several SUTs in one file. Ports (`domain/ports/`, abstract classes with no logic) are exempt; errors and events are not — they carry messages and data that Stryker mutates (legacy gaps listed in backlog #30).
 - **Mocking by layer:** no mocks in `domain/`; hand-written port fakes in `application/` (see `__tests__/helpers/in-memory-user.repository.ts`), never `jest.mock`; repositories are tested against real PostgreSQL in the E2E suite. Modules, TypeORM repositories, `data-source.ts`, seeds, the outbox CLI and migrations are excluded from _unit_ coverage on purpose, and `test/jest-e2e.config.mjs` measures them with its own threshold — **except `src/database/migrations/**`, which no suite measures**. That exception is deliberate and now written down: they are one-shot DDL run by the CLI, and the fact that nothing exercises them directly is open debt with its own entry (`docs/backlog.md` #17), not something the E2E config quietly covers. Until 2026-08-19 this sentence claimed the E2E suite measured "exactly those files" while its list held two of the six patterns, so four groups were measured by neither.
 - **Shared fixtures:** module-wide helpers go in `<module>/__tests__/helpers/` (e.g. `user.factory.ts`, `arbitraries.ts`); cross-cutting ones in `test/helpers/` (e.g. `config.factory.ts`), imported via `@test/`. Never copy a builder into several specs.
 - **Property-based testing with `fast-check`** for value objects, pure functions and mapping round-trips. Arbitraries are **constructed**, never `.filter()`-ed out of `fc.string()`.

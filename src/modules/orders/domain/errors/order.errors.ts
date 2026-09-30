@@ -34,3 +34,23 @@ export class CustomerGoneError extends OrderDomainError {
     super(`Customer ${customerId} no longer exists or is inactive`);
   }
 }
+
+/**
+ * También para el pedido de OTRO cliente: para quien pregunta no existe. El mensaje es el
+ * mismo en los dos casos a propósito, porque el filter lo publica tal cual en el 404.
+ */
+export class OrderNotFoundError extends OrderDomainError {
+  constructor(readonly orderId: string) {
+    super(`Order ${orderId} was not found`);
+  }
+}
+
+/**
+ * Lo lanza el adaptador de persistencia, y es parte del contrato del puerto, cuando la versión
+ * con la que se leyó el pedido ya no es la de la fila: otro proceso lo guardó entre medias.
+ */
+export class OrderVersionConflictError extends OrderDomainError {
+  constructor(readonly orderId: string) {
+    super(`Order ${orderId} was modified concurrently, retry the request`);
+  }
+}

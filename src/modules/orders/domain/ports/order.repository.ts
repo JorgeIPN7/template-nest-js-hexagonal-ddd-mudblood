@@ -1,5 +1,4 @@
-import type { OrderPlaced } from '../events/order-placed.event';
-import type { Order } from '../entities/order.entity';
+import type { Order, OrderEvent } from '../entities/order.entity';
 import type { OrderId } from '../value-objects/order-id.vo';
 
 /**
@@ -7,10 +6,16 @@ import type { OrderId } from '../value-objects/order-id.vo';
  * es atómico con el agregado o no es outbox (spec §4) — un `save(order)` + `publish(events)`
  * separados no podrían prometer la transacción.
  *
+ * Concurrencia optimista: `save` de un pedido ya guardado (`version > 0`) solo escribe si la
+ * fila sigue en la versión con la que se leyó, y si no, rechaza con
+ * `OrderVersionConflictError` sin escribir nada, ni la fila ni el outbox. Una instancia no se
+ * guarda dos veces: conserva la versión con la que se leyó, así que para volver a escribir
+ * hay que releerla.
+ *
  * `abstract class` —tipo y token en la misma referencia— por el mismo motivo que
  * `users/domain/ports/user.repository.ts`, donde vive el razonamiento completo.
  */
 export abstract class OrderRepository {
-  abstract save(order: Order, events: readonly OrderPlaced[]): Promise<void>;
+  abstract save(order: Order, events: readonly OrderEvent[]): Promise<void>;
   abstract findById(id: OrderId): Promise<Order | null>;
 }

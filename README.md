@@ -316,7 +316,7 @@ Para cada módulo que quites:
 
 1. Borra `src/modules/<contexto>/` entera — los tests van dentro, así que se van con ella.
 2. Quita su import y su entrada en `imports:` de [`src/app.module.ts`](src/app.module.ts).
-3. Borra su migración y la tabla que creó. La de `orders` es [`1786076763455-create-orders-and-outbox.ts`](src/database/migrations/1786076763455-create-orders-and-outbox.ts); si ya la aplicaste, `pnpm migration:revert` antes de borrar el archivo. Con la base todavía sin datos, `pnpm db:reset` es más rápido.
+3. Borra sus migraciones y las tablas que crearon. Las de `orders` son dos: [`1786076763455-create-orders-and-outbox.ts`](src/database/migrations/1786076763455-create-orders-and-outbox.ts) y [`1790796856575-add-cancellation-to-orders.ts`](src/database/migrations/1790796856575-add-cancellation-to-orders.ts). Con la base todavía sin datos, borra los archivos y corre `pnpm db:reset`. Si ya tiene datos, **no uses `pnpm migration:revert`**: deshace solo la última migración aplicada, y entre las dos de `orders` hay dos de `auth` (`1786210289581` y `1786210349581`) que se desharían por el camino. Borra las tablas a mano (`DROP TABLE orders_outbox, orders;`) y las dos filas de `orders` en la tabla `migrations`, y después los archivos.
 4. Quita su scope del `scope-enum` de [`commitlint.config.cjs`](commitlint.config.cjs).
 5. Si era `orders`, quita también `pnpm outbox:relay` de `package.json` y `src/database/outbox/`.
 6. Revisa las secciones que lo describen en este README y en [`CLAUDE.md`](CLAUDE.md).
@@ -744,19 +744,20 @@ Para un cambio incompatible, `!` tras el type/scope **o** un footer `BREAKING CH
 
 ## Endpoints base
 
-| Endpoint                       | Protección          | Notas                                                                                                |
-| ------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------------- |
-| `GET /api/v1/health`           | **Público**         | Memoria + ping a PostgreSQL                                                                          |
-| `GET /api/v1/health/liveness`  | **Público**         | Sin dependencias externas: no ejecuta ningún indicador                                               |
-| `GET /api/v1/health/readiness` | **Público**         | Memoria **y** ping a PostgreSQL                                                                      |
-| `POST /api/v1/auth/register`   | **Público**         | Crea perfil en `users` **y** credencial en `auth_credentials`. Si la credencial falla, borra las dos |
-| `POST /api/v1/auth/login`      | **Público**         | Emite el JWT. Con `/register`, 10/min cada uno, contadores separados                                 |
-| `GET /api/v1/users`            | Rol `admin`         | Lista paginada                                                                                       |
-| `GET /api/v1/users/:id`        | Autenticado         | Cualquier rol                                                                                        |
-| `DELETE /api/v1/users/:id`     | Rol `admin`         | Desactiva sin borrar                                                                                 |
-| `POST /api/v1/orders`          | Autenticado         | El `customerId` sale del token, nunca del body. 403 si el usuario fue desactivado después            |
-| `GET /api/docs`                | `DOCS_ENABLED=true` | Documentación Scalar. Sin segmento de versión                                                        |
-| `GET /api/docs/json`           | `DOCS_ENABLED=true` | El documento OpenAPI crudo, para generar SDKs                                                        |
+| Endpoint                         | Protección          | Notas                                                                                                 |
+| -------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/health`             | **Público**         | Memoria + ping a PostgreSQL                                                                           |
+| `GET /api/v1/health/liveness`    | **Público**         | Sin dependencias externas: no ejecuta ningún indicador                                                |
+| `GET /api/v1/health/readiness`   | **Público**         | Memoria **y** ping a PostgreSQL                                                                       |
+| `POST /api/v1/auth/register`     | **Público**         | Crea perfil en `users` **y** credencial en `auth_credentials`. Si la credencial falla, borra las dos  |
+| `POST /api/v1/auth/login`        | **Público**         | Emite el JWT. Con `/register`, 10/min cada uno, contadores separados                                  |
+| `GET /api/v1/users`              | Rol `admin`         | Lista paginada                                                                                        |
+| `GET /api/v1/users/:id`          | Autenticado         | Cualquier rol                                                                                         |
+| `DELETE /api/v1/users/:id`       | Rol `admin`         | Desactiva sin borrar                                                                                  |
+| `POST /api/v1/orders`            | Autenticado         | El `customerId` sale del token, nunca del body. 403 si el usuario fue desactivado después             |
+| `POST /api/v1/orders/:id/cancel` | Autenticado         | Idempotente. El pedido de otro cliente da el mismo 404 que uno inexistente. 403 como en la colocación |
+| `GET /api/docs`                  | `DOCS_ENABLED=true` | Documentación Scalar. Sin segmento de versión                                                         |
+| `GET /api/docs/json`             | `DOCS_ENABLED=true` | El documento OpenAPI crudo, para generar SDKs                                                         |
 
 **Todo endpoint sin `@Public()` exige un JWT válido**: el guard es global y activo por defecto, registrado como `APP_GUARD` desde `auth.module` — la matriz de boundaries impide hacerlo desde `app.module`, y verificar un token es responsabilidad de `auth`. `@Auth()` marca «autenticado, cualquier rol»; `@Auth('admin')` exige además ese rol, con 403 para quien no lo tenga, y adjunta la documentación OpenAPI que el guard de contrato requiere.
 

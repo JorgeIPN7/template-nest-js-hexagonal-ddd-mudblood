@@ -15,7 +15,7 @@ export type PlaceOrderInput = {
 };
 
 /**
- * Caso de uso único del contexto. El directorio se consulta ANTES de construir nada: un
+ * Coloca una orden a nombre del cliente del token. El directorio se consulta ANTES de construir nada: un
  * token firmado puede sobrevivir a su usuario (desactivado tras emitirse), y también cubre
  * el `sub` malformado — la fachada de users devuelve `false` sin lanzar (Tabla F, F4).
  * Los eventos se drenan y viajan al repositorio EN LA MISMA llamada: la atomicidad con el
