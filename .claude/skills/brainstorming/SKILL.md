@@ -1,40 +1,48 @@
 ---
 name: brainstorming
-description: 'You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.'
+description: 'First step of the FULL flow: turns an idea into an approved design spec before any code, for work that needs one — a new bounded context, a change across contexts (facades, shared ports), a destructive migration, auth or security, more than ~10 tasks, or work someone else will continue. A feature or behavioural bug inside ONE existing context uses the express flow instead, and a trivial change (typo, config, dependency bump, one-line bug) uses no skill.'
 ---
 
 # Brainstorming Ideas Into Designs
 
 Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
 
-Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval.
+Start by understanding the current project context, then ask grouped questions to refine the idea. Once you understand what you're building, present the design and get user approval.
 
 <HARD-GATE>
-Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+Once this skill is running, do NOT invoke any implementation skill, write any code, scaffold anything, or take any implementation action until you have presented a design and the user has approved it — however simple a part of it looks.
 </HARD-GATE>
 
-## Anti-Pattern: "This Is Too Simple To Need A Design"
+## When this skill applies
 
-Every project goes through this process. A todo list, a single-function utility, a config change — all of them. "Simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
+This repo has three levels of work (`CLAUDE.md`, «Skills and development flows»; full guide in `docs/development-workflows.md`). Brainstorming is the entry to the **full** flow only:
+
+| Level       | Typical change                                                                                                                                       | Entry                                   |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Trivial     | typo, docs, config, dependency bump, one-line bug with an obvious test                                                                               | no skill — `CLAUDE.md` + DoD            |
+| Express     | a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks                                                                         | `/express`                              |
+| **Full**    | new bounded context; change across contexts; destructive migration (expand/contract); auth, credentials, tokens or permissions; > ~10 tasks; handoff | **this skill** → writing-plans → …      |
+
+If the request is express or trivial, say so in one sentence and propose that path instead — the cost of the full flow is the user's decision (measured on 2026-09-30: ~3 h 30 min and 52.54 USD with subagents, against 41 min and 11.82 USD with the express flow, for the same feature).
 
 ## Companion skills (consult, don't invoke)
 
-This project uses **NestJS 12 + TypeScript 6.0** (exact versions: the «Stack» line of `CLAUDE.md`). While brainstorming, **read** the following three skills as design references — do not call them as workflow steps:
+This project uses **NestJS 12 + TypeScript 6.0** (exact versions: the «Stack» line of `CLAUDE.md`). `CLAUDE.md` already carries the conventions. **Read** these skills as design references when the design needs them — do not call them as workflow steps, and don't read them by ritual:
 
 - **`clean-ddd-hexagonal`** — for architectural decisions: aggregates, ports, layer boundaries. Use its decision trees when proposing approaches that touch domain logic. Anchor concrete code shape in `${CLAUDE_SKILL_DIR}/../clean-ddd-hexagonal/references/NESTJS-MAPPING.md`.
 - **`nestjs-best-practices`** — for NestJS-specific tradeoffs: auth, guards, scopes, validation, caching, queues. Cite rule codes (e.g. `security-auth-jwt`, `arch-feature-modules`) when proposing options.
 - **`javascript-typescript-jest`** — for the testing strategy section of the spec. Locks file naming (`*.spec.ts` / `*.e2e-spec.ts`), per-layer mocking (no mocks in domain, hand-written port fakes in application, realistic doubles in infrastructure), and Supertest E2E patterns.
 
-The output spec must explicitly note which architectural patterns, rule codes, and per-layer testing approach apply to each part of the design, so `writing-plans` can use them downstream.
+The output spec notes which architectural patterns, rule codes and per-layer testing approach apply where they are not obvious, so `writing-plans` can use them downstream.
 
 ## Checklist
 
 You MUST create a task for each of these items and complete them in order:
 
 1. **Explore project context** — check files, docs, recent commits. Read `package.json`, `nest-cli.json`, `tsconfig.json`, and any module under `src/modules/` that resembles the area being changed.
-2. **Ask clarifying questions** — one at a time, understand purpose / constraints / success criteria.
+2. **Ask clarifying questions** — grouped: one `AskUserQuestion` round with up to 4 independent questions, each with options and your recommendation first. Ask a question on its own only when its answer changes the next ones.
 3. **Propose 2-3 approaches** — with trade-offs and your recommendation. Tag each approach with the architectural patterns from `clean-ddd-hexagonal` and the rule codes from `nestjs-best-practices` it relies on.
-4. **Present design** — in sections scaled to their complexity, get user approval after each section.
+4. **Present design** — sections scaled to their complexity, in one message when it fits, or in 2–3 blocks for a large design; one approval per block.
 5. **Write design doc** — save to `docs/specs/YYYY-MM-DD-<topic>-design.md`.
 6. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below).
 7. **User reviews written spec** — ask user to review the spec file before proceeding.
@@ -78,9 +86,9 @@ digraph brainstorming {
 - Check out the current project state first (files, docs, recent commits)
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
-- For appropriately-scoped projects, ask questions one at a time to refine the idea
-- Prefer multiple-choice questions when possible, but open-ended is fine too
-- Only one question per message - if a topic needs more exploration, break it into multiple questions
+- For appropriately-scoped projects, ask grouped questions to refine the idea: up to 4 independent questions per `AskUserQuestion` round, each with options and your recommendation first
+- Ask only what the user decides — business, public contract, risk and cost. Technical choices are yours: take them and write down the why
+- A question goes on its own only when its answer changes the next ones
 - Focus on understanding: purpose, constraints, success criteria
 
 **Exploring approaches:**
@@ -94,7 +102,7 @@ digraph brainstorming {
 
 - Once you believe you understand what you're building, present the design
 - Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
-- Ask after each section whether it looks right so far
+- Present everything in one message when it fits; split a large design into 2–3 blocks and ask for approval once per block, not per section
 - Cover: bounded context, aggregates / VOs / events, ports & adapters, module wiring, error handling, testing strategy per layer
 - Be ready to go back and clarify if something doesn't make sense
 
@@ -126,9 +134,10 @@ digraph brainstorming {
 4. **Ports** — driver and driven, each named as the `abstract class` that is also its injection token (`InvoiceRepository`, no `Port` suffix, no `Symbol`)
 5. **Use cases (application layer)** — one per intention: its `…Input` type and its `execute()` signature (no Command/Query classes)
 6. **Adapters** — HTTP, persistence, messaging; mapping responsibilities
-7. **Cross-cutting** — auth, validation, errors, logging, caching, throttling — each tagged with its `nestjs-best-practices` rule code
-8. **Testing strategy** — what each layer is tested with (unit, integration, E2E)
-9. **Out of scope** — explicit list to prevent scope creep
+7. **Contract** — for each endpoint, a table `| Código | Motivo | Camino que lo produce hoy |`. Every declared response must be producible today: the third column names the input or state and the code path that returns it. A response no request can produce is not declared (`CLAUDE.md`: «a declared-but-impossible response is the same defect as an undeclared one»); a defence for a future state goes in a code comment with the condition that would make it reachable. Mark changes to existing responses with ⚠️
+8. **Cross-cutting** — auth, validation, errors, logging, caching, throttling — tagged with its `nestjs-best-practices` rule code where the code changes what the implementer does
+9. **Testing strategy** — what each layer is tested with (unit, integration, E2E), and the **guarantees** (concurrency, ownership, authorization, atomicity, anti-enumeration, idempotency) whose tests must be proven to fail without the protection
+10. **Out of scope** — explicit list to prevent scope creep
 
 **Spec Self-Review:**
 After writing the spec document, look at it with fresh eyes:
@@ -139,6 +148,8 @@ After writing the spec document, look at it with fresh eyes:
 4. **Ambiguity check:** Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
 5. **Layer purity check:** Does any item put domain logic in infrastructure, or vice versa? Fix the placement.
 6. **Rule-code coverage:** Are the cross-cutting concerns (validation, auth, errors, logging) tagged with explicit rule codes?
+7. **Contract reachability:** Does every declared response name the path that produces it today?
+8. **Guarantees:** Does every guarantee name the test that will protect it?
 
 Fix any issues inline. No need to re-review — just fix and move on.
 
@@ -158,10 +169,10 @@ Wait for the user's response. If they request changes, make them and re-run the 
 
 ## Key Principles
 
-- **One question at a time** - Don't overwhelm with multiple questions
+- **Grouped questions** - Up to 4 independent questions per round, each with options and a recommendation; measured on 2026-09-30, one question per message cost ~22 min of the user's time for 9 answers
 - **Multiple choice preferred** - Easier to answer than open-ended when possible
 - **YAGNI ruthlessly** - Remove unnecessary features from all designs
 - **Explore alternatives** - Always propose 2-3 approaches before settling
-- **Incremental validation** - Present design, get approval before moving on
+- **Incremental validation** - Present the design in as few blocks as it fits, get approval before moving on
 - **Be flexible** - Go back and clarify when something doesn't make sense
 - **Never commit on the user's behalf** — this skill writes design docs only. If a commit feels appropriate (e.g., the spec is finalized), suggest it: _"Te sugiero hacer un commit del spec por <razón>"_. Wait for explicit user instruction to actually commit.

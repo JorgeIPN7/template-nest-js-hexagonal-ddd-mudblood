@@ -1,146 +1,126 @@
 ---
 name: subagent-driven-development
-description: Use when executing implementation plans with independent tasks in the current session
+description: 'Executes a LARGE plan from docs/plans/ (~10+ tasks, mostly independent) by dispatching a fresh implementer subagent per task, with a mechanical check by the controller after each one and a single adversarial review at the end. For smaller or tightly coupled plans use executing-plans, the default: on an 11-task plan this skill cost 5.4× more for the same code.'
 ---
 
 # Subagent-Driven Development
 
-Execute a plan by dispatching a fresh subagent per task, with two-stage review after each: spec compliance review first, then code quality review.
+Execute a plan by dispatching a fresh implementer subagent per task. You are the **controller**:
+you keep your context for coordination, check each task mechanically, and audit the whole result
+once at the end.
 
-**Why subagents:** delegate tasks to agents with isolated context. By precisely crafting their instructions, you keep them focused and protect your own context window for coordination work. Subagents never inherit your session history — you build exactly what they need.
+**Stack:** NestJS 12 + TypeScript 6.0, `pnpm`, Jest, Supertest (exact versions: the «Stack» line
+of `CLAUDE.md`). Subagents run tests only through `pnpm test` / `pnpm test:e2e`.
 
-**Core principle:** fresh subagent per task + two-stage review (spec then quality) = high quality, fast iteration.
+## When to use it — and when not
 
-**Stack:** NestJS 12 + TypeScript 6.0, `pnpm`, Jest, Supertest (exact versions: the «Stack» line of `CLAUDE.md`). NestJS 12 packages are ESM-only and the repo stays CommonJS, so subagents run tests only through `pnpm test` / `pnpm test:e2e` — a bare `jest` cannot load them. Companion skills `clean-ddd-hexagonal`, `nestjs-best-practices`, and `javascript-typescript-jest` apply to every dispatch — every implementer prompt MUST cite all three.
+Use it only when **all** of these hold:
+
+- the plan has ~10 or more tasks;
+- most tasks don't touch the same files, so a fresh context per task loses nothing;
+- your own context would not survive executing the whole plan inline.
+
+Otherwise use `executing-plans`. Measured on 2026-09-30 with an 11-task plan of coupled tasks
+(`docs/development-workflows.md`): this skill took ≈129 min of machine time and 36.01 USD; inline
+execution of the same plan took ≈17 min and 6.66 USD. The code was the same, and the 16 per-task
+spec and quality reviewers found 0 defects. An adversarial review of the final diff then found
+the important one that every per-task review had missed: an enumeration oracle in the 404.
 
 ## Tooling notes (Claude Code)
 
-- All subagent dispatches use the **`Agent` tool** with `subagent_type: "general-purpose"` unless noted.
-- For pure research dispatches (read-only investigation, no edits), prefer `subagent_type: "Explore"`.
-- For architectural / design subagents (e.g., the final reviewer), prefer `subagent_type: "Plan"`.
-- The implementer subagent is `general-purpose` — it must be allowed to read, edit, and run tests.
-
-## When to Use
-
-```dot
-digraph when_to_use {
-    "Have implementation plan?" [shape=diamond];
-    "Tasks mostly independent?" [shape=diamond];
-    "Dispatch a subagent per task?" [shape=diamond];
-    "subagent-driven-development" [shape=box];
-    "executing-plans" [shape=box];
-    "Manual execution or brainstorm first" [shape=box];
-
-    "Have implementation plan?" -> "Tasks mostly independent?" [label="yes"];
-    "Have implementation plan?" -> "Manual execution or brainstorm first" [label="no"];
-    "Tasks mostly independent?" -> "Dispatch a subagent per task?" [label="yes"];
-    "Tasks mostly independent?" -> "Manual execution or brainstorm first" [label="no - tightly coupled"];
-    "Dispatch a subagent per task?" -> "subagent-driven-development" [label="yes"];
-    "Dispatch a subagent per task?" -> "executing-plans" [label="no - execute inline"];
-}
-```
+- Implementers are dispatched with the `Agent` tool, `subagent_type: "general-purpose"`: it
+  loads `CLAUDE.md`, and it may read, edit and run tests. `Plan` and `Explore` do not load
+  `CLAUDE.md` (measured 2026-09-29: ≈16–19k tokens of initial context against ≈48–50k).
+- The project's `.claude/settings.json` denies mutating git commands to every agent, subagents
+  included.
 
 ## The Process
 
 ```dot
 digraph process {
     rankdir=TB;
+    "Read plan header + task list, save BASE, create TodoWrite" [shape=box];
+    "Dispatch implementer for Task N (./implementer-prompt.md)" [shape=box];
+    "Status?" [shape=diamond];
+    "Answer / add context / split task" [shape=box];
+    "Mechanical check by the controller" [shape=box];
+    "Check passes?" [shape=diamond];
+    "Re-dispatch with the specific fix" [shape=box];
+    "High-risk task?" [shape=diamond];
+    "adversarial-review scoped to the task" [shape=box];
+    "More tasks?" [shape=diamond];
+    "Mutation of new code + adversarial-review of the whole diff" [shape=box];
+    "DoD + report + suggest commit" [shape=box style=filled fillcolor=lightgreen];
 
-    subgraph cluster_per_task {
-        label="Per Task";
-        "Dispatch implementer subagent (./implementer-prompt.md)" [shape=box];
-        "Implementer asks questions?" [shape=diamond];
-        "Answer questions, provide context" [shape=box];
-        "Implementer implements, tests, self-reviews (NO commit)" [shape=box];
-        "Dispatch spec reviewer (./spec-reviewer-prompt.md)" [shape=box];
-        "Spec reviewer approves?" [shape=diamond];
-        "Implementer fixes spec gaps" [shape=box];
-        "Dispatch code quality reviewer (./code-quality-reviewer-prompt.md)" [shape=box];
-        "Quality reviewer approves?" [shape=diamond];
-        "Implementer fixes quality issues" [shape=box];
-        "Mark task complete in TodoWrite" [shape=box];
-    }
-
-    "Read plan, extract all tasks with full text, note context, create TodoWrite" [shape=box];
-    "More tasks remain?" [shape=diamond];
-    "Dispatch final reviewer for entire implementation" [shape=box];
-    "Run Definition of Done inline + suggest commit" [shape=box style=filled fillcolor=lightgreen];
-
-    "Read plan, extract all tasks with full text, note context, create TodoWrite" -> "Dispatch implementer subagent (./implementer-prompt.md)";
-    "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer asks questions?";
-    "Implementer asks questions?" -> "Answer questions, provide context" [label="yes"];
-    "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
-    "Implementer asks questions?" -> "Implementer implements, tests, self-reviews (NO commit)" [label="no"];
-    "Implementer implements, tests, self-reviews (NO commit)" -> "Dispatch spec reviewer (./spec-reviewer-prompt.md)";
-    "Dispatch spec reviewer (./spec-reviewer-prompt.md)" -> "Spec reviewer approves?";
-    "Spec reviewer approves?" -> "Implementer fixes spec gaps" [label="no"];
-    "Implementer fixes spec gaps" -> "Dispatch spec reviewer (./spec-reviewer-prompt.md)" [label="re-review"];
-    "Spec reviewer approves?" -> "Dispatch code quality reviewer (./code-quality-reviewer-prompt.md)" [label="yes"];
-    "Dispatch code quality reviewer (./code-quality-reviewer-prompt.md)" -> "Quality reviewer approves?";
-    "Quality reviewer approves?" -> "Implementer fixes quality issues" [label="no"];
-    "Implementer fixes quality issues" -> "Dispatch code quality reviewer (./code-quality-reviewer-prompt.md)" [label="re-review"];
-    "Quality reviewer approves?" -> "Mark task complete in TodoWrite" [label="yes"];
-    "Mark task complete in TodoWrite" -> "More tasks remain?";
-    "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
-    "More tasks remain?" -> "Dispatch final reviewer for entire implementation" [label="no"];
-    "Dispatch final reviewer for entire implementation" -> "Run Definition of Done inline + suggest commit";
+    "Read plan header + task list, save BASE, create TodoWrite" -> "Dispatch implementer for Task N (./implementer-prompt.md)";
+    "Dispatch implementer for Task N (./implementer-prompt.md)" -> "Status?";
+    "Status?" -> "Answer / add context / split task" [label="NEEDS_CONTEXT / BLOCKED"];
+    "Answer / add context / split task" -> "Dispatch implementer for Task N (./implementer-prompt.md)";
+    "Status?" -> "Mechanical check by the controller" [label="DONE"];
+    "Mechanical check by the controller" -> "Check passes?";
+    "Check passes?" -> "Re-dispatch with the specific fix" [label="no"];
+    "Re-dispatch with the specific fix" -> "Mechanical check by the controller";
+    "Check passes?" -> "High-risk task?" [label="yes"];
+    "High-risk task?" -> "adversarial-review scoped to the task" [label="yes"];
+    "High-risk task?" -> "More tasks?" [label="no"];
+    "adversarial-review scoped to the task" -> "More tasks?";
+    "More tasks?" -> "Dispatch implementer for Task N (./implementer-prompt.md)" [label="yes"];
+    "More tasks?" -> "Mutation of new code + adversarial-review of the whole diff" [label="no"];
+    "Mutation of new code + adversarial-review of the whole diff" -> "DoD + report + suggest commit";
 }
 ```
 
-## Casos primero (modelo de colaboración)
+### 1. Set up
 
-Cuando una tarea del plan trae tabla **«Casos acordados»** (spec
-`docs/specs/2026-08-04-roadmap-and-collaboration-model-design.md`), el ciclo del implementer es
-fijo: confirmación JIT con el controller → tests en ROJO 1:1 con la tabla (con evidencia de la
-salida) → implementación a verde → refactor. El reporte incluye el mapeo casos ↔ suite y el
-score de mutación del módulo (`pnpm test:mutation --mutate "src/modules/<context>/…"`).
-Un `it` sin fila, una fila sin `it`, o implementación sin rojo previo **fallan la spec
-compliance review**.
+Read the plan's header and task list, and save the base with `git rev-parse HEAD`. Create one
+`TodoWrite` entry per task. **Don't paste whole tasks into prompts**: the implementer reads its own
+task from the plan file. In the experiment, 38 % of everything the controller wrote was pasted
+task text.
 
-## No-Commit Policy (NON-NEGOTIABLE)
+### 2. Dispatch the implementer
 
-Subagents — implementer, spec reviewer, quality reviewer, final reviewer — **never** run `git commit`, `git add` for commit purposes, `git push`, `git tag`, or `git rebase`. Their job is to write/inspect code and report. The user owns the git history.
+Use `${CLAUDE_SKILL_DIR}/implementer-prompt.md` with the plan path, the task heading, the spec
+path and any scene-setting the task alone doesn't give: what earlier tasks produced, and what
+changed from the plan. **One implementer at a time**, because parallel implementers collide on
+files.
 
-When the implementer or final reviewer thinks a commit is appropriate, they **report a suggestion** in the format:
+### 3. Handle the status
 
-> _"Te sugiero hacer un commit de los cambios por <razón>"_
+- **DONE** → mechanical check.
+- **DONE_WITH_CONCERNS** → read the concerns first. Correctness or scope concerns are addressed
+  before the check. Observations are noted.
+- **NEEDS_CONTEXT** → the implementer could not continue without an answer. Answer it (ask the
+  user if it is a business decision) and re-dispatch.
+- **BLOCKED** → context problem: add context. Needs more reasoning: use a more capable model.
+  Task too large: split it. Plan wrong: escalate to the user.
 
-…and stop. The controller (you) surfaces the suggestion to the user, who decides.
+### 4. Mechanical check (you, no subagent)
 
-If a subagent ever runs `git commit` without explicit user instruction, that is a defect — re-dispatch with a corrected prompt.
+- `pnpm test <task specs> --verbose` passes, and the list of `it` titles matches the task's
+  «Casos acordados» row by row. No row without an `it`, no `it` without a row.
+- The report shows the **red run failing on assertions** for every spec with a case table.
+- Every guard test the task lists was proven to fail without its protection.
+- `pnpm typecheck` passes; `grep` finds no `@nestjs/*` or ORM import under `domain/`.
+- `git status --porcelain` shows the files the task declared, and nothing unexpected.
 
-## Model Selection
+A failure gets a re-dispatch with the specific fix. Don't fix it yourself: that pollutes your
+context.
 
-Use the least powerful model that can handle each role to conserve cost and increase speed.
+### 5. High-risk tasks
 
-- **Mechanical implementation (1–2 files, complete spec):** fast, cheap model.
-- **Integration / debugging (multiple files):** standard model.
-- **Architecture / final review:** most capable model available.
+For a task that touches security, concurrency, a migration or a cross-context seam, run the
+`adversarial-review` skill scoped to that task's files before moving on. For the rest, the final
+review is enough.
 
-**Task complexity signals:**
+### 6. After the last task
 
-- 1–2 files with a complete spec → cheap model
-- Multiple files with integration concerns → standard model
-- Cross-context refactor or design judgment → most capable model
-
-## Handling Implementer Status
-
-Implementers report one of four statuses:
-
-- **DONE** — proceed to spec compliance review.
-- **DONE_WITH_CONCERNS** — read the concerns first. If they're about correctness or scope, address them before review. If they're observations ("file is getting large"), note them and proceed.
-- **NEEDS_CONTEXT** — provide the missing context and re-dispatch.
-- **BLOCKED** — assess the blocker:
-  1. Context problem → provide more context, re-dispatch with the same model.
-  2. Needs more reasoning → re-dispatch with a more capable model.
-  3. Task too large → break it into smaller pieces.
-  4. Plan is wrong → escalate to the user.
-
-Never ignore an escalation or force the same model to retry without changes.
-
-## Definition of Done (run inline at the end)
-
-After the final reviewer approves, run this directly — **do not invoke any external "finishing" skill**:
+1. **Mutation of the new code:** `pnpm test:mutation:changed <BASE>`. Propose the cases that kill
+   survivors, all of them in one question; approved cases go through an implementer like any task.
+2. **Adversarial review** of the whole diff: the `adversarial-review` skill with `<BASE>` and the
+   plan path. Critical and important findings go to an implementer as a fix task.
+3. **Documentation:** `CLAUDE.md` / `README.md` if a module description, a public contract or the
+   endpoints table changed.
+4. **Definition of Done**, run by you:
 
 ```bash
 pnpm typecheck
@@ -151,109 +131,42 @@ pnpm test:e2e
 pnpm build
 ```
 
-This is the Definition of Done from `CLAUDE.md`, in its order. `pnpm test:e2e` needs PostgreSQL up (`pnpm db:up`) and a migrated test database (`pnpm db:migrate:test` on a fresh clone).
+5. **Report and suggest a commit.** Use the same report as `executing-plans`, Step 5, plus the
+   tasks that needed a re-dispatch and why. Never run the commit:
 
-Then **suggest a commit** to the user (do not run it):
+> _"Te sugiero hacer un commit de los cambios por terminar la implementación del plan
+> `<plan-file>`. Avísame y lo redacto."_
 
-> _"Te sugiero hacer un commit de los cambios por terminar la implementación del plan `<plan-file>`. Avísame y lo redacto."_
+## No-Commit Policy (NON-NEGOTIABLE)
 
-## Prompt Templates
+No agent runs `git commit`, `git add`, `git push`, `git tag`, `git rebase`, `git stash`,
+`git reset`, `git checkout`, `git switch` or `git restore`. That covers you, the implementers and
+the reviewer. The project settings deny them. An implementer that thinks a commit is due puts a
+suggestion in its report, and you relay it to the user.
 
-- `${CLAUDE_SKILL_DIR}/implementer-prompt.md` — Dispatch implementer subagent (general-purpose).
-- `${CLAUDE_SKILL_DIR}/spec-reviewer-prompt.md` — Dispatch spec compliance reviewer (general-purpose, read-only).
-- `${CLAUDE_SKILL_DIR}/code-quality-reviewer-prompt.md` — Dispatch code quality reviewer (general-purpose, read-only).
+## Model Selection
 
-The `./…` paths inside the diagrams above are node labels, not paths to resolve — always load these templates through `${CLAUDE_SKILL_DIR}`.
+Use the least powerful model that can handle each task:
 
-## Example Workflow
-
-```
-You: "I'm using Subagent-Driven Development to execute this plan."
-
-[Read plan once: docs/plans/feature-plan.md]
-[Extract all 5 tasks with full text and context]
-[Create TodoWrite with all tasks]
-
-Task 1: Domain entity for Invoice
-
-[Get Task 1 text and context]
-[Dispatch implementer with Agent tool: subagent_type=general-purpose]
-
-Implementer: "Should InvoiceId be a branded number or a string?"
-You: "String — see InvoiceId.vo.ts pattern in src/modules/billing."
-
-Implementer: "Got it. Implementing now…"
-[Later] Implementer report:
-  - Status: DONE
-  - Implemented Invoice.entity.ts + VOs + InvoiceIssued event
-  - 6/6 unit tests passing (pnpm test src/modules/billing/__tests__/domain)
-  - No @nestjs/* imports in domain/ (verified by grep)
-  - No git operations performed
-
-[Dispatch spec compliance reviewer (read-only)]
-Spec reviewer: ✅ Spec compliant — all invariants covered, nothing extra.
-
-[Dispatch code quality reviewer (read-only)]
-Quality reviewer:
-  Strengths: clean VO factories, exhaustive tests
-  Issues: None
-  Approved.
-
-[Mark Task 1 complete in TodoWrite]
-[Continue with Task 2…]
-
-…
-
-[After all tasks: dispatch final reviewer with subagent_type=Plan]
-Final reviewer: All tasks complete, layers respected, rule codes honored.
-
-[Run DoD inline: typecheck/lint:check/format:check/test/test:e2e/build all pass]
-
-You (to user): "Implementation complete. Te sugiero hacer un commit de los
-cambios por implementar el plan `feat-billing-invoice.md` (Tasks 1–5).
-Avísame y lo redacto."
-
-[STOP. Wait for user instruction before any git command.]
-```
-
-## Advantages
-
-**vs. manual execution:** subagents follow TDD naturally, fresh context per task, parallel-safe (caveats below), can ask questions before starting.
-
-**vs. executing-plans:** both run in the current session, but this skill isolates each task in a fresh subagent context instead of executing inline — your own context stays free for coordination, and every task gets automatic two-stage review.
-
-**Efficiency gains:** controller curates exactly the context the subagent needs; subagent receives complete information up front; questions surface before work begins.
-
-**Quality gates:** self-review catches issues before handoff; two-stage review (spec then quality); review loops ensure fixes actually work.
-
-**Cost:** more subagent invocations (implementer + 2 reviewers per task). Worth it because issues are caught early — cheaper than debugging later.
+- 1–2 files with complete interfaces and cases → fast, cheap model;
+- several files with integration concerns → standard model;
+- design judgment, cross-context work or the final review → the most capable model.
 
 ## Red Flags
 
 **Never:**
 
-- Start implementation on `main`/`master` without explicit user consent.
-- Skip reviews (spec compliance OR code quality).
-- Proceed with unfixed issues.
-- Dispatch multiple **implementation** subagents in parallel (file conflicts). Reviewers can run in parallel only when reviewing different tasks.
-- Make a subagent read the plan file (provide the full task text instead).
-- Skip scene-setting context.
-- Ignore subagent questions.
-- Accept "close enough" on spec compliance.
-- Implement without a captured RED run when the task has a case table.
-- Add or reword a case without JIT confirmation from the controller.
-- Start the code quality review before spec compliance is ✅ (wrong order).
-- Move to the next task while either review has open issues.
-- **Run `git commit`, `git add` for commit purposes, or `git push` without explicit user instruction in the current turn.** Suggest, don't commit.
-
-**If subagent asks questions:** answer clearly and completely. Don't rush them.
-
-**If reviewer finds issues:** the implementer (same conceptual subagent — you re-dispatch with the fix prompt) fixes them. Reviewer reviews again. Repeat until approved.
-
-**If subagent fails task:** dispatch a fix subagent with specific instructions. Don't try to fix manually (context pollution).
+- start on `main`/`master` without explicit user consent;
+- dispatch several implementers in parallel;
+- paste the whole plan into a prompt; the implementer reads its task from the file;
+- accept a task without a red run by assertion when it has a case table;
+- add or reword a case without the user's approval (grouped, not per task);
+- move on while the mechanical check fails;
+- run a committing git command.
 
 ## Integration
 
-- **Upstream skill:** `writing-plans` produces the plan this skill executes.
-- **Companion skills (read, don't invoke):** `clean-ddd-hexagonal` (layer rules), `nestjs-best-practices` (rule codes), and `javascript-typescript-jest` (test conventions, layer-aware mocking).
-- **Sister skill:** `executing-plans` — same session, but executes every task inline in your own context instead of dispatching subagents. Prefer it for small or tightly coupled plans.
+- **Upstream:** `writing-plans` (the plan), `brainstorming` (the spec).
+- **Final review:** `adversarial-review`.
+- **Sister skill:** `executing-plans`, the default. It runs in the same session and ends with the
+  same audit, but does the work inline.

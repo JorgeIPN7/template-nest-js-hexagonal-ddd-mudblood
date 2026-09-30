@@ -10,7 +10,7 @@ Backend architecture combining DDD tactical patterns, Clean Architecture depende
 
 ## Stack-Specific Anchor
 
-This skill is applied in a **NestJS 12 + TypeScript 6.0 + Node 24 + pnpm 11** codebase (SWC, Pino, Zod, class-validator, TypeORM, Jest); exact versions live in the «Stack» line of `CLAUDE.md`, `package.json`, `.nvmrc` and `packageManager`. NestJS 12 ships ESM-only packages and this repo stays CommonJS, loading them through Node's `require(esm)` — `NESTJS-MAPPING.md` §0 lists what that changes and what it doesn't. Whenever a section below presents a concept generically, use [`references/NESTJS-MAPPING.md`](references/NESTJS-MAPPING.md) for the concrete pattern, file layout, port-as-token DI, and code idioms expected in this project. The other reference files remain language-agnostic for theory; `NESTJS-MAPPING.md` is the source of truth for code shape, and `src/modules/users/` is the reference implementation.
+This skill is applied in a **NestJS 12 + TypeScript 6.0 + Node 24 + pnpm** codebase (SWC, Pino, Zod, class-validator, TypeORM, Jest); exact versions live in the «Stack» line of `CLAUDE.md`, `package.json`, `.nvmrc` and `packageManager`. NestJS 12 ships ESM-only packages and this repo stays CommonJS, loading them through Node's `require(esm)` — `NESTJS-MAPPING.md` §0 lists what that changes and what it doesn't. Whenever a section below presents a concept generically, use [`references/NESTJS-MAPPING.md`](references/NESTJS-MAPPING.md) for the concrete pattern, file layout, port-as-token DI, and code idioms expected in this project. The other reference files remain language-agnostic for theory; `NESTJS-MAPPING.md` is the source of truth for code shape, and `src/modules/users/` is the reference implementation.
 
 **Three repo conventions that override the generic examples:**
 
@@ -170,10 +170,11 @@ Controllers belong in `infrastructure/http/` because they are driver adapters �
 
 ## Workflow Integration
 
-This skill is consulted at two points in the standard flow:
+This skill is consulted — never invoked as a step — and only when the work needs it (`docs/development-workflows.md`):
 
-1. **During brainstorming** — when the design touches business rules, aggregates, ports, or layer boundaries. The brainstorming skill should reference the decision trees here when proposing approaches.
-2. **During writing-plans** — to lock down folder layout, ports, and the responsibility of each file before tasks are decomposed. Plans must place new code under the structure defined in `NESTJS-MAPPING.md`.
+1. **Full flow, during brainstorming** — when the design creates a bounded context or moves boundaries: aggregates, ports, layer placement. Use the decision trees here when proposing approaches.
+2. **Full flow, during writing-plans** — to lock down folder layout, ports and the responsibility of each file before tasks are decomposed. New code goes under the structure defined in `NESTJS-MAPPING.md`.
+3. **Express flow** — only when the feature needs an artifact type its module doesn't have yet; then read that section of `NESTJS-MAPPING.md`, not the whole skill. For everything else `CLAUDE.md` and the module's own files are enough (measured on 2026-09-30: a session with no skills met 100 % of the conventions).
 
 The companion skill `nestjs-best-practices` provides the rule-level checks (DI tokens, security, performance) that complement the architectural decisions made here, and `javascript-typescript-jest` provides the test naming and mocking strategy that operationalize the layer rules (no mocks in domain, hand-written port fakes in application, realistic doubles in infrastructure).
 

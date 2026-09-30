@@ -1,12 +1,14 @@
 ---
 name: javascript-typescript-jest
-description: Best practices for writing TypeScript tests with Jest in this NestJS 12 codebase. Use when writing, reviewing, or refactoring any *.spec.ts or *.e2e-spec.ts file. Covers test naming, AAA structure, mocking strategy by hexagonal layer, property-based testing, async patterns, and Supertest E2E. Source: github/awesome-copilot, adapted to this repo's conventions.
+description: What Jest in this NestJS 12 repo needs beyond the conventions CLAUDE.md already fixes — runner and configuration facts, mocking by hexagonal layer with examples, property-based testing with fast-check (arbitraries, fc.scheduler, Faker), async patterns, Supertest E2E and test-design guidelines. Consult it when a test needs one of those; naming, AAA, describe/it language, 1:1 and fixtures live in CLAUDE.md.
 allowed-tools: Read, Grep, Glob
 ---
 
 # Jest Testing for NestJS 12 + TS 6.0
 
-Conventions for writing Jest tests in this repository. Adapted from the upstream `javascript-typescript-jest` skill (github/awesome-copilot) to match this project's `jest.config.mjs`, hexagonal layout, and the rest of the workflow skills.
+What this repository's tests need **beyond** `CLAUDE.md`. Adapted from the upstream `javascript-typescript-jest` skill (github/awesome-copilot) to this project's `jest.config.mjs` and hexagonal layout.
+
+**The conventions every test follows live in `CLAUDE.md` («Code conventions») and are not repeated here:** `*.spec.ts` / `*.e2e-spec.ts`; a `__tests__/` folder that mirrors the module 1:1 (ports exempt, errors and events included); `describe` with the code identifier and nested `describe` per method; `it` in Spanish starting with «debería…»; the three AAA markers in every `it`, with `const act = () => …` for throws; comments in Spanish; file-local helpers at the bottom under `// Helpers`; shared fixtures in `<module>/__tests__/helpers/` or `test/helpers/`. Measured on 2026-09-30: a session with no access to any skill met 100 % of them from `CLAUDE.md` alone. The case table ↔ `it` mapping and the red-by-assertion rule belong to the flows (`CLAUDE.md`, «Modelo de colaboración»).
 
 ## Project Jest configuration (factual baseline)
 
@@ -26,96 +28,11 @@ These are the rules the test runner enforces — match them or your tests won't 
 
 **Naming consequence:** never name a test file `*.test.ts`. The runner won't pick it up. Always `*.spec.ts` or `*.e2e-spec.ts`.
 
-**Runner consequence (NestJS 12):** every `@nestjs/*` 12.x package is ESM-only and this repo stays CommonJS. Jest can only load those packages with Node's `--experimental-vm-modules`, so the `test*` scripts in `package.json` run `node --experimental-vm-modules node_modules/jest/bin/jest.js` (the rationale lives in `jest.config.mjs`). A bare `npx jest` dies with `Must use import to load ES Module: …/@nestjs/…`. The official migration guide adds the Node floor for Jest itself: the ESM-only v12 packages load only on Node 24.9+ (https://docs.nestjs.com/migration-guide) — the repo's Node is pinned in `.nvmrc`. Pass paths and Jest flags straight after the script, **without** `--`: `pnpm test src/modules/users --verbose`. With `pnpm test -- …`, pnpm 11 forwards a literal `--` and Jest reads every flag after it as one more path pattern (measured: `pnpm test -- src/shared --listTests` runs the suites instead of listing them).
+**Runner consequence (NestJS 12):** every `@nestjs/*` 12.x package is ESM-only and this repo stays CommonJS. Jest can only load those packages with Node's `--experimental-vm-modules`, so the `test*` scripts in `package.json` run `node --experimental-vm-modules node_modules/jest/bin/jest.js` (the rationale lives in `jest.config.mjs`). A bare `npx jest` dies with `Must use import to load ES Module: …/@nestjs/…`. The official migration guide adds the Node floor for Jest itself: the ESM-only v12 packages load only on Node 24.9+ (https://docs.nestjs.com/migration-guide) — the repo's Node is pinned in `.nvmrc`. Pass paths and Jest flags straight after the script, **without** `--`: `pnpm test src/modules/users --verbose`. With `pnpm test -- …`, pnpm forwards a literal `--` (measured with pnpm 11; not re-measured on 12) and Jest reads every flag after it as one more path pattern (measured: `pnpm test -- src/shared --listTests` runs the suites instead of listing them).
 
 **Why the branches threshold is lower:** SWC instruments the code it generates for `emitDecoratorMetadata` and property defaults, and those synthetic branches are unreachable from a test. Files without decorators (`src/config/**`) reach 88-100 % branches; decorator-heavy files plateau near 50 %. Don't write filler tests chasing that number.
 
-## Test Location
-
-**Tests live in a `__tests__/` folder at the root of their module, replicating the module's internal structure.** The point is portability: moving a module moves its tests with it, in one piece.
-
-```
-src/modules/billing/
-├── domain/
-│   ├── entities/invoice.entity.ts
-│   ├── value-objects/invoice-amount.vo.ts
-│   └── ports/invoice.repository.ts
-├── application/use-cases/
-│   └── issue-invoice.use-case.ts
-├── infrastructure/
-│   ├── http/invoices.controller.ts
-│   └── persistence/invoice.typeorm.repository.ts
-├── billing.module.ts
-└── __tests__/                          ← mirrors the module above
-    ├── domain/
-    │   ├── entities/invoice.entity.spec.ts
-    │   └── value-objects/invoice-amount.vo.spec.ts
-    ├── application/use-cases/
-    │   └── issue-invoice.use-case.spec.ts
-    ├── infrastructure/
-    │   ├── http/invoices.controller.spec.ts
-    │   └── persistence/invoice.typeorm.repository.e2e-spec.ts   ← real PostgreSQL
-    ├── helpers/                        ← module-wide fakes, factories, arbitraries
-    │   └── in-memory-invoice.repository.ts
-    └── billing.e2e-spec.ts             ← E2E ships with its module too
-```
-
-- **One test file per code file (1:1)**, same base name: `invoice.entity.ts` ↔ `invoice.entity.spec.ts`.
-- **Import the SUT with a relative path** (`../../../domain/entities/invoice.entity`), never an alias — a relative path survives the module being moved, `@modules/billing/...` does not.
-- **Module-wide helpers** (port fakes, factories, `arbitraries.ts`) live in `<module>/__tests__/helpers/`; **cross-cutting ones** in `test/helpers/`, imported via the `@test/` alias. `test/helpers/` is the only test code outside `src/`. Never copy a builder into several specs.
-- **Module wiring is proven by the E2E suite.** `*.module.ts` is excluded from unit coverage and measured by `test/jest-e2e.config.mjs`: compiling a context module with persistence opens real connections, so `<context>.e2e-spec.ts` is what shows the wiring works.
-- E2E specs use `createTestApp()` from `@test/helpers/create-test-app` to boot the real `AppModule` with the production globals.
-
-## Test Structure
-
-- **One `describe` per unit under test**, named with the code identifier. For classes with multiple methods, nest a `describe` per method:
-
-```ts
-describe('Invoice', () => {
-  describe('issue()', () => {
-    it('debería emitir InvoiceIssued y pasar el estado a "issued"', () => {
-      /* ... */
-    });
-    it('debería lanzar un error si el estado no es "draft"', () => {
-      /* ... */
-    });
-  });
-
-  describe('cancel()', () => {
-    it('debería marcar la factura como cancelada', () => {
-      /* ... */
-    });
-  });
-});
-```
-
-- **`describe` in code, `it` in Spanish.** The `describe` keeps the real identifier (`Invoice`, `issue()`, `PaginationDto`) so the Jest output maps straight back to the symbol. The `it` is a Spanish sentence that always starts with **`debería…`**. Prefer `it` over `test`.
-- **Code stays in English** — variables, helpers, fakes, comments about implementation. Only the `it` description is Spanish.
-- **Caso acordado ↔ `it`, 1:1.** Cuando la tarea del plan trae tabla «Casos acordados» (modelo
-  de colaboración — spec `docs/specs/2026-08-04-roadmap-and-collaboration-model-design.md`),
-  cada caso puntual produce exactamente un `it` cuyo texto es el caso, y cada fila `P` un `it`
-  de propiedad con `@fast-check/jest`. Ningún `it` extra sin fila (o sin adición JIT registrada
-  en el plan); ninguna fila sin `it`. La validación humana es cotejar la tabla contra
-  `pnpm test <file> --verbose` — una comparación de listas, no una lectura de código.
-- **No implementar sin rojo previo.** Con tabla de casos, los tests se escriben primero y se
-  ejecutan para verlos fallar; la salida en rojo es evidencia que el implementador reporta.
-  Implementar antes del rojo invalida el ciclo.
-- **AAA pattern is mandatory.** Every `it` includes the three comments `// Arrange`, `// Act`, `// Assert` to mark the phases:
-
-```ts
-it('debería calcular el offset a partir de page y limit', () => {
-  // Arrange
-  const dto = plainToInstance(PaginationDto, { page: 3, limit: 50 });
-
-  // Act
-  const skip = dto.skip;
-
-  // Assert
-  expect(skip).toBe(100);
-});
-```
-
-When Act and Assert are a single statement (e.g., `expect(fn).toThrow()`), the comment `// Act + Assert` on one line is acceptable.
+## Test design guidelines
 
 - **Order: documentation tests first, edge cases later.** Don't add separator comments like `// Edge cases` — the reading order alone signals the progression.
 - **One precise assertion per `it` when the assertion is the SUT's contract.** Multiple assertions are fine when they describe a single observable outcome.
@@ -335,17 +252,6 @@ describe('Billing (e2e)', () => {
 - Keep snapshots small — assert the specific shape, not the whole tree.
 - Review snapshot diffs carefully **before approving the PR**. (The implementer subagent never runs `git commit` — they only **suggest** a commit. The user reviews snapshots before deciding.)
 
-## Common Jest matchers (cheat sheet)
-
-- Equality: `toBe` (Object.is), `toEqual` (deep), `toStrictEqual` (deep + type checks).
-- Truthiness: `toBeTruthy`, `toBeFalsy`, `toBeNull`, `toBeDefined`.
-- Numbers: `toBeGreaterThan`, `toBeLessThanOrEqual`, `toBeCloseTo` (floats).
-- Strings: `toMatch(/regex/)`, `toContain('substring')`.
-- Arrays: `toContain`, `toHaveLength`, `toEqual(expect.arrayContaining([...]))`.
-- Objects: `toMatchObject({...})`, `toHaveProperty('a.b', value)`.
-- Exceptions: `toThrow()`, `toThrow(InvoiceNotFoundError)`, `rejects.toThrow(...)`.
-- Mocks: `toHaveBeenCalled`, `toHaveBeenCalledWith(arg1, arg2)`, `toHaveBeenCalledTimes(n)`.
-
 ## Property-based testing (PBT) with fast-check
 
 > **Required packages (already installed in this repo):** `fast-check`, `@fast-check/jest`, `@faker-js/faker`.
@@ -401,19 +307,27 @@ describe('Money.add', () => {
 - **Don't generate inputs directly.** If you write `fc.string()` and then call the SUT, you risk re-implementing the SUT inside the test to compute the expected value. Construct inputs _around_ a known outcome:
 
 ```ts
-// Bad: rebuilds substring search inside the test
+// Mal: el test reimplementa la búsqueda del substring para calcular lo esperado
 it.prop([fc.string(), fc.string()])('debería detectar el substring', (text, pattern) => {
-  expect(isSubstring(text, pattern)).toBe(text.includes(pattern));
+  // Arrange
+
+  // Act
+  const result = isSubstring(text, pattern);
+
+  // Assert
+  expect(result).toBe(text.includes(pattern));
 });
 
-// Good: assemble an input we know contains the pattern
+// Bien: se construye un input que, por construcción, contiene el patrón
 it.prop([fc.string(), fc.string(), fc.string()])(
   'debería detectar un substring construido dentro del input',
   (a, b, c) => {
     // Arrange
     const text = a + b + c;
+
     // Act
     const result = isSubstring(text, b);
+
     // Assert
     expect(result).toBe(true);
   },
@@ -425,19 +339,19 @@ it.prop([fc.string(), fc.string(), fc.string()])(
 - **Avoid `.filter` and `fc.pre`.** They throw away generated values and slow runs. Prefer arbitrary options or `.map`:
 
 ```ts
-// Bad
+// Mal
 fc.integer().filter((n) => n >= 0);
-// Good
+// Bien
 fc.nat();
 
-// Bad
+// Mal
 fc.string().filter((s) => s.length >= 2);
-// Good
+// Bien
 fc.string({ minLength: 2 });
 
-// Bad
+// Mal
 fc.integer().filter((n) => n % 2 === 0);
-// Good (map trick)
+// Bien (truco del map)
 fc.nat().map((n) => n * 2);
 ```
 
@@ -473,14 +387,16 @@ describe('queue', () => {
 
 `s.scheduleFunction` wraps an async function so its resolution can be interleaved by fast-check; `s.waitFor` drives the scheduler until the promises settle. Vanilla `fast-check` form (no `@fast-check/jest`) requires `fc.assert(fc.asyncProperty(fc.scheduler(), async (s) => { … }))` and `await`.
 
-### Faker integration (active)
+### Faker integration (not wired yet)
+
+> **Status (2026-09-29):** `@faker-js/faker` is installed, but nothing in `src/` or `test/` imports it and `test/helpers/faker-arb.ts` does **not** exist. The first spec that needs realistic data creates that helper from the snippet below; until then, don't import `@test/helpers/faker-arb`.
 
 `@faker-js/faker` produces realistic data (`'María González'`, `'jgarcia+test@empresa.com.mx'`). Wire it into `fast-check` so you keep shrinking and seed reproducibility while gaining realistic inputs. The `FakerBuilder` class below is the canonical adapter:
 
 Shared test helpers live under `test/helpers/` and are imported via the `@test/` alias — **not** `@/`, which maps to `src/`.
 
 ```ts
-// test/helpers/faker-arb.ts (one place; share across specs)
+// test/helpers/faker-arb.ts (un único sitio, compartido por todos los specs)
 import { Faker, type Randomizer, base } from '@faker-js/faker';
 import fc from 'fast-check';
 
@@ -540,32 +456,60 @@ itProp.prop([fakerToArb((f) => f.person.firstName()), fakerToArb((f) => f.person
 Both work. Prefer `@fast-check/jest` for readability; fall back to vanilla when the test predicate doesn't fit the `it.prop` shape.
 
 ```ts
-// Synchronous, with arbitraries
-// @fast-check/jest
+// Síncrono, con arbitrarios
+// Con @fast-check/jest
 import { fc, it as itProp } from '@fast-check/jest';
 itProp.prop([fc.integer(), fc.integer()])('debería ser conmutativa', (a, b) => {
-  expect(add(a, b)).toBe(add(b, a));
+  // Arrange
+
+  // Act
+  const ab = add(a, b);
+  const ba = add(b, a);
+
+  // Assert
+  expect(ab).toBe(ba);
 });
-// Vanilla
+// Con fast-check a secas: los marcadores AAA van dentro del predicado
 import fc from 'fast-check';
 it('debería ser conmutativa', () => {
   fc.assert(
     fc.property(fc.integer(), fc.integer(), (a, b) => {
-      expect(add(a, b)).toBe(add(b, a));
+      // Arrange
+
+      // Act
+      const ab = add(a, b);
+      const ba = add(b, a);
+
+      // Assert
+      expect(ab).toBe(ba);
     }),
   );
 });
 
-// Async predicate
-// @fast-check/jest
+// Predicado asíncrono
+// Con @fast-check/jest
 itProp.prop([fc.string()])('debería hashear de forma determinista', async (s) => {
-  expect(await hash(s)).toBe(await hash(s));
+  // Arrange
+
+  // Act
+  const first = await hash(s);
+  const second = await hash(s);
+
+  // Assert
+  expect(first).toBe(second);
 });
-// Vanilla
+// Con fast-check a secas
 it('debería hashear de forma determinista', async () => {
   await fc.assert(
     fc.asyncProperty(fc.string(), async (s) => {
-      expect(await hash(s)).toBe(await hash(s));
+      // Arrange
+
+      // Act
+      const first = await hash(s);
+      const second = await hash(s);
+
+      // Assert
+      expect(first).toBe(second);
     }),
   );
 });
@@ -577,23 +521,16 @@ This is a backend-only NestJS project. **There is no React Testing Library secti
 
 ## Workflow Integration
 
-This skill is consulted by other skills in the chain:
+This skill is consulted, not invoked, and only when a test needs what it covers:
 
-- **`writing-plans`** — every test code block in a plan task uses these conventions: `*.spec.ts`, layer-aware mocking, project path aliases.
-- **`subagent-driven-development` (implementer)** — when writing tests, the implementer follows this skill's mocking-by-layer rules. Tests that violate them fail spec compliance review.
-- **`subagent-driven-development` (code quality reviewer)** — checks that domain tests are pure (no `Test.createTestingModule`), application tests use hand-written fakes (no `jest.mock`), infrastructure tests use realistic doubles or test infra.
-- **`executing-plans`** — runs `pnpm test <file>` (unit) and `pnpm test:e2e` (E2E) per task.
-- **`clean-ddd-hexagonal`** — the layer rules here are the operational consequence of that skill's architectural rules.
-- **Modelo «casos primero»** — la tabla «Casos acordados» de cada tarea del plan es el origen de
-  los `it`; la sección «Test Structure» de este skill define el mapeo 1:1 y la regla de rojo previo.
+- **`express`, `executing-plans`, `subagent-driven-development` implementers** — mocking by layer, PBT, E2E patterns. The flow itself (case table ↔ `it`, stub first, red by assertion, guard tests that must fail without their protection, mutation of the new code) is defined in those skills and in `CLAUDE.md`.
+- **`writing-plans`** — a task that needs a property, a scheduler-driven race or a Supertest E2E points here.
+- **`adversarial-review`** — the reviewer judges tests against `CLAUDE.md`; this skill explains the why behind the mocking rules.
+- **`clean-ddd-hexagonal`** — the layer rules here are the operational consequence of that skill's architecture.
 
 ## Git policy
 
-This skill produces test code, never git operations. The implementer subagent and the reviewer never run `git commit`. If a green test suite feels like a good checkpoint, **suggest** a commit to the user:
-
-> _"Te sugiero hacer un commit de los cambios por <razón, p. ej. cobertura completa de tests para Invoice domain>."_
-
-Then stop and let the user decide.
+This skill produces test code, never git operations. Nobody runs `git commit`: the project's `.claude/settings.json` denies it and the user commits. If a green suite feels like a checkpoint, **suggest** it: _"Te sugiero hacer un commit de los cambios por <razón>."_
 
 ## Source
 
@@ -607,3 +544,4 @@ Adapted from [github/awesome-copilot — javascript-typescript-jest](https://git
 - No-autocommit policy.
 - AAA pattern made mandatory; `it` descriptions in Spanish starting with `debería…`; `// Helpers` block convention.
 - Property-based testing section added: adapted from the user's pasted guidelines, with the `@fast-check/vitest` examples translated to `@fast-check/jest` (1:1 API parity), plus the `FakerBuilder` snippet for `@faker-js/faker` integration ([reference](https://fast-check.dev/blog/2024/07/18/integrating-faker-with-fast-check/)).
+- 2026-09-30: conventions already fixed by `CLAUDE.md` removed (naming, location, AAA, describe/it, comments, 1:1), plus the generic matchers cheat sheet; the skill keeps what `CLAUDE.md` does not cover (decision D14 of the skills experiment, `docs/development-workflows.md`).

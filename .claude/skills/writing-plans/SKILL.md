@@ -1,79 +1,105 @@
 ---
 name: writing-plans
-description: Use when you have a spec or requirements for a multi-step task, before touching code
+description: 'Use in the FULL flow, right after brainstorming produced an approved spec: turns it into a task-by-task plan in docs/plans/ WITHOUT production code — file map, public signatures, decisions, the agreed case table of each task, commands and verification. A feature inside one existing bounded context uses the express flow instead and needs no plan.'
 ---
 
 # Writing Plans
 
 ## Overview
 
-Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Document everything they need to know: which files to touch for each task, code, testing, docs they might need to check, how to test it. Give them the whole plan as bite-sized tasks. DRY. YAGNI. TDD.
+Write the plan that someone with zero context — you in a fresh session, or a subagent — needs to
+implement the spec **without re-deciding anything**: which files, which public signatures, which
+decisions and why, which cases each task must pass, and how to verify each step.
 
-Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
+**The plan carries no production code and no finished tests.** It is a map and a contract, not a
+draft of the diff. Measured on 2026-09-30 (`docs/development-workflows.md`), with a plan that
+carried 100 % of the code (2 824 lines):
+
+- writing it took ≈85 % of the design cost;
+- the implementers transcribed it: 100 % of the production code came from the plan, and 0 of 5
+  specs had a red run by assertion;
+- the plan's real contributions were two cases (U9, U10), the 1:1 specs for errors and events,
+  and the documentation task. A codeless plan keeps all of them.
 
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
-**Stack assumed:** NestJS 12, TypeScript 6.0, Node 24, pnpm 11, SWC, Jest, Supertest, Pino, Zod, class-validator, TypeORM + PostgreSQL. Plans must use this stack — no Python, no other test runners. Exact versions live in the «Stack» line of `CLAUDE.md`, `package.json`, `.nvmrc` and `packageManager`; cite those instead of copying a version that the next bump will make stale. NestJS 12 packages are ESM-only and the repo stays CommonJS, so every test command in a plan goes through `pnpm test` / `pnpm test:e2e` (they start Jest with `--experimental-vm-modules`), never a bare `jest`.
+**Stack assumed:** NestJS 12, TypeScript 6.0, Node 24, pnpm, SWC, Jest, Supertest, Pino, Zod,
+class-validator, TypeORM + PostgreSQL. Exact versions live in the «Stack» line of `CLAUDE.md`,
+`package.json`, `.nvmrc` and `packageManager`; cite those instead of copying a version. Every test
+command goes through `pnpm test` / `pnpm test:e2e` (they start Jest with
+`--experimental-vm-modules`), never a bare `jest`.
 
-**Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
+**Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md` (user preferences override this).
 
-- (User preferences for plan location override this default)
+## References (consult only when the task needs them)
 
-## Companion skills (consult, don't invoke)
+`CLAUDE.md` is enough for conventions — a session with no skills met 100 % of them in the
+experiment. Open a reference only for what it uniquely covers:
 
-Before writing tasks, **read** these three skills as planning references — do not call them as workflow steps:
-
-- **`clean-ddd-hexagonal`** — locks the file layout. Every new file must fall under `src/modules/<context>/{domain,application,infrastructure}/...` per `${CLAUDE_SKILL_DIR}/../clean-ddd-hexagonal/references/NESTJS-MAPPING.md`. Tasks that mix layers fail review.
-- **`nestjs-best-practices`** — supplies rule codes. Each task that creates/modifies a Nest artifact (controller, provider, module, filter, interceptor, guard) must list the applicable rule codes (e.g. `arch-feature-modules`, `di-use-interfaces-tokens`, `security-validate-all-input`) under the task's **"Rule codes to honor"** subsection.
-- **`javascript-typescript-jest`** — locks Jest conventions. Every test code block in a task uses `*.spec.ts` (unit) or `*.e2e-spec.ts` (E2E), layer-aware mocking (no mocks in domain, hand-written fakes in application, realistic doubles in infrastructure), and the project's path aliases (`@/`, `@modules/`, …). Don't restate these rules in the task — link the skill name and give the layer-correct snippet.
+- `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md` — when the plan creates a
+  bounded context or an artifact type that no module has yet (the section for that artifact, not
+  the whole file).
+- `nestjs-best-practices` — rule codes for cross-cutting concerns (auth, validation, transactions,
+  errors, throttling, caching). Cite a code where it changes what the implementer does; don't tag
+  every task by ritual.
+- `javascript-typescript-jest` — property-based testing, E2E with Supertest and mocking by layer,
+  when a task needs them.
 
 ## Scope Check
 
-If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
+If the spec covers several independent subsystems, it should have been split during brainstorming.
+If it wasn't, propose one plan per subsystem. Each plan should produce working, testable software
+on its own.
 
 ## File Structure
 
-Before defining tasks, map out which files will be created or modified and what each one is responsible for. This is where decomposition decisions get locked in.
+Before defining tasks, map every file that will be created or modified and what it is responsible
+for. This is where decomposition gets locked in.
 
-- Map every file to its **layer** (`domain` / `application` / `infrastructure` / `bootstrap` / `common`) and check the dependency rule: outer → inner only. No `domain/` file imports `@nestjs/*`, `typeorm`, `prisma`, `axios`, `class-validator` decorators, or `pino`.
-- Each file has one responsibility (a single aggregate, a single use case, a single adapter, etc.).
-- For each port: declare its **`abstract class` name** (e.g. `InvoiceRepository`, no `Port` suffix) and its file under `domain/ports/`. The class is also its injection token — there is no `Symbol`, no `SCREAMING_SNAKE_CASE` constant and no `@Inject` (`NESTJS-MAPPING.md` §2).
-- For each use case: one file under `application/use-cases/` holding the class **and** its `…Input` type. No `commands/`, `queries/` or `handlers/` folders.
-- Files that change together live together. Split by responsibility, not by technical layer alone.
-- In existing codebases, follow established patterns from `src/modules/`. If a file you're modifying has grown unwieldy, including a split in the plan is reasonable.
-
-This structure informs the task decomposition. Each task should produce self-contained changes that make sense independently.
-
-## Bite-Sized Task Granularity
-
-**Each step is one action (2-5 minutes):**
-
-- "Write the failing test" — step
-- "Run it to make sure it fails" — step
-- "Implement the minimal code to make the test pass" — step
-- "Run the tests and make sure they pass" — step
+- Map every file to its **layer** (`domain` / `application` / `infrastructure` / `bootstrap` /
+  `common`) and check the dependency rule (outer → inner only; `CLAUDE.md`, «Architecture rules»).
+- One responsibility per file: one aggregate, one use case with its `…Input` type, one adapter.
+- Each port: its `abstract class` name (no `Port` suffix) and its file under `domain/ports/`.
+- In existing code, follow `src/modules/`. If a file you must modify has grown unwieldy, a split
+  task is reasonable.
 
 ## Casos acordados (contrato de comportamiento)
 
 Antes de redactar las tareas, el plan pasa por la **fase de contrato** del modelo de colaboración
-(spec `docs/specs/2026-08-04-roadmap-and-collaboration-model-design.md`): una ronda de preguntas
-y respuestas con el usuario fija los casos de prueba de cada tarea con lógica de negocio. La
-tabla resultante vive en la tarea del plan — artefacto versionado, no conversación perdida.
+(`CLAUDE.md`, «Modelo de colaboración»): el usuario aprueba los casos de prueba de cada tarea con
+lógica de negocio. La tabla vive en la tarea del plan — artefacto versionado, no conversación
+perdida.
 
 - **Aplica a tareas que tocan `domain/` o `application/`.** Infra, config, wiring y docs quedan
   exentas.
+- **Propón tú la tabla completa y pide la aprobación agrupada**: una `AskUserQuestion` por grupo
+  de tareas relacionadas, con hasta 4 preguntas y solo sobre los casos dudosos o de negocio. No se
+  pregunta caso a caso.
 - **Dos tipos de fila:** caso puntual (un ejemplo concreto) y propiedad (prefijo `P`, un
-  invariante sobre un dominio de entradas, implementado con `@fast-check/jest`):
+  invariante sobre un dominio de entradas, con `@fast-check/jest`):
 
 | #   | Caso (se vuelve el `it`)                                 | Entrada / estado inicial  | Resultado esperado              |
 | --- | -------------------------------------------------------- | ------------------------- | ------------------------------- |
 | 1   | debería rechazar un email sin arroba                     | `Email.from('foo')`       | lanza `InvalidEmailError`       |
 | P1  | debería aceptar cualquier email RFC-válido _(propiedad)_ | arbitrario `validEmail()` | nunca lanza; round-trip estable |
 
-- **Trazabilidad 1:1:** cada caso puntual produce exactamente un `it` cuyo texto es el caso;
-  cada fila `P`, un `it` de propiedad. Ningún `it` sin fila; ninguna fila sin `it`.
-- **Casos descubiertos al implementar** no se añaden en silencio: el implementador consulta
-  (confirmación JIT) y la fila nueva se registra en el plan antes de escribir su test.
+- **Trazabilidad 1:1:** cada caso puntual produce exactamente un `it` cuyo texto es el caso; cada
+  fila `P`, un `it` de propiedad. Ningún `it` sin fila; ninguna fila sin `it`.
+- **Casos descubiertos al implementar** no se añaden en silencio: se consultan, agrupados, y la
+  fila nueva se registra en el plan antes de escribir su test.
+
+## Contract reachability (endpoint tasks)
+
+Every task that adds or changes an endpoint carries a contract table:
+
+| Código | Motivo | Camino que lo produce hoy |
+| ------ | ------ | ------------------------- |
+
+**Every declared response must be producible today.** The third column names the input or state
+and the code path that returns it. No path → the response is not declared (`CLAUDE.md`: «a
+declared-but-impossible response is the same defect as an undeclared one»). A defence for a future
+state goes in a code comment, together with the condition that would make it reachable. Measured:
+the express run declared a 409 that no request could produce, and only the final review caught it.
 
 ## Plan Document Header
 
@@ -82,19 +108,19 @@ tabla resultante vive en la tarea del plan — artefacto versionado, no conversa
 ```markdown
 # [Feature Name] Implementation Plan
 
-> **For agentic workers:** Use the `subagent-driven-development` skill (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Never run `git commit` or `git push` without explicit user instruction** — at most, suggest a commit and wait.
+> **For agentic workers:** execute with `executing-plans` (default) in a NEW session, or
+> `subagent-driven-development` if the plan says it qualifies. Steps use checkbox (`- [ ]`) syntax.
+> **Never run `git commit`, `git add` or `git push`** — suggest a commit and wait.
 
-**Goal:** [One sentence describing what this builds]
+**Spec:** `docs/specs/<spec>.md`
+
+**Goal:** [One sentence]
 
 **Bounded context:** [src/modules/<context>/ — new or existing]
 
-**Architecture:** [2-3 sentences explaining the aggregates / ports / adapters introduced]
+**Architecture:** [2-3 sentences: aggregates / ports / adapters introduced]
 
-**Tech stack:** NestJS 12, TypeScript 6.0, Jest, Supertest, TypeORM + PostgreSQL, [+ any extra the plan introduces: Redis, BullMQ, etc.]
-
-**Rule codes touched:** [comma-separated list of nestjs-best-practices codes the plan exercises]
-
----
+**Execution:** executing-plans | subagent-driven-development — [one line: why]
 ```
 
 ## Task Structure
@@ -103,195 +129,127 @@ tabla resultante vive en la tarea del plan — artefacto versionado, no conversa
 ### Task N: [Component Name]
 
 **Layer:** domain | application | infrastructure | bootstrap | common
-**Rule codes to honor:** `arch-feature-modules`, `di-use-interfaces-tokens`, `security-validate-all-input`
-
-**Casos acordados** (obligatoria si la tarea toca `domain/` o `application/`; omitir en el resto):
-
-| #   | Caso (se vuelve el `it`) | Entrada / estado inicial | Resultado esperado |
-| --- | ------------------------ | ------------------------ | ------------------ |
-| 1   | debería …                | …                        | …                  |
 
 **Files:**
 
 - Create: `src/modules/billing/domain/entities/invoice.entity.ts`
 - Test: `src/modules/billing/__tests__/domain/entities/invoice.entity.spec.ts`
-- Uses (from earlier tasks): `InvoiceId`, `InvoiceAmount`, `InvoiceIssued`, `InvoiceNotDraftError`
+- Uses (from earlier tasks): `InvoiceId`, `InvoiceAmount`, `InvoiceIssued`
 
-- [ ] **Step 1: Write the failing test**
+**Interfaces** (declarations only — what other tasks rely on):
 
-```ts
-// src/modules/billing/__tests__/domain/entities/invoice.entity.spec.ts
-import { Invoice } from '../../../domain/entities/invoice.entity';
-import { InvoiceIssued } from '../../../domain/events/invoice-issued.event';
-import { InvoiceAmount } from '../../../domain/value-objects/invoice-amount.vo';
-import { InvoiceId } from '../../../domain/value-objects/invoice-id.vo';
-
-describe('Invoice', () => {
-  describe('issue()', () => {
-    it('debería registrar InvoiceIssued al emitir una factura en borrador', () => {
-      // Arrange
-      const invoice = Invoice.draft({
-        id: InvoiceId.generate(),
-        amount: InvoiceAmount.from(149_900),
-      });
-
-      // Act
-      invoice.issue(new Date('2026-01-01T00:00:00Z'));
-
-      // Assert
-      expect(invoice.pullEvents()).toEqual([expect.any(InvoiceIssued)]);
-    });
-  });
-});
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `pnpm test src/modules/billing/__tests__/domain/entities/invoice.entity.spec.ts`
-Expected: FAIL — `Cannot find module '../../../domain/entities/invoice.entity'`
-
-- [ ] **Step 3: Write minimal implementation**
+`src/modules/billing/domain/entities/invoice.entity.ts`
 
 ```ts
-// src/modules/billing/domain/entities/invoice.entity.ts
-import { AggregateRoot } from '@shared/domain/aggregate-root';
-
-import { InvoiceNotDraftError } from '../errors/invoice.errors';
-import { InvoiceIssued } from '../events/invoice-issued.event';
-import type { InvoiceAmount } from '../value-objects/invoice-amount.vo';
-import type { InvoiceId } from '../value-objects/invoice-id.vo';
-
 export class Invoice extends AggregateRoot<InvoiceIssued> {
-  private constructor(
-    readonly id: InvoiceId,
-    readonly amount: InvoiceAmount,
-    private status: 'draft' | 'issued',
-  ) {
-    super();
-  }
-
-  static draft(params: { id: InvoiceId; amount: InvoiceAmount }): Invoice {
-    return new Invoice(params.id, params.amount, 'draft');
-  }
-
-  issue(now: Date): void {
-    if (this.status !== 'draft') {
-      throw new InvoiceNotDraftError(this.id.value);
-    }
-    this.status = 'issued';
-    this.record(new InvoiceIssued(this.id.value, this.amount.value, now));
-  }
+  static draft(params: { id: InvoiceId; amount: InvoiceAmount }): Invoice;
+  issue(now: Date): void; // lanza InvoiceNotDraftError si no está en borrador
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+**Decisions:** one bullet per non-obvious choice, with its why.
 
-Run: `pnpm test src/modules/billing/__tests__/domain/entities/invoice.entity.spec.ts`
-Expected: PASS — 1 passed
+**Casos acordados** (required when the task touches `domain/` or `application/`):
+
+| #   | Caso (se vuelve el `it`)                              | Entrada / estado inicial | Resultado esperado           |
+| --- | ----------------------------------------------------- | ------------------------ | ---------------------------- |
+| 1   | debería registrar InvoiceIssued al emitir en borrador | factura en borrador      | `[InvoiceIssued(id, T)]`     |
+| 2   | debería rechazar emitir una factura ya emitida        | factura emitida          | lanza `InvoiceNotDraftError` |
+
+**Guard tests** (only if the task protects a guarantee — concurrency, ownership, authorization,
+atomicity, anti-enumeration, idempotency): which test, and how to prove it fails without the
+protection.
+
+**Rule codes** (optional): only the ones that change what the implementer does.
+
+- [ ] **Stub:** create the SUT with the interfaces above; bodies `throw new Error('no implementado')` → `pnpm typecheck`
+- [ ] **Red:** write one `it` per row, run `pnpm test <spec>`, confirm every one fails **by assertion** (not `Cannot find module`, not a compile error)
+- [ ] **Green:** implement the minimum → `pnpm test <spec>` passes
+- [ ] **Guard check** (if any): remove the protection, see red, restore
+- [ ] **Refactor** → `pnpm typecheck`
 ````
 
-## Task Templates by Layer
+## What the plan must NOT contain
 
-Use these as starting points; adapt to the spec. Test conventions are governed by `javascript-typescript-jest` — match them exactly.
+- **Production code** beyond the declarations under **Interfaces**.
+- **Finished tests.** The case table already defines each `it`; the implementer writes them.
+- A code fragment is acceptable only when the shape cannot be deduced from `CLAUDE.md` or the
+  reference module — a delicate SQL statement, a non-obvious transaction pattern — and never more
+  than ~15 lines.
+- **A file path as the first line inside a code block.** Put it in the line before the block:
+  implementers copied the `// src/…` line into the file.
 
-### Domain task (pure TS)
+## Guidance by layer (what each task must pin down)
 
-- Test file: `__tests__/domain/<subfolder>/<name>.spec.ts` at the module root, mirroring the layer path (`entities/`, `value-objects/`, …). Import the SUT relatively (`../../../domain/entities/<name>`).
-- `Test.createTestingModule` is **forbidden** — instantiate directly with `new`.
-- No mocks at all. No `jest.mock`, no `jest.spyOn` on domain code. If the test "needs" a mock, the design leaked.
-- No `@nestjs/*` imports in the SUT or in the test.
-- Write the failing test first, then the entity / VO / domain service.
-- **AAA + `debería…` mandatory** (per `javascript-typescript-jest`): every `it` is a Spanish sentence starting with `debería…`, body separated by `// Arrange / // Act / // Assert` comments, file-local helpers under `// Helpers` block at the bottom.
-- The task's «Casos acordados» table is the source of the `it` list — 1:1 mapping, see the «Casos acordados» section above.
-- **Consider PBT for invariants.** When the requirement has an "always" or "never" shape (e.g., "Money.add never produces a negative amount", "Invoice.issue is idempotent on a draft"), include an `it.prop([...])` from `@fast-check/jest` alongside the example-based tests.
-
-### Application task (use case)
-
-- Source file: `application/use-cases/<verb-noun>.use-case.ts`, holding the use case class **and** its `export type <Name>Input`. The input is a plain `type`, never a class with `class-validator`.
-- Test file: `__tests__/application/use-cases/<verb-noun>.use-case.spec.ts` at the module root, mirroring the layer path.
-- Use **hand-written port fakes** (classes that `implements` the port's `abstract class`, often in-memory) in `__tests__/helpers/`, shared by every spec of the module. **Forbidden:** `jest.mock` against module paths.
-- `jest.spyOn` on the fake's methods is acceptable when asserting calls.
-- Construct the use case directly: `new IssueInvoiceUseCase(fakeRepo)` — no `Test.createTestingModule`.
-- The use case is `@Injectable()` with one public method, `execute(input)`.
-- Ports arrive through the constructor, typed with their `abstract class` and **imported as a value** — no `@Inject`, and never `import type` in a decorated file: the reference is erased and DI fails at runtime with lint and typecheck green (`NESTJS-MAPPING.md` §2).
-- Rule codes: `di-prefer-constructor-injection`, `di-use-interfaces-tokens` (option «abstract class» of that rule), `arch-single-responsibility`.
-- **AAA + `debería…` mandatory.** Same rules as the domain task.
-- The task's «Casos acordados» table is the source of the `it` list — 1:1 mapping, see the «Casos acordados» section above.
-- **Consider PBT for use-case invariants** — e.g., idempotency (`execute` twice = once), "no event order produces an invalid state". For race-prone use cases, use `fc.scheduler()` (see `javascript-typescript-jest` PBT section).
-
-### Infrastructure task (controller / repo / messaging)
-
-- **Controllers:** a unit spec that builds the controller with its real use cases over the in-memory fakes (see `users.controller.spec.ts`) **and** an E2E spec under `src/modules/<context>/__tests__/<context>.e2e-spec.ts` using Supertest + `createTestApp()` from `@test/helpers/create-test-app`. Every endpoint carries the full OpenAPI documentation the contract guard demands (`CLAUDE.md`, «Endpoint documentation») — list those decorators in the task, don't leave them for review.
-- **Mappers, domain-exception filters, guards, DTOs and ACL adapters:** a unit `*.spec.ts` in the mirrored `__tests__/infrastructure/…` path, with no database. Each has a pattern to copy:
-  - mappers get a PBT round-trip (`user.mapper.spec.ts`);
-  - filters take real domain errors in and assert the Nest exception out (`user-domain-exception.filter.spec.ts`);
-  - ACL adapters receive the foreign gate as an object-literal fake (`users-customer.directory.spec.ts`).
-- **Repositories:** `*.typeorm.repository.e2e-spec.ts` against the real PostgreSQL test database, under `__tests__/infrastructure/persistence/`. They are the only infrastructure specs that need the database. Never `jest.mock('typeorm')` — the test loses its value.
-- **HTTP gateways:** `nock`/`msw-node` for outbound HTTP; `jest.mock` for the SDK module is acceptable only when no other option exists.
-- Rule codes: `api-use-dto-serialization`, `security-validate-all-input`, `arch-use-repository-pattern`, `db-use-transactions` (when writes span multiple rows).
-
-### Module wiring task
-
-- One task per `*.module.ts`: imports, providers (each port bound as `{ provide: InvoiceRepository, useClass: InvoiceTypeOrmRepository }`), controllers, exports. Only the context's public gates are exported, and re-exported as TS symbols from the module file.
-- The wiring task is the **last** task that introduces a new bounded context — it brings everything together, adds the module to `AppModule`'s `imports` and its scope to `commitlint.config.cjs`.
-- The wiring is proven by the context's `<context>.e2e-spec.ts`, not by a unit `<context>.module.spec.ts`: `*.module.ts` is excluded from unit coverage and compiling a module with persistence opens real connections. `ClassProvider` does not check that `useClass` conforms to the port — the adapter's `implements` does — so `pnpm typecheck` passing is not proof of wiring.
+- **Domain:** invariants and the errors that enforce them; events and their payload; which
+  «always/never» rows become properties.
+- **Application:** the `…Input` type; the ports used and the order of calls (e.g. the directory
+  is checked before anything else); which domain errors reach the caller.
+- **Infrastructure — persistence:** the migration, and whether it is additive or needs
+  expand/contract (`CLAUDE.md`, «Destructive migrations»); transactions; driver errors translated
+  in the adapter; the E2E against real PostgreSQL.
+- **Infrastructure — HTTP:** the contract table (above), the OpenAPI decorators the guard demands
+  (`CLAUDE.md`, «Endpoint documentation»), the filter mapping, the controller unit spec and the E2E.
+- **Module wiring:** the last task of a new context — module file, `AppModule` import and the
+  scope in `commitlint.config.cjs`. It is proven by the context's E2E, not by `pnpm typecheck`
+  (`useClass` accepts any class).
+- **Documentation:** a final task when the change alters a module's description, a public
+  contract or the endpoints table in `CLAUDE.md` / `README.md`.
 
 ## No Placeholders
 
-Every step must contain the actual content an engineer needs. These are **plan failures** — never write them:
+Every step must name exact files, commands and the expected outcome. These are plan failures:
 
-- "TBD", "TODO", "implement later", "fill in details"
-- "Add appropriate error handling" / "add validation" / "handle edge cases"
-- "Write tests for the above" (without actual test code)
-- "Similar to Task N" (repeat the code — the engineer may be reading tasks out of order)
-- Steps that describe what to do without showing how (code blocks required for code steps)
-- References to types, functions, tokens, or methods not defined in any task
-- Bare `git commit` instructions — see "No autocommit" below
+- "TBD", "TODO", "implement later", "fill in details";
+- "Add appropriate error handling" / "handle edge cases" — name the case, give it a row;
+- "Similar to Task N" — repeat what the engineer needs, they may read tasks out of order;
+- references to types, ports or methods not declared in any task's **Interfaces**;
+- bare `git commit` instructions — see below.
 
 ## No autocommit
 
-The plan **never instructs the implementer to run `git commit` or `git push`**. The user controls all commits.
-
-If a logical checkpoint deserves a commit, end the task with a **suggestion** the implementer surfaces to the user, e.g.:
+The plan **never instructs anyone to run `git commit`, `git add` or `git push`**. The user
+controls all commits. A logical checkpoint ends with a suggestion the implementer surfaces:
 
 > _"Te sugiero hacer un commit de los cambios por <razón>"_
 
-…and stop. Do not embed `git commit` commands.
-
-## Remember
-
-- Exact file paths always (under `src/modules/<context>/...`)
-- Complete code in every step — if a step changes code, show the code
-- Exact `pnpm` / `nest` commands with expected output
-- DRY, YAGNI, TDD
-- Layer purity is non-negotiable
-
 ## Self-Review
 
-After writing the complete plan, look at the spec with fresh eyes and check the plan against it. By default this is a checklist you run yourself.
+After writing the plan, check it against the spec. By default this is a checklist you run
+yourself:
 
-1. **Spec coverage:** Skim each section/requirement in the spec. Can you point to a task that implements it? List any gaps.
-2. **Placeholder scan:** Search your plan for red flags — any of the patterns from "No Placeholders". Fix them.
-3. **Type consistency:** Do types, method signatures, port classes and use-case inputs match across tasks? The `InvoiceRepository` declared in Task 3 must be the same class, with the same methods, that Task 7 binds with `useClass`.
-4. **Layer purity:** Every file in `domain/` is free of `@nestjs/*` and ORM imports. Every controller lives under `infrastructure/http/`.
-5. **Rule-code coverage:** Every Nest artifact lists at least one rule code; cross-cutting concerns (auth, validation, logging, errors) are tagged.
-6. **No commits:** No task contains `git commit` or `git push`.
-7. **Casos acordados coverage:** Does every task touching `domain/` or `application/` carry a filled «Casos acordados» table, and no task outside those layers carry one needlessly?
+1. **Spec coverage:** every requirement has a task.
+2. **No code:** no production code or finished test beyond **Interfaces** and ≤15-line fragments.
+3. **Case tables:** every `domain/`/`application/` task has one, approved; no other task needs one.
+4. **Contract:** every endpoint task has its table, and every row names the path that produces it.
+5. **Guard tests:** every guarantee (concurrency, ownership, auth, atomicity, anti-enumeration,
+   idempotency) has a test and a way to prove it fails without the protection.
+6. **Type consistency:** ports, inputs and signatures match across tasks.
+7. **Layer purity:** nothing in `domain/` depends on `@nestjs/*` or an ORM; controllers live in
+   `infrastructure/http/`.
+8. **No commits:** no task contains `git commit`, `git add` or `git push`.
 
-If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
+Fix issues inline.
 
-**Escalate to a reviewer subagent when the plan is large.** For plans above ~8 tasks, plans touching more than one bounded context, or whenever you are unsure the decomposition holds, dispatch an independent reviewer instead of relying on the self-review: use the template at `${CLAUDE_SKILL_DIR}/plan-document-reviewer-prompt.md` (Agent tool, `subagent_type: "general-purpose"`, read-only). Address every blocking issue before the execution handoff below.
+**Escalate to a reviewer subagent when the plan is large.** For plans above ~8 tasks, plans
+touching more than one bounded context, or when you doubt the decomposition, dispatch an
+independent reviewer with `${CLAUDE_SKILL_DIR}/plan-document-reviewer-prompt.md` (Agent tool,
+`subagent_type: "general-purpose"`, read-only). Fix every blocking issue before the handoff.
 
 ## Execution Handoff
 
-After saving the plan, offer the execution choice:
+After saving the plan:
 
-> "Plan complete and saved to `docs/plans/<filename>.md`. Two execution options:
->
-> **1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration. Uses the `subagent-driven-development` skill.
->
-> **2. Inline Execution** — Execute tasks in this session sequentially with checkpoints. Uses the `executing-plans` skill.
->
-> Which approach?"
+> "Plan saved to `docs/plans/<filename>.md`. I recommend executing it with **executing-plans in a
+> new session** (`/clear` or a new terminal): the brainstorming context no longer helps and makes
+> every turn more expensive. Subagent-driven development only pays off for large plans (~10+
+> tasks) whose tasks are mostly independent — [this plan qualifies / does not qualify, because …].
+> Which one?"
 
-After the user picks, invoke the corresponding skill. **Do not commit the plan file** — if it feels like a good checkpoint, suggest: _"Te sugiero hacer un commit del plan por <razón>"_.
+**subagent-driven-development qualifies only if** the plan has ~10 or more tasks, most of them do
+not touch the same files, and the inline context would not survive the whole plan. Measured on an
+11-task plan with coupled tasks: 5.4× the cost of inline execution for the same code.
+
+After the user picks, invoke the corresponding skill (or tell the user which command to run in the
+new session). **Do not commit the plan** — suggest it: _"Te sugiero hacer un commit del plan por
+<razón>"_.

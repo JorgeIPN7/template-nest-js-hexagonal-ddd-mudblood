@@ -166,9 +166,9 @@ This skill provides **rule-level checks** (DI, security, performance, API). The 
 | Layer | Rules that apply | Rules that do NOT apply |
 |-------|------------------|--------------------------|
 | `domain/` | None of these (domain has zero NestJS dependencies) | All — domain is pure TS, no `@Injectable()`, no `class-validator` decorators, no HTTP/DB |
-| `application/` | `arch-single-responsibility`, `arch-use-events`, `di-*` (all), `error-throw-http-exceptions` only via filter, `test-use-testing-module` | `api-*`, `db-*`, `security-rate-limiting`, `security-csrf-protection` (those are adapter concerns) |
+| `application/` | `arch-single-responsibility`, `arch-use-events`, `di-*` (all), `error-throw-http-exceptions` only via filter | `api-*`, `db-*`, `security-rate-limiting`, `security-csrf-protection` (those are adapter concerns); `test-use-testing-module` — in this repo a use case is built with `new` over hand-written port fakes, never `Test.createTestingModule` with `jest.fn()` mocks (`CLAUDE.md`, «Mocking by layer») |
 | `infrastructure/http/` | `api-*` (all), `security-*` (all), `error-use-exception-filters`, `perf-use-caching` for read endpoints | `arch-use-repository-pattern` (already abstracted by domain port) |
-| `infrastructure/persistence/` | `arch-use-repository-pattern`, `db-*` (all), `perf-optimize-database`, `test-mock-external-services` | `api-*`, `security-validate-all-input` |
+| `infrastructure/persistence/` | `arch-use-repository-pattern`, `db-*` (all), `perf-optimize-database` | `api-*`, `security-validate-all-input`; `test-mock-external-services` — repositories are tested against real PostgreSQL in the E2E suite, never a mocked repository (`CLAUDE.md`, «Mocking by layer») |
 | `infrastructure/messaging/` | `micro-*` (all), `arch-use-events`, `error-handle-async-errors` | `api-versioning`, `security-csrf-protection` |
 | `bootstrap/` & `main.ts` | `devops-*` (all), `security-use-helmet`, `security-rate-limiting`, `perf-async-hooks` | Domain/application rules |
 
@@ -182,10 +182,11 @@ This skill provides **rule-level checks** (DI, security, performance, API). The 
 
 ## Workflow Integration
 
-This skill is consulted at three points:
+This skill is consulted — never invoked as a step — when the work touches a NestJS-specific concern (`docs/development-workflows.md`):
 
-1. **brainstorming** — when the design touches a NestJS-specific concern (auth, caching, queues, validation, throttling), cite the relevant rule code (e.g. `security-auth-jwt`) when proposing tradeoffs.
-2. **writing-plans** — every task that creates Nest artifacts (controllers, providers, modules, filters) lists the applicable rule codes inline so the implementer can verify against them.
-3. **execution (executing-plans / subagent-driven-development)** — code-quality review checks the changed files against the rule codes the plan attached to each task.
+1. **brainstorming** (full flow) — when the design touches auth, caching, queues, validation or throttling, cite the relevant rule code (e.g. `security-auth-jwt`) when proposing tradeoffs.
+2. **writing-plans** (full flow) — a task cites the rule codes that change what the implementer does; don't tag every task by ritual.
+3. **express** and the executors — only for a concern the module doesn't already solve; `CLAUDE.md` and the module's own files cover the rest.
+4. **adversarial-review** — the reviewer judges against `CLAUDE.md`; a rule code is useful evidence in a finding.
 
 Pair this skill with `clean-ddd-hexagonal` — they are designed to be used together in this repo.

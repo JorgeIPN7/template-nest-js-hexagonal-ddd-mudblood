@@ -1,6 +1,6 @@
 # Mapeo Hexagonal/DDD → NestJS 12 + TS 6.0
 
-Concreción de los conceptos genéricos del skill al stack del proyecto: **NestJS 12, TypeScript 6.0, Node 24, pnpm 11, SWC, Pino, Zod, class-validator, TypeORM, Jest**. Las versiones exactas no se repiten aquí porque envejecen con cada bump: mandan la línea «Stack» de `CLAUDE.md`, `package.json` (dependencias y `engines.node`), `.nvmrc` y `packageManager`.
+Concreción de los conceptos genéricos del skill al stack del proyecto: **NestJS 12, TypeScript 6.0, Node 24, pnpm, SWC, Pino, Zod, class-validator, TypeORM, Jest**. Las versiones exactas no se repiten aquí porque envejecen con cada bump: mandan la línea «Stack» de `CLAUDE.md`, `package.json` (dependencias y `engines.node`), `.nvmrc` y `packageManager`.
 
 > Esta referencia complementa `LAYERS.md`, `DDD-TACTICAL.md` y `HEXAGONAL.md`. Cuando el `SKILL.md` u otra referencia describa un concepto en pseudocódigo, este archivo es la fuente de verdad para cómo escribirlo en este repo. **La implementación de referencia es `src/modules/users/`**: ante la duda, copia su forma. Los ejemplos de abajo usan un contexto hipotético `billing` con la forma exacta de `users` y `orders`; cada bloque indica qué archivo real calca.
 
@@ -454,7 +454,7 @@ export class InvoiceDomainExceptionFilter implements ExceptionFilter {
 
 **Convenciones de archivo y mocking** se rigen por el skill `javascript-typescript-jest`:
 
-- **Ubicación:** en `src/modules/<context>/__tests__/`, espejo de la estructura del módulo y **1:1** con el archivo fuente (`domain/entities/invoice.entity.ts` ↔ `__tests__/domain/entities/invoice.entity.spec.ts`). El SUT se importa en relativo.
+- **Ubicación:** en `src/modules/<context>/__tests__/`, espejo de la estructura del módulo y **1:1** con el archivo fuente (`domain/entities/invoice.entity.ts` ↔ `__tests__/domain/entities/invoice.entity.spec.ts`). Los puertos (`domain/ports/`, clases abstractas sin lógica) quedan exentos; los errores y los eventos no. El SUT se importa en relativo.
 - **Unit:** `*.spec.ts`. **E2E:** `*.e2e-spec.ts` dentro del mismo `__tests__/` — el del contexto (`__tests__/<context>.e2e-spec.ts`) arranca la app con `createTestApp()` de `@test/helpers/create-test-app`; el de un repositorio vive en `__tests__/infrastructure/persistence/<name>.typeorm.repository.e2e-spec.ts`.
 - **Ejecución:** siempre `pnpm test <ruta>` y `pnpm test:e2e` (§0). El E2E corre contra la base de test que fija `test/setup-env.ts` (no la de desarrollo), necesita PostgreSQL arriba y hace `TRUNCATE` en cada `beforeEach`.
 - **Domain:** cero mocks. Si el test parece necesitar uno, el diseño leakea infra al dominio.
@@ -471,7 +471,7 @@ export class InvoiceDomainExceptionFilter implements ExceptionFilter {
 
 **Property-based testing (PBT) con `fast-check` + `@fast-check/jest`** — los invariantes de dominio (importe siempre positivo, `issue` solo desde `draft`) y el round-trip del mapper en infraestructura son el caso ideal. Las arbitrarias se **construyen**, nunca se `.filter()`-an sobre `fc.string()`. Ver la subsección «Property-based testing» del skill `javascript-typescript-jest`.
 
-**La mutación es gate**: `pnpm test:mutation --mutate "src/modules/<context>/…"` y `thresholds.break` en `stryker.config.mjs`. Un módulo nuevo sin casos no entra en silencio.
+**La mutación es gate**: `thresholds.break` en `stryker.config.mjs` y job propio en CI. Un módulo nuevo sin casos no entra en silencio. Para auditar solo lo que cambió una rama, `pnpm test:mutation:changed [base]`; para un módulo entero, `pnpm test:mutation --mutate "src/modules/<context>/{domain,application}/**/*.ts"`.
 
 ## 10. Composición entre contextos
 

@@ -37,6 +37,7 @@
     "test:e2e": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./test/jest-e2e.config.mjs",
     "test:e2e:ci": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./test/jest-e2e.config.mjs --ci --coverage",
     "test:mutation": "stryker run",
+    "test:mutation:changed": "node scripts/mutate-changed.mjs",
     "prepare": "husky",
     "commitlint": "commitlint --edit",
     "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
