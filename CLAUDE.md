@@ -223,10 +223,10 @@ The split is what makes the two-context seam real: `users` owns the **profile** 
 
 ## Orders
 
-Second bounded context (`src/modules/orders/`), one use case: place an order
+Second bounded context (`src/modules/orders/`), two use cases: place an order
 (`POST /orders`, `@Auth()` — the first real consumer of `@CurrentUser()`: `customerId` comes
-from the token's `sub`, never from the body). It exercises the three seams a single context
-cannot:
+from the token's `sub`, never from the body) and cancel one (`POST /orders/:id/cancel`,
+`@Auth()`, 200 with the order). It exercises the three seams a single context cannot:
 
 - **Cross-module via the public gate — segregated by intention.** `orders` defines the
   `CustomerDirectory` port; its adapter injects `UsersLookup`, which `users.module.ts`
@@ -246,12 +246,28 @@ cannot:
   The #13 split needed zero new rules either, for the same reason: it changes the published
   surface, not the boundaries.
   A deactivated user keeps a valid JWT until it expires: `orders` re-checks the directory on
-  every order and translates `CustomerGoneError` to 403 in its own filter (string-constructed,
-  canonical message).
-- **Domain events.** `Order.place()` emits `OrderPlaced` and collects it; `pullEvents()`
-  drains, and the use case hands the events to the repository **in the same
-  `save(order, events)` call** — the port's signature carries them so atomicity is the
-  adapter's job.
+  every placement and every cancellation, and translates `CustomerGoneError` to 403 in its own
+  filter (string-constructed, canonical message).
+- **Domain events.** `Order.place()` emits `OrderPlaced` and `Order.cancel()` emits
+  `OrderCancelled`, both collected; `pullEvents()` drains, and the use case hands the events to
+  the repository **in the same `save(order, events)` call** — the port's signature carries them
+  so atomicity is the adapter's job. The outbox payload is the event spread as-is, so a new
+  field on an event reaches consumers: the adapter E2E pins both payloads with an exact
+  `toEqual`.
+- **Cancellation: idempotent, owner-only, optimistic version.** Two states, `placed` →
+  `cancelled`, no time window. `cancel()` on a cancelled order is a no-op in the domain — 200
+  with the original `cancelledAt`, no second event — and the use case only saves when the
+  aggregate produced events. Another customer's order throws the same `OrderNotFoundError`, with
+  the same message, as a missing one: 404 either way. The aggregate carries the `version` it was
+  **read** with (0 = never saved); the adapter INSERTs new rows at 1 and writes the rest with
+  `UPDATE … WHERE version = v`, and 0 affected rows throws `OrderVersionConflictError` inside the
+  transaction, so the outbox rolls back too. `CancelOrderUseCase` retries **once**, on that error
+  only: the loser of a double click re-reads a cancelled order and gets 200 with the winner's
+  `cancelledAt`; a second conflict is a 409. That relies on READ COMMITTED — under REPEATABLE
+  READ the loser would get a `40001` instead. The adapter E2E with two simultaneous saves is
+  there to catch it, but only on the runs where the two transactions really interleave.
+  `cancelledAt` is **omitted**, not `null`, on a placed order: the contract guard's
+  Ajv ignores `nullable`, so a `null` example would break the build.
 - **Transactional outbox.** `OrderTypeOrmRepository.save` writes the order and its
   `orders_outbox` rows inside one `dataSource.transaction`. The relay is a CLI
   (`pnpm outbox:relay`, `src/database/outbox/` — a module cannot import `database`, same

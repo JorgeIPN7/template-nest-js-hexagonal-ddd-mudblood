@@ -1,9 +1,12 @@
-import { Body, Controller, HttpStatus, Post, UseFilters } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Param, Post, UseFilters } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBody,
+  ApiConflictResponse,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 
@@ -15,13 +18,18 @@ import { ApiEnvelope } from '@common/dto/api-envelope.dto';
 import { buildErrorExample } from '@common/dto/error-example.factory';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '@common/dto/error-response.dto';
 
+import { CancelOrderUseCase } from '../../application/use-cases/cancel-order.use-case';
 import { PlaceOrderUseCase } from '../../application/use-cases/place-order.use-case';
 
 import { OrderResponseDto } from './dto/order-response.dto';
 import { PlaceOrderDto } from './dto/place-order.dto';
 import { OrdersDomainExceptionFilter } from './orders-domain-exception.filter';
 
+/** Id de ejemplo. Es un UUID v4 válido: `OrderId.from()` rechaza cualquier otra cosa con 400. */
+const ORDER_ID_EXAMPLE = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
 const COLLECTION_PATH = '/api/v1/orders';
+const CANCEL_PATH = `${COLLECTION_PATH}/${ORDER_ID_EXAMPLE}/cancel`;
 
 /** Lo que `TransformInterceptor` añade a toda respuesta de éxito — mismos valores fijos que users. */
 const requestMeta = (path: string) => ({
@@ -31,11 +39,19 @@ const requestMeta = (path: string) => ({
 });
 
 const ORDER_EXAMPLE = {
-  id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+  id: ORDER_ID_EXAMPLE,
   customerId: '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012',
   concept: 'Suscripción anual plan Pro',
   amountCents: 149_900,
   placedAt: '2026-08-01T10:15:00.000Z',
+  status: 'placed',
+} as const;
+
+/** `cancelledAt` solo aparece aquí: un pedido colocado no lleva la clave (ver el DTO). */
+const CANCELLED_ORDER_EXAMPLE = {
+  ...ORDER_EXAMPLE,
+  status: 'cancelled',
+  cancelledAt: '2026-08-01T12:30:00.000Z',
 } as const;
 
 /** Los ejemplos de error salen SIEMPRE de la factoría: `error` se deriva del status. */
@@ -51,7 +67,10 @@ const errorExample = (statusCode: number, message: string, path: string) =>
 @Controller('orders')
 @UseFilters(OrdersDomainExceptionFilter)
 export class OrdersController {
-  constructor(private readonly placeOrder: PlaceOrderUseCase) {}
+  constructor(
+    private readonly placeOrder: PlaceOrderUseCase,
+    private readonly cancelOrder: CancelOrderUseCase,
+  ) {}
 
   @Auth()
   @Post()
@@ -113,6 +132,76 @@ export class OrdersController {
       concept: dto.concept,
       amountCents: dto.amountCents,
     });
+    return OrderResponseDto.fromDomain(order);
+  }
+
+  // `POST /orders/:id/cancel` no choca con `POST /orders`: son dos segmentos contra uno, así
+  // que `routeConflictPolicy` no ve ni duplicado ni sombra.
+  @Auth()
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    operationId: 'cancelOrder',
+    summary: 'Cancela un pedido del usuario autenticado',
+    description:
+      'Pasa un pedido colocado a `cancelled`, sella `cancelledAt` y persiste el evento ' +
+      'OrderCancelled en la misma transacción (outbox). Es idempotente: cancelar un pedido ya ' +
+      'cancelado devuelve 200 con el pedido tal cual, su `cancelledAt` original y sin un segundo ' +
+      'evento. El pedido de otro cliente responde 404, idéntico al de un pedido inexistente. ' +
+      'Como en la colocación, se re-verifica que el usuario del token siga existiendo y activo.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador del pedido, en formato UUID v4.',
+    format: 'uuid',
+    example: ORDER_ID_EXAMPLE,
+  })
+  @ApiEnvelope(OrderResponseDto, {
+    description: 'Pedido cancelado, o que ya lo estaba: la respuesta es la misma.',
+    example: {
+      success: true,
+      data: CANCELLED_ORDER_EXAMPLE,
+      request: requestMeta(CANCEL_PATH),
+    },
+  })
+  @ApiForbiddenResponse({
+    description: 'El usuario del token ya no existe o está inactivo.',
+    type: ErrorResponseDto,
+    example: errorExample(403, 'Forbidden', CANCEL_PATH),
+  })
+  @ApiNotFoundResponse({
+    description: 'El pedido no existe o es de otro cliente: las dos respuestas son idénticas.',
+    type: ErrorResponseDto,
+    example: errorExample(404, `Order ${ORDER_ID_EXAMPLE} was not found`, CANCEL_PATH),
+  })
+  @ApiConflictResponse({
+    description:
+      'El pedido cambió mientras se cancelaba y el reintento interno también chocó. Repetir ' +
+      'la petición es seguro: la cancelación es idempotente.',
+    type: ErrorResponseDto,
+    example: errorExample(
+      409,
+      `Order ${ORDER_ID_EXAMPLE} was modified concurrently, retry the request`,
+      CANCEL_PATH,
+    ),
+  })
+  // Como en `GET /users/:id`: el 400 no lo produce `ValidationPipe` sino `OrderId.from()`,
+  // que el filter traduce. Mismo código y misma forma de cuerpo, mensaje propio.
+  @ApiBadRequestResponse({
+    description: 'El id no es un UUID v4.',
+    type: ValidationErrorResponseDto,
+    example: errorExample(
+      400,
+      '"no-es-uuid" is not a valid order id',
+      `${COLLECTION_PATH}/no-es-uuid/cancel`,
+    ),
+  })
+  @ApiStandardErrors()
+  async cancel(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<OrderResponseDto> {
+    const order = await this.cancelOrder.execute({ customerId: user.sub, orderId: id });
     return OrderResponseDto.fromDomain(order);
   }
 }

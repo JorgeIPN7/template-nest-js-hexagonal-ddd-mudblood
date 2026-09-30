@@ -1,6 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import type { Order } from '../../../domain/entities/order.entity';
+import { ORDER_STATUSES, type OrderStatus } from '../../../domain/value-objects/order-status';
 
 export class OrderResponseDto {
   @ApiProperty({
@@ -33,6 +34,27 @@ export class OrderResponseDto {
   })
   placedAt!: Date;
 
+  @ApiProperty({
+    description: 'Estado del pedido. Un pedido `cancelled` no vuelve a `placed`.',
+    enum: [...ORDER_STATUSES],
+    example: 'placed',
+  })
+  status!: OrderStatus;
+
+  // Opcional y no `nullable`, a propósito: el contract guard valida los ejemplos con Ajv, que
+  // ignora `nullable` (lo mide y lo documenta `openapi-contract.e2e-spec.ts`), así que un
+  // ejemplo con `null` rompería la build. Una clave ausente es la única forma en la que
+  // OpenAPI 3.0 y Ajv coinciden.
+  @ApiPropertyOptional({
+    description:
+      'Momento de la cancelación, en UTC. Solo está presente cuando `status` es `cancelled`: ' +
+      'un pedido colocado no lleva la clave.',
+    example: '2026-08-01T12:30:00.000Z',
+    type: String,
+    format: 'date-time',
+  })
+  cancelledAt?: Date;
+
   /** El dominio nunca se serializa directamente: siempre pasa por este DTO. */
   static fromDomain(order: Order): OrderResponseDto {
     const snapshot = order.toSnapshot();
@@ -42,6 +64,10 @@ export class OrderResponseDto {
     dto.concept = snapshot.concept;
     dto.amountCents = snapshot.amountCents;
     dto.placedAt = snapshot.placedAt;
+    dto.status = snapshot.status;
+    if (snapshot.cancelledAt !== null) {
+      dto.cancelledAt = snapshot.cancelledAt;
+    }
     return dto;
   }
 }

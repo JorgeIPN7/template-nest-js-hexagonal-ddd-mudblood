@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { UsersModule } from '../users/users.module';
 
+import { CancelOrderUseCase } from './application/use-cases/cancel-order.use-case';
 import { PlaceOrderUseCase } from './application/use-cases/place-order.use-case';
 import { CustomerDirectory } from './domain/ports/customer.directory';
 import { OrderRepository } from './domain/ports/order.repository';
@@ -29,6 +30,7 @@ import { UsersCustomerDirectory } from './infrastructure/users-customer.director
     { provide: OrderRepository, useClass: OrderTypeOrmRepository },
     { provide: CustomerDirectory, useClass: UsersCustomerDirectory },
     PlaceOrderUseCase,
+    CancelOrderUseCase,
   ],
 })
 export class OrdersModule {}
