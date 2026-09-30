@@ -1,49 +1,86 @@
 ---
 name: executing-plans
-description: Use when executing a written implementation plan inline in the current session, step by step with review checkpoints — the no-subagent alternative to subagent-driven-development
+description: 'Default executor of the FULL flow: implements a plan from docs/plans/ inline in the current session — stub, red by assertion, green and refactor per task; mutation of the new code once at the end; one adversarial review; Definition of Done. Prefer a new session after writing the plan. Use subagent-driven-development instead only for large plans (~10+ tasks) of mostly independent tasks.'
 ---
 
 # Executing Plans
 
 ## Overview
 
-Load a plan from `docs/plans/`, review it critically, execute its tasks step by step in this session, and report when complete.
+Load a plan from `docs/plans/`, review it critically, implement its tasks in this session, then
+audit the result once — mutation, adversarial review, DoD — and report.
+
+**This is the default way to execute a plan.** On 2026-09-30 the same 11-task plan produced the
+same code inline (≈17 min of machine time, 6.66 USD) as with a subagent per task and two
+reviewers per task (≈129 min, 36.01 USD) (`docs/development-workflows.md`).
+`subagent-driven-development` is for large plans of independent tasks, where a fresh context per
+task pays for itself.
 
 **Announce at start:** "I'm using the executing-plans skill to implement this plan."
 
-**Stack:** NestJS 12 + TypeScript 6.0 (exact versions: the «Stack» line of `CLAUDE.md`). All commands assume `pnpm`. NestJS 12 packages are ESM-only and the repo stays CommonJS, so tests run only through `pnpm test` / `pnpm test:e2e` — a bare `jest` cannot load them.
+**Stack:** NestJS 12 + TypeScript 6.0 (exact versions: the «Stack» line of `CLAUDE.md`). Tests
+run only through `pnpm test` / `pnpm test:e2e`; a bare `jest` cannot load the ESM-only NestJS 12
+packages.
 
-**Note:** both this skill and `subagent-driven-development` run in the **current session**. The difference is _who does the work_: this skill executes every task inline in your own context; `subagent-driven-development` dispatches a fresh subagent per task with two-stage review. Prefer `subagent-driven-development` when subagents are available — it is generally higher quality. Use this skill for small plans, tightly coupled tasks, a tight feedback loop, or when there is no subagent budget.
+**Start in a new session** when the plan was written in this one: the brainstorming and planning
+context no longer helps and makes every turn more expensive. The plan and the spec on disk are
+the whole handoff.
 
-## The Process
+## Step 1 — Load and review the plan
 
-### Step 1 — Load and review the plan
+1. Read the plan and the spec it references. Save the base: `git rev-parse HEAD`.
+2. Review it critically: missing cases, a declared response with no path that produces it,
+   signatures that don't match across tasks, a task that violates `CLAUDE.md`.
+3. Concerns → raise them all at once with the user before starting. None → create a `TodoWrite`
+   list with one entry per task and proceed.
 
-1. Read the plan file under `docs/plans/`.
-2. Review critically against the spec it references. Identify questions or concerns.
-3. If concerns: raise them with the user before starting.
-4. If no concerns: create a `TodoWrite` list with one entry per task and proceed.
+## Step 2 — Execute each task
 
-### Step 2 — Execute tasks (TDD, layer-aware)
+`CLAUDE.md` governs the conventions; don't read the reference skills unless the task points you
+to one.
 
-For each task:
+1. Mark it `in_progress`. Re-read its **Files**, **Interfaces**, **Decisions**, **Casos
+   acordados** and **Guard tests**.
+2. **Stub** — create the SUT with the declared interfaces; bodies
+   `throw new Error('no implementado')` or a neutral value. `pnpm typecheck`.
+3. **Red by assertion** — write one `it` per row (the `it` text IS the case; `P` rows are
+   `@fast-check/jest` properties), run `pnpm test <spec>` and keep the output: every new test must
+   fail **on an assertion**, not on `Cannot find module` or a compile error.
+4. **Green** — implement the minimum; `pnpm test <spec>` passes.
+5. **Guard check** — for each guard test the task lists (concurrency, ownership, authorization,
+   atomicity, anti-enumeration, idempotency): remove the protection for a moment, see the test
+   fail by assertion, restore it. A guard test that stays green protects nothing: rewrite it.
+6. **Refactor**, then the layer check:
+   - domain: no `@nestjs/*` or ORM import (`grep`);
+   - application: hand-written port fakes, no `jest.mock`; one `execute()`; ports injected by
+     their `abstract class`, imported as a value;
+   - infrastructure: its unit specs pass; repositories and wiring are proven by `pnpm test:e2e`;
+   - module: `pnpm typecheck` is not proof of wiring (`useClass` accepts any class) — the
+     context's E2E is.
+7. Mark it `completed`.
 
-1. Mark it `in_progress` in `TodoWrite`.
-2. Re-read the task's **Layer**, **Files**, **Rule codes to honor** and **Casos acordados** subsections.
-3. **Confirmación JIT** (solo tareas con tabla de casos): ask the user «¿Surgió algo que cambie estos casos?» before writing anything, and wait for the updated table if cases changed. A new case gets its row in the plan before it gets a test — never add or reword a case silently.
-4. Follow each step exactly — the plan is decomposed into bite-sized steps for a reason. With a case table: write ALL its tests first (1:1 — the `it` text IS the case; `P` rows become `@fast-check/jest` properties), run them and capture the red output, then implement to green, then refactor.
-5. Run the verifications specified by each step (typically `pnpm test <file>`).
-6. After all steps in the task pass, run the layer-specific check before marking complete:
-   - **Domain task:** `pnpm test <file>.spec.ts` passes; the file has zero `@nestjs/*` or ORM imports (`grep` to confirm).
-   - **Application task:** unit test passes with hand-written port fakes (no `jest.mock`); the use case is `@Injectable()` with one public `execute()` and its `…Input` type in the same file; ports arrive by constructor as their `abstract class`, imported as a value (no `@Inject`, no `import type`).
-   - **Infrastructure task:** its specs pass. Mappers, filters, controllers, guards, DTOs and ACL adapters use unit `*.spec.ts` with no database, run with `pnpm test <file>`. Only TypeORM repositories get a `*.typeorm.repository.e2e-spec.ts`, which runs against PostgreSQL with `pnpm test:e2e`. The controller routes through the use case (not the repo), and each adapter `implements` its port.
-   - **Module task:** `pnpm typecheck` passes and the module binds every port to its adapter with `{ provide: Port, useClass: Adapter }`. Typecheck alone does not prove the binding — `useClass` accepts any class — so the context's E2E must boot and exercise it.
-   - **Domain/application tasks additionally:** run `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"` and record the mutation score for the report.
-7. Mark the task `completed`.
+**Ask only when something changed** — never a routine «¿surgió algo?» before each task (measured:
+3 such confirmations, 0 changes). Triggers:
 
-### Step 3 — Definition of Done (run inline before reporting back)
+- a case the table doesn't cover and that changes behaviour;
+- a case that cannot be implemented as written;
+- a deviation from the plan's interfaces or decisions.
 
-After all tasks finish, run this checklist directly — **do not invoke any external "finishing" skill**:
+Collect them and ask once, with `AskUserQuestion` and your recommendation, unless one blocks the
+task. An approved new case gets its row in the plan before its test.
+
+## Step 3 — Audit the result once
+
+1. **Mutation of the new code:** `pnpm test:mutation:changed <BASE>` mutates only the lines of
+   `domain/` and `application/` changed since the base. For each survivor, propose the case that
+   kills it (all of them in one question); approved cases get their row, a red test and a rerun.
+   An equivalent mutant is justified in the report, not tested.
+2. **Adversarial review:** invoke the `adversarial-review` skill with `<BASE>` and the plan path.
+   Fix critical and important findings (test first, red by assertion); list minor ones.
+3. **Documentation:** update `CLAUDE.md` / `README.md` if a module's description, a public
+   contract or the endpoints table changed, and the spec or plan if a decision changed.
+
+## Step 4 — Definition of Done
 
 ```bash
 pnpm typecheck
@@ -54,59 +91,41 @@ pnpm test:e2e
 pnpm build
 ```
 
-This is the Definition of Done from `CLAUDE.md`, in its order. `pnpm test:e2e` needs PostgreSQL up (`pnpm db:up`) and a migrated test database (`pnpm db:migrate:test` on a fresh clone).
+The DoD from `CLAUDE.md`, in its order. `pnpm test:e2e` needs PostgreSQL up (`pnpm db:up`) and a
+migrated test database (`pnpm db:migrate:test`). Fix every failure before reporting; if one
+reveals a plan gap, stop and tell the user — don't patch around the plan silently.
 
-Address every failure before reporting. If a failure reveals a plan gap, surface it to the user and pause — do not patch silently.
+## Step 5 — Report and suggest a commit (do NOT commit)
 
-### Step 4 — Report and suggest a commit (do NOT commit)
+Report, in the format of `CLAUDE.md`:
 
-Report back with:
+- tasks completed, and any deviation from the plan with its reason;
+- cases ↔ tests (no row without an `it`, no `it` without a row) and the red-by-assertion evidence;
+- guard tests proven to fail without their protection;
+- mutation of the new code;
+- review findings and what was done with each;
+- DoD results;
+- ⚠️ contract changes;
+- the suggested commit message (Conventional Commits, a scope from `commitlint.config.cjs`):
 
-- Tasks completed
-- Test results (`pnpm test`, `pnpm test:e2e`)
-- Casos ↔ suite mapping and RED evidence (case-table tasks), plus the mutation result (domain/application tasks)
-- Files created / modified (grouped by layer)
-- Any deviation from the plan, with reasons
-- Open questions, if any
+> _"Te sugiero hacer un commit de los cambios por implementar el plan `<plan-file>`. Avísame y lo
+> redacto."_
 
-Then **suggest** a commit so the user can decide:
+**Never run `git commit`, `git add` or `git push`.** `.claude/settings.json` denies them; the user
+commits.
 
-> _"Te sugiero hacer un commit de los cambios por implementar el plan `<plan-file>` (Tasks 1–N). Avísame y lo redacto."_
+## When to stop and ask
 
-**Never run `git commit`, `git add` for commit purposes, or `git push` without an explicit instruction in the user's next turn.** A previous authorization is not reused.
+- A test keeps failing after a focused fix attempt.
+- A plan instruction is unclear or contradicts the spec or `CLAUDE.md`.
+- A required dependency is missing.
+- The plan asks for something that breaks the layer rules.
 
-## When to Stop and Ask for Help
-
-**STOP executing immediately when:**
-
-- A test fails repeatedly after a focused fix attempt
-- A plan instruction is unclear or contradicts the spec
-- A required dependency is missing
-- A task asks you to violate the layer rules from `clean-ddd-hexagonal`
-
-**Ask for clarification rather than guessing.**
-
-## When to Revisit Earlier Steps
-
-Return to Step 1 (Review) when:
-
-- The user updates the plan based on your feedback
-- Fundamental approach needs rethinking
-
-Don't force through blockers — stop and ask.
-
-## Remember
-
-- Review the plan critically first
-- Follow plan steps exactly
-- Don't skip the layer-specific checks
-- Don't skip the Definition of Done
-- Stop when blocked, don't guess
-- Never start implementation on `main`/`master` without explicit user consent
-- **Never run `git commit` or `git push` without explicit user instruction — only suggest**
-- Don't skip the JIT confirmation or the captured RED run on case-table tasks.
+Ask rather than guess; don't force through blockers.
 
 ## Integration
 
-- **Upstream skill:** `writing-plans` produces the plan this skill executes.
-- **Companion skills (read, don't invoke):** `clean-ddd-hexagonal` for layer rules, `nestjs-best-practices` for rule codes the plan references, `javascript-typescript-jest` for Jest conventions (`*.spec.ts` / `*.e2e-spec.ts`, layer-aware mocking) — apply them when the plan asks you to write or run tests.
+- **Upstream:** `writing-plans` produces the plan; `brainstorming` produced its spec.
+- **Final review:** `adversarial-review`.
+- **Sister skill:** `subagent-driven-development` — same audit at the end, but one subagent per
+  task; only for large plans of independent tasks.

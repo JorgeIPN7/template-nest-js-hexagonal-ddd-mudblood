@@ -1,12 +1,14 @@
 ---
 name: javascript-typescript-jest
-description: Best practices for writing TypeScript tests with Jest in this NestJS 12 codebase. Use when writing, reviewing, or refactoring any *.spec.ts or *.e2e-spec.ts file. Covers test naming, AAA structure, mocking strategy by hexagonal layer, property-based testing, async patterns, and Supertest E2E. Source: github/awesome-copilot, adapted to this repo's conventions.
+description: What Jest in this NestJS 12 repo needs beyond the conventions CLAUDE.md already fixes — runner and configuration facts, mocking by hexagonal layer with examples, property-based testing with fast-check (arbitraries, fc.scheduler, Faker), async patterns, Supertest E2E and test-design guidelines. Consult it when a test needs one of those; naming, AAA, describe/it language, 1:1 and fixtures live in CLAUDE.md.
 allowed-tools: Read, Grep, Glob
 ---
 
 # Jest Testing for NestJS 12 + TS 6.0
 
-Conventions for writing Jest tests in this repository. Adapted from the upstream `javascript-typescript-jest` skill (github/awesome-copilot) to match this project's `jest.config.mjs`, hexagonal layout, and the rest of the workflow skills.
+What this repository's tests need **beyond** `CLAUDE.md`. Adapted from the upstream `javascript-typescript-jest` skill (github/awesome-copilot) to this project's `jest.config.mjs` and hexagonal layout.
+
+**The conventions every test follows live in `CLAUDE.md` («Code conventions») and are not repeated here:** `*.spec.ts` / `*.e2e-spec.ts`; a `__tests__/` folder that mirrors the module 1:1 (ports exempt, errors and events included); `describe` with the code identifier and nested `describe` per method; `it` in Spanish starting with «debería…»; the three AAA markers in every `it`, with `const act = () => …` for throws; comments in Spanish; file-local helpers at the bottom under `// Helpers`; shared fixtures in `<module>/__tests__/helpers/` or `test/helpers/`. Measured on 2026-09-30: a session with no access to any skill met 100 % of them from `CLAUDE.md` alone. The case table ↔ `it` mapping and the red-by-assertion rule belong to the flows (`CLAUDE.md`, «Modelo de colaboración»).
 
 ## Project Jest configuration (factual baseline)
 
@@ -30,104 +32,7 @@ These are the rules the test runner enforces — match them or your tests won't 
 
 **Why the branches threshold is lower:** SWC instruments the code it generates for `emitDecoratorMetadata` and property defaults, and those synthetic branches are unreachable from a test. Files without decorators (`src/config/**`) reach 88-100 % branches; decorator-heavy files plateau near 50 %. Don't write filler tests chasing that number.
 
-## Test Location
-
-**Tests live in a `__tests__/` folder at the root of their module, replicating the module's internal structure.** The point is portability: moving a module moves its tests with it, in one piece.
-
-```
-src/modules/billing/
-├── domain/
-│   ├── entities/invoice.entity.ts
-│   ├── value-objects/invoice-amount.vo.ts
-│   └── ports/invoice.repository.ts
-├── application/use-cases/
-│   └── issue-invoice.use-case.ts
-├── infrastructure/
-│   ├── http/invoices.controller.ts
-│   └── persistence/invoice.typeorm.repository.ts
-├── billing.module.ts
-└── __tests__/                          ← mirrors the module above
-    ├── domain/
-    │   ├── entities/invoice.entity.spec.ts
-    │   └── value-objects/invoice-amount.vo.spec.ts
-    ├── application/use-cases/
-    │   └── issue-invoice.use-case.spec.ts
-    ├── infrastructure/
-    │   ├── http/invoices.controller.spec.ts
-    │   └── persistence/invoice.typeorm.repository.e2e-spec.ts   ← real PostgreSQL
-    ├── helpers/                        ← module-wide fakes, factories, arbitraries
-    │   └── in-memory-invoice.repository.ts
-    └── billing.e2e-spec.ts             ← E2E ships with its module too
-```
-
-- **One test file per code file (1:1)**, same base name: `invoice.entity.ts` ↔ `invoice.entity.spec.ts`. Ports (`domain/ports/`, abstract classes with no logic) are the one exemption; errors and events do get their spec — they carry messages and data that Stryker mutates.
-- **Import the SUT with a relative path** (`../../../domain/entities/invoice.entity`), never an alias — a relative path survives the module being moved, `@modules/billing/...` does not.
-- **Module-wide helpers** (port fakes, factories, `arbitraries.ts`) live in `<module>/__tests__/helpers/`; **cross-cutting ones** in `test/helpers/`, imported via the `@test/` alias. `test/helpers/` is the only test code outside `src/`. Never copy a builder into several specs.
-- **Module wiring is proven by the E2E suite.** `*.module.ts` is excluded from unit coverage and measured by `test/jest-e2e.config.mjs`: compiling a context module with persistence opens real connections, so `<context>.e2e-spec.ts` is what shows the wiring works.
-- E2E specs use `createTestApp()` from `@test/helpers/create-test-app` to boot the real `AppModule` with the production globals.
-
-## Test Structure
-
-- **One `describe` per unit under test**, named with the code identifier. For classes with multiple methods, nest a `describe` per method:
-
-```ts
-describe('Invoice', () => {
-  describe('issue()', () => {
-    it('debería emitir InvoiceIssued y pasar el estado a "issued"', () => {
-      /* ... */
-    });
-    it('debería lanzar un error si el estado no es "draft"', () => {
-      /* ... */
-    });
-  });
-
-  describe('cancel()', () => {
-    it('debería marcar la factura como cancelada', () => {
-      /* ... */
-    });
-  });
-});
-```
-
-- **`describe` in code, `it` in Spanish.** The `describe` keeps the real identifier (`Invoice`, `issue()`, `PaginationDto`) so the Jest output maps straight back to the symbol. A nested `describe` that groups by scenario rather than by method is a Spanish phrase instead (`describe('con la factura ya emitida')`). The `it` is a Spanish sentence that always starts with **`debería…`**. Prefer `it` over `test`.
-- **Code in English, comments in Spanish.** Variables, helpers and fakes are English; every comment — implementation notes, JSDoc on a fake or a helper — is Spanish, like the rest of the repo's prose (`CLAUDE.md`, «Code in English, prose in Spanish»). The only fixed English markers are `// Arrange`, `// Act`, `// Assert` and `// Helpers`.
-- **Caso acordado ↔ `it`, 1:1.** Cuando la tarea del plan trae tabla «Casos acordados» (modelo
-  de colaboración — `CLAUDE.md`, sección «Modelo de colaboración»),
-  cada caso puntual produce exactamente un `it` cuyo texto es el caso, y cada fila `P` un `it`
-  de propiedad con `@fast-check/jest`. Ningún `it` extra sin fila (o sin adición JIT registrada
-  en el plan); ninguna fila sin `it`. La validación humana es cotejar la tabla contra
-  `pnpm test <file> --verbose` — una comparación de listas, no una lectura de código.
-- **No implementar sin rojo previo.** Con tabla de casos, los tests se escriben primero y se
-  ejecutan para verlos fallar; la salida en rojo es evidencia que el implementador reporta.
-  Implementar antes del rojo invalida el ciclo.
-- **AAA pattern is mandatory: the three comments in every `it`, always.** `// Arrange`, `// Act` and `// Assert`, each on its own line, mark the phases — even when a phase has no code:
-
-```ts
-it('debería calcular el offset a partir de page y limit', () => {
-  // Arrange
-  const dto = plainToInstance(PaginationDto, { page: 3, limit: 50 });
-
-  // Act
-  const skip = dto.skip;
-
-  // Assert
-  expect(skip).toBe(100);
-});
-```
-
-With nothing to prepare, `// Arrange` stays, empty. When the action is what the assertion checks (a throw), capture it in a function under `// Act` and assert on it under `// Assert`. A combined `// Act + Assert` is **not** allowed — about 200 legacy tests still use it or skip `// Arrange` (`docs/backlog.md` #30); don't copy them:
-
-```ts
-it('debería rechazar un importe negativo', () => {
-  // Arrange
-
-  // Act
-  const act = () => OrderAmount.from(-1);
-
-  // Assert
-  expect(act).toThrow(InvalidOrderAmountError);
-});
-```
+## Test design guidelines
 
 - **Order: documentation tests first, edge cases later.** Don't add separator comments like `// Edge cases` — the reading order alone signals the progression.
 - **One precise assertion per `it` when the assertion is the SUT's contract.** Multiple assertions are fine when they describe a single observable outcome.
@@ -346,17 +251,6 @@ describe('Billing (e2e)', () => {
 - Snapshot tests are appropriate for **stable serialized output** (e.g., a public response DTO contract). Avoid them for snapshots that change every refactor.
 - Keep snapshots small — assert the specific shape, not the whole tree.
 - Review snapshot diffs carefully **before approving the PR**. (The implementer subagent never runs `git commit` — they only **suggest** a commit. The user reviews snapshots before deciding.)
-
-## Common Jest matchers (cheat sheet)
-
-- Equality: `toBe` (Object.is), `toEqual` (deep), `toStrictEqual` (deep + type checks).
-- Truthiness: `toBeTruthy`, `toBeFalsy`, `toBeNull`, `toBeDefined`.
-- Numbers: `toBeGreaterThan`, `toBeLessThanOrEqual`, `toBeCloseTo` (floats).
-- Strings: `toMatch(/regex/)`, `toContain('substring')`.
-- Arrays: `toContain`, `toHaveLength`, `toEqual(expect.arrayContaining([...]))`.
-- Objects: `toMatchObject({...})`, `toHaveProperty('a.b', value)`.
-- Exceptions: `toThrow()`, `toThrow(InvoiceNotFoundError)`, `rejects.toThrow(...)`.
-- Mocks: `toHaveBeenCalled`, `toHaveBeenCalledWith(arg1, arg2)`, `toHaveBeenCalledTimes(n)`.
 
 ## Property-based testing (PBT) with fast-check
 
@@ -627,23 +521,16 @@ This is a backend-only NestJS project. **There is no React Testing Library secti
 
 ## Workflow Integration
 
-This skill is consulted by other skills in the chain:
+This skill is consulted, not invoked, and only when a test needs what it covers:
 
-- **`writing-plans`** — every test code block in a plan task uses these conventions: `*.spec.ts`, layer-aware mocking, project path aliases.
-- **`subagent-driven-development` (implementer)** — when writing tests, the implementer follows this skill's mocking-by-layer rules. Tests that violate them fail spec compliance review.
-- **`subagent-driven-development` (code quality reviewer)** — checks that domain tests are pure (no `Test.createTestingModule`), application tests use hand-written fakes (no `jest.mock`), infrastructure tests use realistic doubles or test infra.
-- **`executing-plans`** — runs `pnpm test <file>` (unit) and `pnpm test:e2e` (E2E) per task.
-- **`clean-ddd-hexagonal`** — the layer rules here are the operational consequence of that skill's architectural rules.
-- **Modelo «casos primero»** — la tabla «Casos acordados» de cada tarea del plan es el origen de
-  los `it`; la sección «Test Structure» de este skill define el mapeo 1:1 y la regla de rojo previo.
+- **`express`, `executing-plans`, `subagent-driven-development` implementers** — mocking by layer, PBT, E2E patterns. The flow itself (case table ↔ `it`, stub first, red by assertion, guard tests that must fail without their protection, mutation of the new code) is defined in those skills and in `CLAUDE.md`.
+- **`writing-plans`** — a task that needs a property, a scheduler-driven race or a Supertest E2E points here.
+- **`adversarial-review`** — the reviewer judges tests against `CLAUDE.md`; this skill explains the why behind the mocking rules.
+- **`clean-ddd-hexagonal`** — the layer rules here are the operational consequence of that skill's architecture.
 
 ## Git policy
 
-This skill produces test code, never git operations. The implementer subagent and the reviewer never run `git commit`. If a green test suite feels like a good checkpoint, **suggest** a commit to the user:
-
-> _"Te sugiero hacer un commit de los cambios por <razón, p. ej. cobertura completa de tests para Invoice domain>."_
-
-Then stop and let the user decide.
+This skill produces test code, never git operations. Nobody runs `git commit`: the project's `.claude/settings.json` denies it and the user commits. If a green suite feels like a checkpoint, **suggest** it: _"Te sugiero hacer un commit de los cambios por <razón>."_
 
 ## Source
 
@@ -657,3 +544,4 @@ Adapted from [github/awesome-copilot — javascript-typescript-jest](https://git
 - No-autocommit policy.
 - AAA pattern made mandatory; `it` descriptions in Spanish starting with `debería…`; `// Helpers` block convention.
 - Property-based testing section added: adapted from the user's pasted guidelines, with the `@fast-check/vitest` examples translated to `@fast-check/jest` (1:1 API parity), plus the `FakerBuilder` snippet for `@faker-js/faker` integration ([reference](https://fast-check.dev/blog/2024/07/18/integrating-faker-with-fast-check/)).
+- 2026-09-30: conventions already fixed by `CLAUDE.md` removed (naming, location, AAA, describe/it, comments, 1:1), plus the generic matchers cheat sheet; the skill keeps what `CLAUDE.md` does not cover (decision D14 of the skills experiment, `docs/development-workflows.md`).

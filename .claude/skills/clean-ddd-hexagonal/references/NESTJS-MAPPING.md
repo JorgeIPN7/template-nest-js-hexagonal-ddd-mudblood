@@ -471,7 +471,7 @@ export class InvoiceDomainExceptionFilter implements ExceptionFilter {
 
 **Property-based testing (PBT) con `fast-check` + `@fast-check/jest`** — los invariantes de dominio (importe siempre positivo, `issue` solo desde `draft`) y el round-trip del mapper en infraestructura son el caso ideal. Las arbitrarias se **construyen**, nunca se `.filter()`-an sobre `fc.string()`. Ver la subsección «Property-based testing» del skill `javascript-typescript-jest`.
 
-**La mutación es gate**: `pnpm test:mutation --mutate "src/modules/<context>/…"` y `thresholds.break` en `stryker.config.mjs`. Un módulo nuevo sin casos no entra en silencio.
+**La mutación es gate**: `thresholds.break` en `stryker.config.mjs` y job propio en CI. Un módulo nuevo sin casos no entra en silencio. Para auditar solo lo que cambió una rama, `pnpm test:mutation:changed [base]`; para un módulo entero, `pnpm test:mutation --mutate "src/modules/<context>/{domain,application}/**/*.ts"`.
 
 ## 10. Composición entre contextos
 

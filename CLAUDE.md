@@ -31,6 +31,8 @@ pnpm lint           # eslint --fix
 pnpm format:check   # prettier --check
 pnpm test           # unit, *.spec.ts under src/ (Jest with --experimental-vm-modules — see above)
 pnpm test:e2e       # *.e2e-spec.ts via ./test/jest-e2e.config.mjs, same flag (needs the DB up)
+pnpm test:mutation  # Stryker over domain/ + application/ of every module (CI gate, break: 85)
+pnpm test:mutation:changed [base]   # only what changed since base (default: merge-base with main)
 pnpm build          # nest build (SWC)
 pnpm start:dev      # watch mode
 
@@ -56,6 +58,13 @@ When a commit seems appropriate, suggest it and stop:
 > _"Te sugiero hacer un commit de los cambios por &lt;razón&gt;. Avísame y lo redacto."_
 
 This applies to subagents too.
+
+**Enforced, not only written (since 2026-09-30).** `.claude/settings.json` denies, to every agent
+(subagents and Workflow agents included), each git subcommand that writes history, moves `HEAD`
+or discards work — plain and with `-C <dir>`; `src/__tests__/claude-settings.spec.ts` pins the
+list. Measured with Claude Code 2.1.283: `cd <dir> && git commit` is blocked too; `status`,
+`log` and `merge-base` stay allowed. A guardrail, not a sandbox (`bash -c "…"` gets past
+it), so the rule above still governs. **The user commits from their own terminal.**
 
 ## Formato de respuesta — cómo el usuario quiere que se le responda
 
@@ -115,31 +124,36 @@ Cuando la respuesta sea para otro equipo, envuélvela entre `====RESPUESTA PARA 
 `===FIN RESPUESTA PARA <EQUIPO>===`, y deja fuera de esos marcadores lo que sea solo para el
 usuario.
 
-## Skills
+## Skills and development flows
 
-Seven skills live in `.claude/skills/`. Four form a workflow chain; three are references you **read**, never invoke as workflow steps.
+Nine skills live in `.claude/skills/`. **Pick the level of the change before touching code**; the
+full guide — task types, steps, what the user does at each one, artefacts, cost and the measured
+evidence — is [`docs/development-workflows.md`](docs/development-workflows.md).
 
-**Chain — follow it in order for any non-trivial change:**
+| Level                              | When                                                                                                                                                                                 | Flow                                                                                                                                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Trivial**                        | typo, docs, config, dependency bump, a one-line bug with an obvious test                                                                                                             | No skill: the change, its test if it has behaviour, the DoD                                                                                                                                                  |
+| **Express** (default for features) | a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks, at most an additive migration                                                                          | `/express`: ≤ 2 rounds of grouped questions → spec ≤ 150 lines with the case table and the contract → TDD, red by assertion → `pnpm test:mutation:changed` → `adversarial-review` → DoD                      |
+| **Full**                           | a new bounded context; a change across contexts (facades, shared ports); a destructive migration; auth, credentials, tokens or permissions; > ~10 tasks; work someone else continues | `/brainstorming` → `writing-plans` (plan WITHOUT production code) → `executing-plans` in a new session, or `subagent-driven-development` only for ~10+ mostly independent tasks → `adversarial-review` → DoD |
 
-```
-brainstorming  →  writing-plans  →  subagent-driven-development  (recommended)
-   (spec)           (plan)      └→  executing-plans              (inline alternative)
-```
+Doubt between trivial and express → express. Doubt between express and full → ask the user, with
+your recommendation: the full flow costs several times more (measured: 52.54 USD against 11.82 for
+the same feature) and that is their call.
 
-| Skill                         | When                                                                                                                                                                                   |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `brainstorming`               | Before any creative work. Produces a spec in `docs/specs/`. Terminal state is invoking `writing-plans`.                                                                                |
-| `writing-plans`               | Turns a spec into a task-by-task plan in `docs/plans/`.                                                                                                                                |
-| `subagent-driven-development` | Executes a plan by dispatching a fresh subagent per task, with spec-compliance then code-quality review. Preferred.                                                                    |
-| `executing-plans`             | Executes the same plan inline in your own context. Both run in the current session — the difference is subagents vs inline, not which session. Use for small or tightly coupled plans. |
+**Every flow runs two checks**, because each one caught a real defect on 2026-09-30:
 
-**Reference skills (consult, don't invoke):**
+- **Every declared response must be producible today** — the contract table names the input and
+  code path behind each status code (see «Endpoint documentation»).
+- **Every guard test must fail without its protection** — concurrency, ownership, authorization,
+  atomicity, anti-enumeration, idempotency: remove the protection for a moment, see it fail by
+  assertion, restore it (see «A test must fail without the fix»).
 
-| Skill                        | Authority over                                                                                                                     |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `clean-ddd-hexagonal`        | Folder layout, layer boundaries, ports/adapters, aggregates. `references/NESTJS-MAPPING.md` is the source of truth for code shape. |
-| `nestjs-best-practices`      | 45 rule codes (`arch-`, `di-`, `security-`, `perf-`, …). Plans cite them per task; reviews check against them.                     |
-| `javascript-typescript-jest` | Test naming, AAA structure, layer-aware mocking, property-based testing, Supertest E2E.                                            |
+Each skill's own description says when it applies; they are loaded in every session, so this
+file doesn't repeat them. The three reference skills — `clean-ddd-hexagonal` (its
+`references/NESTJS-MAPPING.md` is the source of truth for code shape), `nestjs-best-practices`
+(45 rule codes) and `javascript-typescript-jest` (mocking by layer, property-based testing,
+Supertest E2E) — are **read, never invoked**, and only when the work needs them: this file is
+enough for conventions (a session with no skills met 100 % of them).
 
 ## Modelo de colaboración — casos primero, TDD después, mutación como auditor
 
@@ -147,15 +161,20 @@ Esta sección es la definición vigente del modelo. La spec donde nació
 (`2026-08-04-roadmap-and-collaboration-model-design.md`) se quedó en el historial anterior a la
 reconstrucción del 2026-08-08 y no existe en el repo (backlog #29). Tres fases:
 
-1. **Contrato:** al escribir el plan, humano e IA acuerdan por preguntas/respuestas la tabla
-   «Casos acordados» de cada tarea con lógica en `domain/` o `application/` (casos puntuales +
-   filas `P` de propiedad con `fast-check`).
-2. **Ejecución (IA):** confirmación JIT → tests en ROJO 1:1 con la tabla (el texto del `it` es
-   el caso) → implementar a verde → refactor. Prohibido implementar sin rojo previo; un caso
-   nuevo se consulta, nunca se añade en silencio.
-3. **Validación (humano):** cotejar tabla ↔ suite verde, score de mutación
-   (`pnpm test:mutation --mutate "src/modules/<context>/…"` — el scope al módulo lo da el
-   flag; a secas muta todos los módulos) y DoD — sin leer el diff línea a línea.
+1. **Contrato:** la tabla «Casos acordados» de cada pieza con lógica en `domain/` o
+   `application/` —casos puntuales más filas `P` de propiedad con `fast-check`— vive en la spec
+   exprés o en cada tarea del plan. La propone la IA y el usuario la aprueba en bloque, con
+   preguntas agrupadas.
+2. **Ejecución (IA):** stub del SUT → tests en ROJO 1:1 con la tabla (el texto del `it` es el
+   caso), **fallando por aserción** y no por «Cannot find module» → implementar a verde →
+   refactor. Prohibido implementar sin rojo previo. Un caso nuevo se consulta —agrupado—, nunca
+   se añade en silencio; no hay confirmación rutinaria antes de cada tarea (medido: 3
+   confirmaciones, 0 cambios).
+3. **Validación:** la mutación del código nuevo (`pnpm test:mutation:changed <base>`), la
+   revisión adversarial (`adversarial-review`) y la DoD. El humano coteja tabla ↔ suite verde, el
+   score y el informe de la revisión, sin leer el diff línea a línea. Para medir un módulo
+   entero: `pnpm test:mutation --mutate "src/modules/<context>/{domain,application}/**/*.ts"`; a
+   secas muta todos.
 
 **La mutación es gate, no sugerencia** (desde 2026-08-06, backlog #9): `thresholds.break: 85`
 en `stryker.config.mjs` y job `mutation` propio en `ci.yml`. El 85 sale del baseline medido
@@ -285,6 +304,13 @@ defect as an undeclared one: _the published contract describes something the ser
 - **400 only if the operation takes `path`, `query` or `cookie` parameters, or a body.** With no
   input there is nothing to reject. Documented headers don't count.
 - **`throttled: false` on controllers with `@SkipThrottle()`.** `HealthController` never returns 429.
+- **Every other status is on you: name the path that produces it.** The guard checks 400 and 429
+  both ways and demands 401/403 where `@Auth` attaches them; whether a 404, a 409 or a 403 outside
+  roles is reachable depends on the code. The
+  spec's contract table gives each declared status the input or state and the branch that returns
+  it — no path, no declaration; a defence for a future state is a code comment. Measured on
+  2026-09-30: a 409 no request could produce went through the contract guard and was caught only
+  by the adversarial review.
 - **Bodyless responses** (204, 304) need no example.
 - **Error examples come from `buildErrorExample()`**, never hand-written. It derives `error` from
   the status, which is where every divergence appeared during the migration: the published
@@ -458,14 +484,14 @@ Related: Zod's `.default()` only fires on `undefined`, so a variable that is pre
   `import()` is the one form the rule doesn't see. Spec: `src/__tests__/eslint-config.spec.ts`.
 - **Type-only imports are explicit** — `consistent-type-imports` with inline style: `import { ValidationPipe, type INestApplication }`.
 - **Tests live in a `__tests__/` folder at the root of each module**, replicating the module's internal structure, so moving a module moves its tests with it. Unit specs are `*.spec.ts`, E2E are `*.e2e-spec.ts`, and both ship inside the module. Only shared helpers live outside `src/`, in `test/helpers/` (imported via `@test/`).
-- **`describe` in code, `it` in Spanish.** The root `describe` keeps the real identifier; a nested `describe` is named after the method it groups (`describe('cancel()')`), or is a Spanish phrase when it groups by scenario rather than by method. Every `it` is a Spanish sentence starting with `debería…`. Code, variables and helpers stay in English; comments are Spanish.
+- **`describe` in code, `it` in Spanish.** The root `describe` keeps the real identifier; a nested `describe` is named after the method it groups (`describe('cancel()')`), or is a Spanish phrase when it groups by scenario rather than by method. Every `it` is a Spanish sentence starting with `debería…`. Code, variables and helpers stay in English; comments are Spanish. File-local helpers go at the bottom of the spec, under a `// Helpers` line.
 - **AAA: the three comments in every `it`, always.** `// Arrange`, `// Act` and `// Assert`, each on its own line, even when a phase has no code — with nothing to prepare, `// Arrange` stays, empty. When the action is what the assertion checks (a throw), capture it under `// Act` (`const act = () => OrderAmount.from(-1);`) and assert under `// Assert` (`expect(act).toThrow(InvalidOrderAmountError);`): a combined `// Act + Assert` is not allowed. About 200 legacy tests predate this rule (heuristic count, backlog #30).
 - **One spec per source file (1:1)**, same base name and same relative path inside `__tests__/`. Don't group several SUTs in one file. Ports (`domain/ports/`, abstract classes with no logic) are exempt; errors and events are not — they carry messages and data that Stryker mutates (4 legacy files lack theirs, backlog #30).
 - **Mocking by layer:** no mocks in `domain/`; hand-written port fakes in `application/` (see `__tests__/helpers/in-memory-user.repository.ts`), never `jest.mock`; repositories are tested against real PostgreSQL in the E2E suite. Modules, TypeORM repositories, `data-source.ts`, seeds, the outbox CLI and migrations are excluded from _unit_ coverage on purpose, and `test/jest-e2e.config.mjs` measures them with its own threshold — **except `src/database/migrations/**`, which no suite measures**. That exception is deliberate and now written down: they are one-shot DDL run by the CLI, and the fact that nothing exercises them directly is open debt with its own entry (`docs/backlog.md` #17), not something the E2E config quietly covers. Until 2026-08-19 this sentence claimed the E2E suite measured "exactly those files" while its list held two of the six patterns, so four groups were measured by neither.
 - **Shared fixtures:** module-wide helpers go in `<module>/__tests__/helpers/` (e.g. `user.factory.ts`, `arbitraries.ts`); cross-cutting ones in `test/helpers/` (e.g. `config.factory.ts`), imported via `@test/`. Never copy a builder into several specs.
 - **Property-based testing with `fast-check`** for value objects, pure functions and mapping round-trips. Arbitraries are **constructed**, never `.filter()`-ed out of `fc.string()`.
 - **The E2E suite runs against `nest_base_template_test`**, not the dev database — `test/setup-env.ts` forces `NODE_ENV=test` and the database name before the `AppModule` boots. The `TRUNCATE` in each `beforeEach` is required for the suite to be repeatable.
-- **A test must fail without the fix.** Before trusting a regression test, verify it: several tests here looked like they covered a defect and passed either way (`isHealthPath`'s substring case picked the one URL that dodged the bug; the concurrent-POST test was caught by the pre-check, never reaching the `23505` translation).
+- **A test must fail without the fix.** Before trusting a regression test, verify it: several tests here looked like they covered a defect and passed either way (`isHealthPath`'s substring case picked the one URL that dodged the bug; the concurrent-POST test was caught by the pre-check, never reaching the `23505` translation; the first E2E of simultaneous order cancellations stayed green under `REPEATABLE READ`, the regression its own comment said it watched). For a **guard test** — concurrency, ownership, authorization, atomicity, anti-enumeration, idempotency — the check is mandatory: remove the protection for a moment, see it fail by assertion, restore it.
 - Commit messages follow Conventional Commits with a **closed scope list** — see `commitlint.config.cjs` before inventing a scope. Adding a bounded context means adding its scope there.
 - **Pre-commit scans secrets.** lint-staged runs `secretlint` (preset recommend, `enableIDScanRule: true`) over **every** staged file via the catch-all `"*": "secretlint --maskSecrets"` entry — a detected secret blocks the commit before it enters history. Config is `.secretlintrc.json`; its contract lives in `src/__tests__/secretlint.spec.ts` (Tabla S, backlog #6).
 
