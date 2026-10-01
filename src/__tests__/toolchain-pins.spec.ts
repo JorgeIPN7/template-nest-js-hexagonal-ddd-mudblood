@@ -248,4 +248,21 @@ describe('toolchain pins', () => {
       expect(resolved).toBe(declared);
     });
   });
+
+  describe('jest-environment-node', () => {
+    // Es dependencia directa para que el `testEnvironment: 'node'` de `jest.config.mjs` resuelva
+    // desde la raíz también cuando Stryker corre sin el shim de pnpm (`mutate-changed.mjs`), que
+    // antes añadía `NODE_PATH` a mano. Se publica con el monorepo de Jest: si los dos literales
+    // divergen, la suite correría con un entorno de otra versión que la de su runner.
+    it('debería declarar la misma versión que jest', () => {
+      // Arrange
+      const { jest } = packageJson.devDependencies;
+
+      // Act
+      const environment = packageJson.devDependencies['jest-environment-node'];
+
+      // Assert
+      expect(environment).toBe(jest);
+    });
+  });
 });
