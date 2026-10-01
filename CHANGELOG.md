@@ -364,6 +364,18 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **La documentación de `ADMIN_*` ya no dice que la app no las mira, y avisa del `#` y del `$`**
+  (2026-10-01). `.env.example` y el README decían que solo las lee el seed (el comentario de
+  `env.schema.ts` lo sigue diciendo hasta #34); las usa solo él, pero las valida todo proceso que
+  carga la configuración, y un valor inválido impide arrancar la app. Ahora avisan de que dotenv
+  corta en el `#` un valor sin comillas (`CLAVE=abc#123` vale `abc`, medido con dotenv 18): con
+  una contraseña así, o el seed guardaba la versión cortada y el login respondía 401 sin pista de
+  por qué, o, si el `#` caía antes del carácter 12, ni el seed ni la app arrancaban con un «too
+  small» que no cuadraba con lo escrito. Docker Compose no corta ese `#`, y un `DB_PASSWORD` así
+  daba `28P01`. El `$` lo expande la app y no los CLI (#36). `SECURITY.md` documenta además la
+  política de contraseña —12 a 128 caracteres, sin composición— y sus dos límites frente a NIST
+  800-63B-4, y su práctica 2 ya no manda borrar solo `ADMIN_PASSWORD`, que dejaba a
+  `ADMIN_EMAIL` sola e impedía arrancar.
 - **Arreglos de las revisiones de los PR #90 y #91** (2026-10-01). Dos `/code-review`, 30
   hallazgos y unos 25 menores; el detalle de cada uno, con su medición, vive en el código y en las
   docs que cambia. Por área:
@@ -704,7 +716,10 @@ que puede hacer al respecto quien despliegue:
 - El rate limiting cuenta en memoria, por réplica, y por `req.ip` (#3).
 - No hay bloqueo de cuenta por identidad en el login.
 - Las migraciones que mueven datos no las ejercita ninguna prueba (#17).
-- La base de datos de test hay que migrarla a mano y nada lo documenta (#18).
+- El seed del primer admin acepta credenciales que el login rechaza (#34).
+- No hay lista de contraseñas prohibidas: `123456789012` es una contraseña válida (#35).
+- Un `$` en el `.env` lo expande la app y no los CLI: cada proceso puede ver un valor distinto
+  (#36).
 
 ---
 

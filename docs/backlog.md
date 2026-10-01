@@ -1483,6 +1483,114 @@ encuentra un solo pedido y un solo `OrderPlaced`, y el contrato documenta la cab
 
 ---
 
+## 34. El seed del primer admin acepta credenciales que el login rechaza
+
+**Qué pasa.** `ADMIN_PASSWORD` se valida con `z.string().min(12)` (`src/config/env.schema.ts`):
+sin máximo, y contando puntos de código. `LoginDto` aplica `@MinLength(12)` y `@MaxLength(128)`
+con class-validator, que además no cuenta los selectores de variación U+FE0E/U+FE0F. Medido el
+2026-10-01 con el zod 4.6.5 y el class-validator 0.15.1 del árbol: `'a'×129` y `'❤️'×6` pasan el
+esquema y el login responde 400. Con `ADMIN_EMAIL` pasa lo mismo: `z.email()` acepta una parte
+local de 65 caracteres que `@IsEmail` rechaza. En los dos casos el seed —el rescate documentado—
+crea o promueve un admin que no puede entrar. La gravedad es baja, porque el 400 dice qué pasa.
+De paso: ningún test fija hoy la longitud de la contraseña, y el 12 y el 128 están escritos a mano
+en cuatro archivos. Cada DTO los repite en `@ApiProperty`, en el decorador de class-validator y
+en la descripción; además están el ejemplo del 400 de `auth.controller.ts` y `env.schema.ts`.
+
+**Criterio ya decidido.** Va por el flujo completo: toca la configuración de una credencial.
+
+- La constante `PASSWORD_LENGTH = { min: 12, max: 128 }` vive en un archivo nuevo,
+  `src/config/password-policy.ts`, que solo importa class-validator. No va en `auth.config.ts`:
+  ese archivo importa `env.schema.ts`, y el ciclo revienta al cargar el seed, que importa
+  `auth.config` primero (medido con el emit de SWC y con el de tsc; con SWC el error es
+  `Cannot access 'PASSWORD_LENGTH' before initialization`).
+- `ADMIN_PASSWORD` y `ADMIN_EMAIL` se validan en `env.schema.ts` con las mismas funciones de
+  class-validator que los DTO (`minLength`/`maxLength`, `isEmail`), y los DTO leen la constante.
+  Es el patrón de `TRUST_PROXY`, que delega en la librería que lo consume. La matriz de fronteras
+  lo permite (`config` → class-validator y `auth/infrastructure` → `@config/*`, comprobado con el
+  linter). La constante alimenta también `@ApiProperty` y la descripción: si solo cambian los
+  decoradores, el contrato publicado se desincroniza sin que nada se ponga en rojo.
+- Alinear el seed con class-validator mantiene, a sabiendas, su forma de contar: no cuenta los
+  selectores de variación, y NIST exige contar cada punto de código. Corregirlo cambiaría qué
+  contraseñas acepta el alta, y eso es decisión de #35.
+- El login conserva el mínimo, así que el contrato publicado no cambia. Un comentario junto a la
+  constante avisa de que subir el mínimo exige antes quitárselo al login: no hay endpoint para
+  cambiar la contraseña, y las cuentas antiguas recibirían 400 para siempre.
+- ⚠️ Cambio para el operador: un valor que hoy deja arrancar y pase a ser inválido impide arrancar
+  la app, las migraciones que cargan `data-source.ts` y `outbox:relay`. Lleva su entrada ⚠️ en
+  el CHANGELOG.
+- Se corrigen a la vez: el comentario de `env.schema.ts` que dice «nunca la app»; las notas de «el
+  seed todavía no lo comprueba» de `.env.example` y del README; en `SECURITY.md`, el «solo el
+  mínimo» de la viñeta de la política y la viñeta de «Otras, menores»; y la línea de Known issues
+  del CHANGELOG.
+
+**Cómo se sabrá que está hecho.** Una fila de propiedad: toda contraseña que acepta
+`ADMIN_PASSWORD` la aceptan `LoginDto` y `RegisterAccountDto`. Filas de `env.schema.spec.ts` que
+rechazan `'a'×129`, `'❤️'×6` y la parte local de 65. Un E2E del seed que falla sin escribir nada
+con un valor que el login rechazaría. Las tres, en rojo por aserción sin el arreglo.
+
+---
+
+## 35. No hay lista de contraseñas prohibidas
+
+**Qué pasa.** El alta acepta cualquier cadena de 12 a 128 caracteres: `123456789012`,
+`aaaaaaaaaaaa` y `Password123!` son válidas (medido el 2026-10-01 con las funciones de
+class-validator que aplica `RegisterAccountDto`). NIST SP 800-63B-4 §3.1.1.2 exige (SHALL)
+comparar la contraseña nueva con una lista de contraseñas comunes, esperables o comprometidas, y
+OWASP ASVS 5.0 la pide desde el nivel 1 (6.2.4: al menos las 3 000 más comunes que cumplan la
+política). Contra el ataque en línea es el control que más aporta, y la longitud sola no lo
+sustituye: con 15 caracteres, `123456789012345` pasaría igual.
+
+**Criterio propuesto, pendiente de decisión.** Es una feature de auth: flujo completo.
+
+- Se comprueba al fijar la contraseña (alta y seed), nunca en el login.
+- Una lista local empaquetada con el código y filtrada a la política (12 o más): ASVS 6.2.4 pide
+  las que cumplan la política, y NIST advierte que una lista enorme aporta poco. Comprobar contra
+  un conjunto de contraseñas filtradas (ASVS 6.2.12, nivel 2) queda fuera de la propuesta: con un
+  servicio externo mete una dependencia de red en el alta, y con una copia local, un artefacto de
+  gran tamaño que mantener. Si se quiere, lo decide el mantenedor.
+- El rechazo es un 400 que dice el motivo: NIST exige explicarlo.
+- En el mismo diseño se deciden dos cosas que hoy no se tocan. Subir el mínimo a 15, que es lo
+  que pide NIST cuando la contraseña es el único factor, exige antes que el login deje de aplicar
+  el mínimo (#34). Y la normalización NFC: NIST la recomienda (SHOULD), pero ASVS 6.2.8 (nivel 1)
+  pide verificar la contraseña tal como llega, sin modificarla. Hay que decidir cuál pesa más, y
+  sabiendo que introducirla más tarde invalida los hashes de las contraseñas que no estuvieran ya
+  normalizadas.
+
+**Cómo se sabrá que está hecho.** Un E2E registra `123456789012` y recibe 400 con el motivo, el
+contrato publicado declara ese 400, y ni `SECURITY.md` (la tabla de lo que el repositorio no hace
+y la viñeta de la política de contraseña) ni el CHANGELOG la listan ya como pendiente.
+
+---
+
+## 36. Un `$` en el `.env` vale distinto para la app que para los CLI
+
+**Qué pasa.** La app carga el `.env` con `expandVariables: true` (`src/app.module.ts`), así que
+dotenv-expand sustituye `$NOMBRE` por el valor de otra variable, también entre comillas simples o
+dobles. `src/database/data-source.ts`, que cargan las migraciones, el seed y `outbox:relay`, usa
+dotenv sin expandir. Medido el 2026-10-01 con el dotenv 18.0.3 y el dotenv-expand 13.0.0 de
+`@nestjs/config` frente al dotenv 18.0.4 de la raíz: `Pa$word-larguisima`, con o sin comillas
+simples, vale `Pa-larguisima` para la app y el literal para los CLI. Docker Compose, que lee las
+`DB_*` del mismo archivo, interpola el `$` salvo entre comillas simples. Ninguna forma de escribir
+el valor pone de acuerdo a los tres. Un `DB_PASSWORD` con `$` conecta en unos procesos y da
+`28P01` en otros; un `ADMIN_PASSWORD` con `$` puede dejar la app sin arrancar («too small») con
+un seed que funciona. Un valor que llega por el entorno del proceso y no está en el `.env` no lo
+expande ninguno, y por eso la documentación manda los valores con `$` por ahí. Ojo con el caso
+intermedio, también medido: si la variable está en el entorno y en el `.env` con el mismo valor,
+`dotenv-expand` la expande igual; solo respeta el entorno cuando los dos valores difieren.
+
+**Criterio propuesto, pendiente de decisión.** Quitar `expandVariables: true`. Nada del repositorio
+usa la expansión (`.env.example` no tiene ninguna referencia `${…}`), y con eso la app y los CLI
+leerían el `.env` igual; Compose seguiría interpolando el `$` sin comillas simples, cosa que basta
+con documentar. La alternativa —expandir también en `data-source.ts`— mantiene una función que
+nadie usa y deja el `$` igual de inutilizable. Como un derivado puede estar usando `${…}` en su
+`.env`, es un cambio incompatible que va con su ⚠️ en el CHANGELOG, y lo decide el mantenedor.
+
+**Cómo se sabrá que está hecho.** Un test carga el mismo `.env` con el cargador de la app y con el
+de `data-source.ts` y obtiene los mismos valores para uno que lleva `$`, y la advertencia del `$`
+desaparece de la cabecera de `.env.example`, del README y de `SECURITY.md`.
+
+---
+
 ## Cerrado al verificarlo
 
 - **`operationIdFactory` colisionando entre controllers con métodos homónimos.** No estaba latente:

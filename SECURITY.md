@@ -114,6 +114,19 @@ Detalles que importan y que no se ven en la tabla:
   y el seed del primer admin ([`seed-admin.ts`](./src/database/seeds/seed-admin.ts)).
 - **La credencial vive en su propia tabla.** Desde el ciclo 4, el hash está en `auth_credentials`,
   propiedad del bounded context `auth`; `users` (el perfil) ya no sabe qué es una contraseña.
+- **Contraseña de 12 a 128 caracteres, sin reglas de composición.** Lo aplican
+  [`register-account.dto.ts`](./src/modules/auth/infrastructure/http/dto/register-account.dto.ts)
+  y [`login.dto.ts`](./src/modules/auth/infrastructure/http/dto/login.dto.ts); `ADMIN_PASSWORD`,
+  en [`env.schema.ts`](./src/config/env.schema.ts), solo el mínimo (backlog #34). No se exige
+  mayúscula, número ni símbolo a propósito: NIST SP 800-63B-4 (§3.1.1.2) y OWASP ASVS 5.0 (6.2.5)
+  lo prohíben, porque la gente cumple esas reglas de forma previsible (`password` →
+  `Password1!`). Dos límites, dichos claro: para una contraseña que es el **único** factor, como
+  aquí, NIST 800-63B-4 pide 15 caracteres; y no hay lista de contraseñas prohibidas, que NIST
+  exige y ASVS 5.0 pide desde el nivel 1 (6.2.4), así que `123456789012` es válida
+  ([backlog #35](./docs/backlog.md)). El 12 no sale de un cálculo: queda por encima del mínimo de
+  ASVS 5.0 (8) y por debajo de los 15 que pide NIST para un solo factor, que son también los que
+  ASVS 6.2.1 recomienda con fuerza. Un derivado con MFA puede bajarlo a 8, y uno regulado sigue
+  antes a su regulador.
 - **`JWT_SECRET` no tiene default fuera de `development`/`test`.** Un `.refine()` de
   [`src/config/env.schema.ts`](./src/config/env.schema.ts) impide que `staging`/`production`
   arranquen sin él, con mínimo de 32 caracteres. En `development`/`test` cae a un secreto de
@@ -242,6 +255,18 @@ saberlo antes de desplegarla.
 - **Dos huecos latentes en la matriz de fronteras** ([backlog #19](./docs/backlog.md)): la lista
   negra de imports del kernel de dominio deja pasar `rxjs`, `express` y `class-transformer`. Es una
   regla de arquitectura que no se aplica del todo, no una vulnerabilidad — el impacto hoy es cero.
+- **El seed del primer admin acepta credenciales que el login rechaza**
+  ([backlog #34](./docs/backlog.md)). Un `ADMIN_PASSWORD` de más de 128 caracteres o con emojis
+  como `❤️` (class-validator no cuenta su selector de variación), o un `ADMIN_EMAIL` con más de 64
+  caracteres antes de la `@`, pasan la validación del entorno: el seed crea el admin y el login le
+  responde 400. El mensaje dice qué pasa; no es una puerta abierta, es un rescate que no rescata.
+  Hasta que se cierre, usa valores dentro de esos límites.
+- **Un `$` en el `.env` no vale lo mismo para todos los procesos** ([backlog #36](./docs/backlog.md)).
+  La app lo expande como una referencia a otra variable (`expandVariables: true` en
+  [`app.module.ts`](./src/app.module.ts)) y los CLI que cargan
+  [`data-source.ts`](./src/database/data-source.ts) —migraciones, seed, relay— no. Un
+  `DB_PASSWORD` con `$` conecta en unos y falla en otros. Pasa esos valores por el entorno del
+  proceso, sin escribirlos además en el `.env`: así ninguno de los dos los expande.
 
 ---
 
@@ -255,6 +280,7 @@ Dicho explícitamente para que nadie lo dé por hecho:
 | MFA / 2FA                                 | Fuera del alcance de una plantilla base                                   |
 | Verificación de email en el alta          | Fuera del alcance                                                         |
 | Recuperación de contraseña                | Fuera del alcance                                                         |
+| Lista de contraseñas prohibidas           | Pendiente, con criterio propuesto: [backlog #35](./docs/backlog.md)       |
 | Auditoría de accesos (quién vio qué)      | Hay logs estructurados con request-id, no un log de auditoría             |
 | Cifrado de datos en reposo a nivel de app | Se delega en el motor / el proveedor de la base                           |
 | Escaneo SAST del código propio            | Los gates cubren secretos, dependencias e imagen — no análisis del código |
@@ -267,8 +293,11 @@ Dicho explícitamente para que nadie lo dé por hecho:
 1. **Genera un `JWT_SECRET` propio** de al menos 32 caracteres aleatorios. Fuera de
    `development`/`test` la app no arranca sin él, pero en `development` el default inseguro sí se
    usa: no promuevas un `.env` de desarrollo.
-2. **Ejecuta `pnpm seed:admin` una vez** y borra `ADMIN_PASSWORD` del entorno después. El seed es
-   idempotente y es el rescate documentado si el único admin se desactiva por error.
+2. **Ejecuta `pnpm seed:admin` una vez** y después borra del entorno `ADMIN_EMAIL` y
+   `ADMIN_PASSWORD`, las dos: si queda solo una, ni la app ni las migraciones arrancan. El seed es
+   idempotente y es el rescate documentado si el único admin se desactiva por error. Si la
+   contraseña lleva `#`, va entre comillas simples en el `.env`: sin ellas dotenv la corta en el
+   `#` (ver la cabecera de [`.env.example`](./.env.example)).
 3. **Nunca commitees el `.env`.** Está en `.gitignore`, y secretlint bloquea el commit si algo se
    cuela — pero `git commit --no-verify` salta el hook: la red real es gitleaks en CI.
 4. **Deja `DOCS_ENABLED=false`** en cualquier entorno expuesto, o protégelo con

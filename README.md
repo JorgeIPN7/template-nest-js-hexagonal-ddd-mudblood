@@ -165,7 +165,7 @@ Las 8 líneas comentadas de `.env.example` están comentadas **a propósito**. A
 | --------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `JWT_SECRET`                      | despliegues a `staging`/`production` (**obligatoria ahí**), o quieras quitar el aviso en local | mínimo 32 caracteres — `openssl rand -base64 48`                         |
 | `JWT_EXPIRES_IN_S`                | quieras cambiar la hora por defecto del token                                                  | entero positivo, en segundos                                             |
-| `ADMIN_EMAIL` · `ADMIN_PASSWORD`  | vayas a correr [`pnpm seed:admin`](#el-primer-admin)                                           | **las dos o ninguna**; la contraseña, 12 caracteres mínimo               |
+| `ADMIN_EMAIL` · `ADMIN_PASSWORD`  | vayas a correr [`pnpm seed:admin`](#el-primer-admin)                                           | **las dos o ninguna**; la contraseña, entre 12 y 128 caracteres          |
 | `DOCS_USERNAME` · `DOCS_PASSWORD` | quieras Basic Auth sobre la documentación                                                      | **las dos o ninguna**                                                    |
 | `DB_SSL_CA`                       | conectes a RDS verificando el certificado                                                      | una ruta que exista, o el arranque falla con `ENOENT`                    |
 | `DB_DATABASE_TEST`                | hayas cambiado el nombre de la base de tests                                                   | que esa base exista — ver [personalizar](#personalizar-la-base-de-datos) |
@@ -173,6 +173,8 @@ Las 8 líneas comentadas de `.env.example` están comentadas **a propósito**. A
 > **⚠️ `VAR=` no es lo mismo que omitir `VAR`.** El default solo se aplica cuando la variable **no está**. `PORT=` es un error de configuración y la app se niega a arrancar — deliberado: `Number('')` es `0`, y un `SHUTDOWN_TIMEOUT_MS=` silenciosamente convertido en cero hacía que cada despliegue matara el proceso antes de terminar el cierre ordenado. Para usar el valor por defecto, comenta la línea o bórrala.
 >
 > Por eso esas 8 van comentadas y no en blanco: descomentar una dejándola vacía **impide el arranque**, y las cuatro que forman pareja lo impiden también si defines solo una de las dos.
+
+> **⚠️ Un `#` sin comillas corta el valor, y un `$` no es literal.** dotenv lee `DB_PASSWORD=abc#123` como `abc`: un valor con `#` va entre comillas simples (`'abc#123'`). El `$` la app lo expande como una referencia a otra variable, con comillas o sin ellas, y las migraciones y el seed no: evítalo en el `.env` ([backlog #36](./docs/backlog.md)). Las contraseñas pegadas de un gestor son el caso típico; el detalle está en la cabecera de [`.env.example`](./.env.example).
 
 El detalle completo de cada variable —qué controla, con qué combina mal y dónde se aplica en el código— vive en [`.env.example`](./.env.example), junto al valor que vas a editar. El [inventario en tablas](#variables-de-entorno) está más abajo.
 
@@ -233,13 +235,15 @@ El alta devuelve `201` con la forma `{ "success": true, "data": { "user": { … 
 | `GET /api/v1/users/:id` · `POST /api/v1/orders`  | cualquiera autenticado | `200`                     |
 | `GET /api/v1/users` · `DELETE /api/v1/users/:id` | rol `admin`            | **`403`**                 |
 
-El único camino a un admin es el seed. Añade la pareja al `.env` —**ambas o ninguna**, o la app no arranca; la contraseña exige 12 caracteres mínimo— y ejecútalo:
+El único camino a un admin es el seed. Añade la pareja al `.env` —**ambas o ninguna**, o la app no arranca; la contraseña, entre 12 y 128 caracteres— y ejecútalo:
 
 ```bash
 # .env
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=una-frase-larga-de-prueba
 ```
+
+> **Si la contraseña lleva `#`, ponla entre comillas simples** (`ADMIN_PASSWORD='…'`). Sin ellas, dotenv corta el valor en el `#`. Si lo que queda tiene 12 caracteres o más, el seed guarda esa versión, termina con éxito y el login responde `401` con la contraseña completa; si tiene menos, ni el seed ni la app arrancan. Evita también el `$` (ver arriba).
 
 ```bash
 pnpm seed:admin          # imprime "created" o "promoted"
@@ -280,11 +284,15 @@ Merece la pena leerlo: casi todos los tropiezos de la primera vez están aquí.
 
 ## Problemas frecuentes
 
-**`28P01 password authentication failed`** — Dos causas. La habitual: tienes un PostgreSQL instalado en la máquina ocupando el 5432, así que la app se conecta a ese en vez de al contenedor; cambia `DB_PORT` a un puerto libre (`5433`) y relanza con `pnpm db:down && pnpm db:up`. La otra: cambiaste `DB_USERNAME`/`DB_PASSWORD` **después** del primer `db:up` — ver [personalizar la base de datos](#personalizar-la-base-de-datos).
+**`28P01 password authentication failed`** — Tres causas. La habitual: tienes un PostgreSQL instalado en la máquina ocupando el 5432, así que la app se conecta a ese en vez de al contenedor; cambia `DB_PORT` a un puerto libre (`5433`) y relanza con `pnpm db:down && pnpm db:up`. La segunda: cambiaste `DB_USERNAME`/`DB_PASSWORD` **después** del primer `db:up` — ver [personalizar la base de datos](#personalizar-la-base-de-datos). La tercera: `DB_PASSWORD` lleva un `#` sin comillas. Docker Compose no lo corta y creó la base con el valor entero, mientras que la app y las migraciones conectan con lo anterior al `#`. Ponla entre comillas simples; no hace falta `db:reset`, porque el volumen ya tiene la contraseña entera.
 
 **`Bind for 0.0.0.0:5432 failed: port is already allocated`** — Mismo origen que la primera causa, misma solución.
 
 **`EADDRINUSE` al arrancar la app** — El 8888 está ocupado. Cambia `PORT`.
+
+**`pnpm seed:admin` termina bien, pero el login del admin responde `401`** — La contraseña lleva un `#` y en el `.env` no está entre comillas: dotenv corta el valor en el `#`, así que el seed guardó solo lo anterior. Ponla entre comillas simples y vuelve a ejecutar el seed: es idempotente y deja el hash nuevo.
+
+**`ADMIN_PASSWORD: Too small: expected string to have >=12 characters` con una contraseña larga** — Mismo origen: lleva un `#` antes del carácter 12 y no está entre comillas, así que dotenv la corta ahí y lo que queda no llega al mínimo. Ni la app ni el seed arrancan hasta que la pones entre comillas simples.
 
 **`Starting inspector on 127.0.0.1:9229 failed`** — Ya hay un depurador escuchando. Usa `npx nest start --debug=9230 --watch`.
 
@@ -380,11 +388,11 @@ La columna **¿Tocarla?** responde lo único que se suele preguntar: `No` = el d
 
 ### Auth
 
-| Variable                         | Default       | ¿Tocarla?    | Notas                                                                                                                                                                                                                                                                               |
-| -------------------------------- | ------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                     | _(sin valor)_ | **Prod: sí** | **Obligatoria fuera de `development`/`test`**: en `staging`/`production` la app no arranca sin ella. Mínimo 32 caracteres. Sin definir en `development`/`test` cae a un secreto de desarrollo inseguro, publicado en el propio repositorio, y avisa por consola en cada arranque.   |
-| `JWT_EXPIRES_IN_S`               | `3600`        | Opcional     | Vigencia del access token, en segundos. No hay refresh token: al expirar, el cliente vuelve a `/auth/login`.                                                                                                                                                                        |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | _(sin valor)_ | Opcional     | Credenciales del primer admin, consumidas por `pnpm seed:admin` (nunca la app en marcha). Ambas o ninguna: definir solo una **impide el arranque** — la validación vive en el mismo `envSchema` que valida toda la app, no en el seed. `ADMIN_PASSWORD` exige 12 caracteres mínimo. |
+| Variable                         | Default       | ¿Tocarla?    | Notas                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------- | ------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                     | _(sin valor)_ | **Prod: sí** | **Obligatoria fuera de `development`/`test`**: en `staging`/`production` la app no arranca sin ella. Mínimo 32 caracteres. Sin definir en `development`/`test` cae a un secreto de desarrollo inseguro, publicado en el propio repositorio, y avisa por consola en cada arranque.                                                                                                                                                                                                                                                                       |
+| `JWT_EXPIRES_IN_S`               | `3600`        | Opcional     | Vigencia del access token, en segundos. No hay refresh token: al expirar, el cliente vuelve a `/auth/login`.                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | _(sin valor)_ | Opcional     | Credenciales del primer admin. Solo las usa `pnpm seed:admin`, pero las valida todo proceso que carga la configuración —la app, las migraciones, `outbox:relay` y el seed—: viven en el mismo `envSchema`. Ambas o ninguna: definir solo una **impide el arranque**, igual que un `ADMIN_PASSWORD` de menos de 12 caracteres. No pases de 128 en la contraseña ni de 64 caracteres antes de la `@` en el email: el login no los admite y el seed todavía no lo comprueba ([backlog #34](./docs/backlog.md)). Con un `#` dentro, entre comillas simples. |
 
 ### PostgreSQL
 
