@@ -46,8 +46,6 @@ digraph process {
     "Mechanical check by the controller" [shape=box];
     "Check passes?" [shape=diamond];
     "Re-dispatch with the specific fix" [shape=box];
-    "High-risk task?" [shape=diamond];
-    "adversarial-review scoped to the task" [shape=box];
     "More tasks?" [shape=diamond];
     "Mutation of new code + adversarial-review of the whole diff" [shape=box];
     "DoD + report + suggest commit" [shape=box style=filled fillcolor=lightgreen];
@@ -60,10 +58,7 @@ digraph process {
     "Mechanical check by the controller" -> "Check passes?";
     "Check passes?" -> "Re-dispatch with the specific fix" [label="no"];
     "Re-dispatch with the specific fix" -> "Mechanical check by the controller";
-    "Check passes?" -> "High-risk task?" [label="yes"];
-    "High-risk task?" -> "adversarial-review scoped to the task" [label="yes"];
-    "High-risk task?" -> "More tasks?" [label="no"];
-    "adversarial-review scoped to the task" -> "More tasks?";
+    "Check passes?" -> "More tasks?" [label="yes"];
     "More tasks?" -> "Dispatch implementer for Task N (./implementer-prompt.md)" [label="yes"];
     "More tasks?" -> "Mutation of new code + adversarial-review of the whole diff" [label="no"];
     "Mutation of new code + adversarial-review of the whole diff" -> "DoD + report + suggest commit";
@@ -73,7 +68,18 @@ digraph process {
 ### 1. Set up
 
 Read the plan's header and task list, and save the base with `git rev-parse HEAD`. Create one
-`TodoWrite` entry per task. **Don't paste whole tasks into prompts**: the implementer reads its own
+`TodoWrite` entry per task. Nothing is committed while you work, so `git status` accumulates every task: before each
+dispatch, take a fingerprint of what is already changed, deletions included, so the check can tell
+which files THIS task touched:
+
+```bash
+git ls-files -z --modified --deleted --others --exclude-standard | sort -zu |
+  while IFS= read -r -d '' f; do
+    if [ -e "$f" ]; then shasum "$f"; else echo "deleted  $f"; fi
+  done > <scratch>/before-N
+```
+
+**Don't paste whole tasks into prompts**: the implementer reads its own
 task from the plan file. In the experiment, 38 % of everything the controller wrote was pasted
 task text.
 
@@ -96,28 +102,38 @@ files.
 
 ### 4. Mechanical check (you, no subagent)
 
-- `pnpm test <task specs> --verbose` passes, and the list of `it` titles matches the task's
-  «Casos acordados» row by row. No row without an `it`, no `it` without a row.
-- The report shows the **red run failing on assertions** for every spec with a case table.
+- `pnpm test <task specs> --reporters=default --verbose` passes, and the list of `it` titles
+  matches the task's «Casos acordados» row by row. No row without an `it`, no `it` without a row.
+  `--reporters=default` is not optional: inside Claude Code (`CLAUDECODE=1`) Jest switches to an
+  agent reporter that ignores `--verbose` and prints no title at all (measured: 0 titles without
+  it, 26 with it). An `*.e2e-spec.ts` goes through `pnpm test:e2e <spec>`: `pnpm test` answers
+  «No tests found» and exits with 1.
+- The report shows the **red run failing on assertions** for every spec with a case table. A case
+  that kills a surviving mutant passes at once — the code already does what it asserts — and its
+  red is the mutant applied by hand, the test failing by assertion, and the code restored.
 - Every guard test the task lists was proven to fail without its protection.
 - `pnpm typecheck` passes; `grep` finds no `@nestjs/*` or ORM import under `domain/`.
-- `git status --porcelain` shows the files the task declared, and nothing unexpected.
+- Rerun the fingerprint into `<scratch>/after-N` and `diff` the two files. Every line on EITHER
+  side names a file this task touched: changed, created, deleted, or reverted to `HEAD` (a
+  revert only shows on the `before` side). Each one must be a file the task declared.
 
 A failure gets a re-dispatch with the specific fix. Don't fix it yourself: that pollutes your
 context.
 
 ### 5. High-risk tasks
 
-For a task that touches security, concurrency, a migration or a cross-context seam, run the
-`adversarial-review` skill scoped to that task's files before moving on. For the rest, the final
-review is enough.
+A task that touches security, concurrency, a migration or a cross-context seam gets no review of
+its own: its guard tests are proven in the mechanical check, and the audit stays at the end. In the
+experiment, 16 per-task reviewers found 0 defects and the final review found the one that
+mattered, so a review per risky task would bring back the cost this skill exists to avoid.
 
 ### 6. After the last task
 
 1. **Mutation of the new code:** `pnpm test:mutation:changed <BASE>`. Propose the cases that kill
    survivors, all of them in one question; approved cases go through an implementer like any task.
 2. **Adversarial review** of the whole diff: the `adversarial-review` skill with `<BASE>` and the
-   plan path. Critical and important findings go to an implementer as a fix task.
+   plan path. Critical and important findings go to an implementer as a fix task. If a fix touched
+   `domain/` or `application/`, rerun the mutation: the reported score is the final code's.
 3. **Documentation:** `CLAUDE.md` / `README.md` if a module description, a public contract or the
    endpoints table changed.
 4. **Definition of Done**, run by you:
@@ -139,9 +155,10 @@ pnpm build
 
 ## No-Commit Policy (NON-NEGOTIABLE)
 
-No agent runs `git commit`, `git add`, `git push`, `git tag`, `git rebase`, `git stash`,
-`git reset`, `git checkout`, `git switch` or `git restore`. That covers you, the implementers and
-the reviewer. The project settings deny them. An implementer that thinks a commit is due puts a
+No agent runs a git command that writes history, moves `HEAD` or a ref, touches the index or
+discards work — `commit`, `add`, `push`, `stash`, `reset`, `checkout`, `branch`… That covers you,
+the implementers and the reviewer. The project settings deny them, with any global option in
+front (the full list is in `CLAUDE.md`, «Git policy»). An implementer that thinks a commit is due puts a
 suggestion in its report, and you relay it to the user.
 
 ## Model Selection

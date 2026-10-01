@@ -23,17 +23,24 @@ Agent({
       plan; or "none"]
     - Work from: [absolute project directory]
 
-    Run tests ONLY through `pnpm test <path>` / `pnpm test:e2e` (they add
-    `--experimental-vm-modules`); a bare `jest` cannot load the ESM-only NestJS 12 packages.
+    Run tests ONLY through `pnpm test <path>` / `pnpm test:e2e <path>` (they add
+    `--experimental-vm-modules`); a bare `jest` cannot load the ESM-only NestJS 12 packages. An
+    `*.e2e-spec.ts` needs `pnpm test:e2e`: `pnpm test` answers «No tests found». Add
+    `--reporters=default --verbose` when you need the test titles: inside Claude Code Jest uses an
+    agent reporter that prints none.
 
     ## The cycle
 
-    1. **Stub:** create the SUT with the task's **Interfaces**; bodies
-       `throw new Error('no implementado')` or a neutral value. Run `pnpm typecheck`.
+    1. **Stub:** create the SUT with the task's **Interfaces**; bodies return a neutral value of
+       the right type and never throw (a throwing stub fails value tests by exception, not by
+       assertion, and leaves a classless `toThrow()` green). Run `pnpm typecheck`.
     2. **Red by assertion:** write one `it` per row of «Casos acordados» (the `it` text IS the
-       case; `P` rows are `@fast-check/jest` properties). Run `pnpm test <spec>` and keep the
-       output. Every new test must fail ON AN ASSERTION, not on `Cannot find module` or a compile
-       error.
+       case; `P` rows are `@fast-check/jest` properties; every `toThrow` names the error class).
+       Run `pnpm test <spec>` and keep the output. Every new test must fail ON AN ASSERTION, not
+       on `Cannot find module` or a compile error. A task that adds the case killing a surviving
+       mutant is the exception: the code already passes it, so apply the mutant by hand (the
+       replacement the mutation report printed), keep the assertion failure as the red, and
+       restore the code.
     3. **Green:** implement the minimum that passes.
     4. **Guard check:** for each guard test the task lists, remove the protection for a moment
        (the WHERE condition, the guard, the transaction), see the test fail by assertion, restore
@@ -56,10 +63,12 @@ Agent({
 
     ## Git policy (NON-NEGOTIABLE)
 
-    Never run `git commit`, `git add`, `git push`, `git tag`, `git rebase`, `git stash`,
-    `git reset`, `git checkout`, `git switch` or `git restore` (the project settings deny them).
-    Read-only git (`status`, `diff`, `log`) is fine. If you think a commit is due, write in your
-    report: *Suggested commit:* "Te sugiero hacer un commit de los cambios por <razón>".
+    Never run a git command that writes history, moves `HEAD` or a ref, touches the index or
+    discards work — `commit`, `add`, `push`, `stash`, `reset`, `checkout`, `branch`… (the project
+    settings deny them, whatever options go in front). Read-only git (`status`, `diff`, `log`,
+    `show`, `rev-parse`) is fine; for the current branch use `git rev-parse --abbrev-ref HEAD`.
+    If you think a commit is due, write in your report: *Suggested commit:* "Te sugiero hacer un
+    commit de los cambios por <razón>".
 
     ## Report
 

@@ -303,7 +303,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository, type QueryDeepPartialEntity } from 'typeorm';
 
 import type { Invoice } from '../../domain/entities/invoice.entity';
 import { InvoiceVersionConflictError } from '../../domain/errors/invoice.errors';
@@ -340,17 +340,18 @@ export class InvoiceTypeOrmRepository implements InvoiceRepository {
    */
   async save(invoice: Invoice, events: readonly InvoiceIssued[]): Promise<void> {
     const invoiceRow = InvoiceMapper.toPersistence(invoice);
-    const outboxRows = events.map((event) => {
-      const row = new InvoiceOutboxMessageOrmEntity();
-      row.id = randomUUID();
-      row.eventType = event.constructor.name;
-      row.payload = { ...event }; // el evento es plano: viaja tal cual (§7)
-      row.occurredAt = event.occurredAt;
-      row.processedAt = null;
-      return row;
-    });
+    const outboxRows = events.map(
+      (event): QueryDeepPartialEntity<InvoiceOutboxMessageOrmEntity> => ({
+        id: randomUUID(),
+        eventType: event.constructor.name,
+        payload: { ...event }, // el evento es plano: viaja tal cual (§7)
+        occurredAt: event.occurredAt,
+        processedAt: null,
+      }),
+    );
 
-    await this.dataSource.transaction(async (manager) => {
+    // El nivel va explícito: el conflicto de abajo solo existe en READ COMMITTED.
+    await this.dataSource.transaction('READ COMMITTED', async (manager) => {
       if (invoiceRow.version === 0) {
         invoiceRow.version = 1;
         try {
@@ -372,15 +373,17 @@ export class InvoiceTypeOrmRepository implements InvoiceRepository {
           throw new InvoiceVersionConflictError(invoiceRow.id);
         }
       }
-      await manager.save(outboxRows);
+      await manager.insert(InvoiceOutboxMessageOrmEntity, outboxRows);
     });
   }
 }
 ```
 
 - El puerto se importa **como valor** aunque solo aparezca en el `implements` (regla de §2); las entidades, eventos y VOs usados solo como tipo, con `import type`.
-- **Nunca `manager.save()` para el agregado**: es un upsert, y un id duplicado sobrescribiría en silencio en vez de fallar. `version` es una columna normal y no un `@VersionColumn`, que la incrementaría sin comprobar nada: la comprobación es el `WHERE version = …`.
-- **Depende de READ COMMITTED.** El `UPDATE` que espera el bloqueo de la fila re-evalúa su `WHERE` sobre la fila ya confirmada y afecta 0 filas; en REPEATABLE READ recibiría un `40001`. Un test de concurrencia tiene que **demostrar el intercalado**, no esperarlo: `order.typeorm.repository.e2e-spec.ts` bloquea la fila desde otra conexión, espera a ver el guardado bloqueado en `pg_blocking_pids` y solo entonces confirma. Dos `save` lanzados a la vez con `Promise.all` casi nunca se intercalan y el test pasa igual sin la protección.
+- **Nunca `manager.save()` para escribir: ni el agregado ni el outbox.** Con el id ya asignado es un upsert: primero busca esos ids —en el outbox, siempre en vano, y con el bloqueo de la fila tomado— y ante un id repetido sobrescribe en silencio en vez de fallar. `manager.insert()` no hace nada con una lista vacía. `version` es una columna normal y no un `@VersionColumn`, que la incrementaría sin comprobar nada: la comprobación es el `WHERE version = …`.
+- **READ COMMITTED, pedido explícitamente.** El `UPDATE` que espera el bloqueo de la fila re-evalúa su `WHERE` sobre la fila ya confirmada y afecta 0 filas; en REPEATABLE READ o SERIALIZABLE recibiría un `40001` que nadie reintenta. Por eso `transaction('READ COMMITTED', …)` y no el nivel por defecto, que pueden cambiar el servidor, la base o el rol sin tocar el código. Un test de concurrencia tiene que **demostrar el intercalado**, no esperarlo: `order.typeorm.repository.e2e-spec.ts` bloquea la fila desde otra conexión, espera a ver el guardado bloqueado en `pg_blocking_pids` y solo entonces confirma, y repite el caso con una conexión cuyo defecto es SERIALIZABLE. Dos `save` lanzados a la vez con `Promise.all` casi nunca se intercalan y el test pasa igual sin la protección.
+- **Solo el `23505` es un conflicto.** Cualquier otro fallo del `INSERT` sube tal cual, y un test lo fija provocando uno distinto (en orders, un byte NUL en un texto: `22021`). Sin ese test, ensanchar el predicado deja la suite en verde y convierte cualquier error de infraestructura en un 409 que invita a reintentar en vano.
+- **Un recurso con dueño se lee con el dueño en la consulta** (`findByIdAndCustomer` en orders), no comparándolo después: el mapper falla cerrado con un 500 ante una fila corrupta, y si la ajena llegara a reconstruirse, ese 500 frente al 404 de un id cualquiera delataría que existe. La factura del ejemplo la emite un admin y no tiene dueño, por eso su `findById` es el plano.
 - **Los errores del driver se traducen aquí.** `UserTypeOrmRepository.save()` convierte el `23505` de PostgreSQL en `EmailAlreadyTakenError`: sin eso, una inserción concurrente saldría como 500 en vez del 409 del contrato. El pre-check del caso de uso es una cortesía, no la defensa.
 - **Cambios de esquema, por migración**: `pnpm migration:generate src/database/migrations/<Name>` tras tocar una entidad ORM. Un `DROP`/rename se parte en expand/contract (`CLAUDE.md`, «Destructive migrations»).
 
@@ -522,7 +525,7 @@ export class InvoiceDomainExceptionFilter implements ExceptionFilter {
 
 **Property-based testing (PBT) con `fast-check` + `@fast-check/jest`** — los invariantes de dominio (importe siempre positivo, `issue` solo desde `draft`) y el round-trip del mapper en infraestructura son el caso ideal. Las arbitrarias se **construyen**, nunca se `.filter()`-an sobre `fc.string()`. Ver la subsección «Property-based testing» del skill `javascript-typescript-jest`.
 
-**La mutación es gate**: `thresholds.break` en `stryker.config.mjs` y job propio en CI. Un módulo nuevo sin casos no entra en silencio. Para auditar solo lo que cambió una rama, `pnpm test:mutation:changed [base]`; para un módulo entero, `pnpm test:mutation --mutate "src/modules/<context>/{domain,application}/**/*.ts"`.
+**La mutación es gate**: `thresholds.break` en `stryker.config.mjs` y job propio en CI. Un módulo nuevo sin casos no entra en silencio. Para auditar solo lo que cambió una rama, `pnpm test:mutation:changed [base]`; para un módulo entero, `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"` (sin llaves: Stryker parte `--mutate` por comas antes de expandirlas y daría cero mutantes en verde).
 
 ## 10. Composición entre contextos
 

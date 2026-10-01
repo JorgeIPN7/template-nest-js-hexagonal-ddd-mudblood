@@ -30,11 +30,11 @@ justifican cada decisión, para no tener que repetir la discusión.
 
 ## 1. Los tres niveles
 
-| Nivel                           | Para qué                                                                                                                                                                 | Cómo se arranca                                                             | Qué haces tú                                                                                                                                        | Referencia medida                                            |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| **Trivial**                     | Errata, documentación, configuración, bump de dependencia, bug de una línea con su test evidente                                                                         | Pídelo tal cual, sin skill                                                  | Revisar el resultado y hacer el commit                                                                                                              | —                                                            |
-| **Exprés** (por defecto)        | Una feature o un bug con lógica dentro de **un** bounded context que ya existe: hasta ~8 tareas y, como mucho, una migración aditiva                                     | `/express <qué quieres>`                                                    | Contestar 1 o 2 rondas de preguntas agrupadas, aprobar la spec y su tabla de casos, decidir sobre los casos nuevos que aparezcan, hacer el commit   | 41 min y 11,82 USD con 4 intervenciones (cancelar pedido)    |
-| **Completo** (casos especiales) | Contexto nuevo, cambios entre contextos (fachadas, puertos compartidos), migración destructiva, auth o seguridad, más de ~10 tareas, trabajo que continuará otra persona | `/brainstorming <idea>` y, tras el plan, `/executing-plans` en sesión nueva | Diseñar con el asistente, aprobar la spec y el plan con sus tablas, abrir la sesión de ejecución, decidir sobre los casos nuevos, hacer los commits | ~3 h 30 min y 52,54 USD antes de los ajustes (misma feature) |
+| Nivel                           | Para qué                                                                                                                                                                                                                    | Cómo se arranca                                                             | Qué haces tú                                                                                                                                        | Referencia medida                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **Trivial**                     | Errata, documentación, configuración que no es de seguridad, bump de dependencia, bug de una línea con su test evidente                                                                                                     | Pídelo tal cual, sin skill                                                  | Revisar el resultado y hacer el commit                                                                                                              | —                                                            |
+| **Exprés** (por defecto)        | Una feature o un bug con lógica dentro de **un** bounded context que ya existe: hasta ~8 tareas y, como mucho, una migración aditiva                                                                                        | `/express <qué quieres>`                                                    | Contestar 1 o 2 rondas de preguntas agrupadas, aprobar la spec y su tabla de casos, decidir sobre los casos nuevos que aparezcan, hacer el commit   | 41 min y 11,82 USD con 4 intervenciones (cancelar pedido)    |
+| **Completo** (casos especiales) | Seguridad (auth, credenciales, tokens, permisos y su configuración), contexto nuevo, cambios entre contextos (fachadas, puertos compartidos), migración destructiva, más de ~10 tareas, trabajo que continuará otra persona | `/brainstorming <idea>` y, tras el plan, `/executing-plans` en sesión nueva | Diseñar con el asistente, aprobar la spec y el plan con sus tablas, abrir la sesión de ejecución, decidir sobre los casos nuevos, hacer los commits | ~3 h 30 min y 52,54 USD antes de los ajustes (misma feature) |
 
 **Lo que comparten los tres:** la Definition of Done de `CLAUDE.md` (`typecheck` → `lint:check`
 → `format:check` → `test` → `test:e2e` → `build`), las convenciones de `CLAUDE.md` y la política
@@ -46,19 +46,24 @@ de git. El asistente **nunca** hace commits: el `.claude/settings.json` del repo
 ### Árbol de decisión
 
 ```
-¿Cambia comportamiento?
-├─ No (texto, docs, config, bump) ────────────────────────────────────────► TRIVIAL
-└─ Sí
+¿Toca alguno de estos, aunque sea en una línea?
+· auth, credenciales, tokens o permisos, o su configuración
+  (CORS, CSP, cabeceras, costes de argon2, el deny de .claude/settings.json)
+· un bounded context nuevo
+· más de un contexto (fachada, puerto entre módulos)
+· una migración que borra o renombra (expand/contract)
+· más de ~10 tareas, o trabajo que otra persona continuará
+├─ Sí ────────────────────────────────────────────────────────────────────► COMPLETO
+└─ No
+   ├─ ¿Cambia comportamiento?
+   │  └─ No (texto, docs, config que no es de seguridad, bump) ────────────► TRIVIAL
    ├─ ¿Es un bug de una línea con un test evidente? ──────────────────────► TRIVIAL
-   └─ ¿Toca alguno de estos?
-      · un bounded context nuevo
-      · más de un contexto (fachada, puerto entre módulos)
-      · una migración que borra o renombra (expand/contract)
-      · auth, credenciales, tokens o permisos
-      · más de ~10 tareas, o trabajo que otra persona continuará
-      ├─ Sí ──────────────────────────────────────────────────────────────► COMPLETO
-      └─ No ──────────────────────────────────────────────────────────────► EXPRÉS
+   └─ En otro caso ───────────────────────────────────────────────────────► EXPRÉS
 ```
+
+El riesgo se pregunta **antes** que el tamaño: bajar los costes de argon2 para que los E2E vayan
+más rápido es una línea de configuración y también un cambio de seguridad, porque la misma
+constante usa el hasher de producción.
 
 - **Si dudas entre trivial y exprés, elige exprés.** Cuesta poco más y deja spec y casos.
 - **Si dudas entre exprés y completo, que lo decida el usuario.** El asistente lo pregunta con su
@@ -71,7 +76,8 @@ de git. El asistente **nunca** hace commits: el `.claude/settings.json` del repo
 | Tarea                                                               | Nivel                        | Notas                                                                                                                  |
 | ------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Errata, texto, comentario, README                                   | Trivial                      | Sin tests nuevos si no cambia comportamiento                                                                           |
-| Variable de entorno, ajuste de config                               | Trivial                      | Si cambia el esquema de `env.schema.ts`, su test; ojo al «Config gotcha» de `CLAUDE.md`                                |
+| Variable de entorno, ajuste de config que no es de seguridad        | Trivial                      | Si cambia el esquema de `env.schema.ts`, su test; ojo al «Config gotcha» de `CLAUDE.md`                                |
+| Config de seguridad (CORS, CSP, `ARGON2_PARAMS`, `JWT_*`, el deny)  | Completo                     | Una línea, pero la revisión adversarial y sus tests de guarda no sobran                                                |
 | Bump de dependencia (Renovate o manual)                             | Trivial                      | La DoD es el test. Una major con cambios de API puede subir a exprés                                                   |
 | Bug de una línea con causa clara                                    | Trivial                      | Test que falle sin el arreglo (regla de `CLAUDE.md`)                                                                   |
 | Bug con lógica (varios casos, una regla de negocio mal aplicada)    | Exprés                       | La spec puede ser muy corta: objetivo, casos y fuera de alcance                                                        |
@@ -85,7 +91,8 @@ de git. El asistente **nunca** hace commits: el `.claude/settings.json` del repo
 | Auth, credenciales, tokens, permisos, guards                        | Completo                     | Tests de guarda obligatorios, con su prueba sin la protección                                                          |
 | Refactor grande o transversal                                       | Completo                     | Si no cambia comportamiento, la tabla de casos se sustituye por «la suite sigue verde» y la mutación no baja           |
 | Más de ~10 tareas, o trabajo que otra persona continuará            | Completo                     | La spec y el plan son el traspaso                                                                                      |
-| Revisar una rama o un PR ajeno                                      | `/adversarial-review` suelta | [§7](#7-la-revisión-adversarial)                                                                                       |
+| Revisar el PR de otra persona                                       | `/code-review <PR>`          | `/adversarial-review` revisa tu árbol contra una base y no cambia de rama; para usarla, haz tú el checkout             |
+| Revisar tu propio cambio antes de abrir el PR                       | `/adversarial-review` suelta | [§7](#7-la-revisión-adversarial)                                                                                       |
 | Investigar sin cambiar código (¿por qué pasa X?, ¿dónde se hace Y?) | Sin flujo                    | Una pregunta directa. Si acaba en cambio, se clasifica entonces                                                        |
 
 ## 3. Nivel trivial
@@ -93,9 +100,12 @@ de git. El asistente **nunca** hace commits: el `.claude/settings.json` del repo
 **Para qué:** cambios en los que diseñar sería más caro que hacer. Ejemplos: una errata, una
 variable de entorno, un bump o un bug de una línea con causa clara.
 
-**Cómo se pide:** en lenguaje normal, sin skill. Por ejemplo: «Sube la longitud máxima de
-`OrderConcept` de 140 a 160 y ajusta su test». En el experimento se comprobó que esta petición no
-dispara `brainstorming`.
+**Cómo se pide:** en lenguaje normal, sin skill. Por ejemplo: «Corrige la errata del mensaje de
+arranque» o «Sube `REQUEST_TIMEOUT_MS` por defecto a 20 s y ajusta su test».
+
+En el experimento se comprobó que «Sube la longitud máxima de `OrderConcept` de 140 a 160» no
+dispara `brainstorming`, pero esa petición **no es trivial**: toca también el DTO (`@Length(1, 140)`)
+y la columna `varchar(140)`, así que lleva una migración y es exprés.
 
 **Qué hace el asistente:**
 
@@ -245,14 +255,19 @@ tarea (8 de spec y 8 de calidad) encontraron 0 defectos.
 - Un implementer `general-purpose` por tarea. Lee su tarea del archivo del plan, en vez de recibirla
   pegada: el 38 % de lo que escribía el controlador era texto de tareas pegado.
 - Tras cada tarea, el controlador hace una **comprobación mecánica**, sin subagente:
-  - la lista de `it` coincide con la tabla;
+  - la lista de `it` coincide con la tabla, leída con `pnpm test <specs> --reporters=default --verbose`
+    (dentro de Claude Code, sin `--reporters=default` Jest no imprime ningún título);
   - hay rojo por aserción;
   - hay prueba de cada guarda;
   - `typecheck` pasa;
-  - no hay imports prohibidos en `domain/`.
-- Una tarea de riesgo (seguridad, concurrencia, migración, cambio entre contextos) lleva además una
-  revisión adversarial acotada a ella.
-- Al final: mutación del código nuevo, revisión adversarial del diff completo, DoD e informe.
+  - no hay imports prohibidos en `domain/`;
+  - los archivos que tocó la tarea son los que declaraba, comparando una huella del árbol tomada
+    antes de lanzarla: sin commits entre tareas, `git status` las acumula todas.
+- Una tarea de riesgo no lleva revisión propia: sus guardas se prueban en la comprobación mecánica
+  y la auditoría se queda al final, que es donde encontró lo que los 16 revisores por tarea no
+  vieron.
+- Al final: mutación del código nuevo, revisión adversarial del diff completo, la mutación otra vez
+  si la revisión tocó `domain/` o `application/`, DoD e informe.
 
 ## 7. La revisión adversarial
 
@@ -270,19 +285,26 @@ Busca defectos reales en el diff respecto a la base:
 **Reglas del revisor:**
 
 - No edita el repo, ni siquiera temporalmente.
-- Para demostrar un hallazgo trabaja en una copia del árbol en su scratchpad, con `node_modules`
-  enlazado.
+- Para demostrar un hallazgo trabaja en una copia nueva del árbol en su scratchpad, sin artefactos
+  (unos 4 MB) y con `node_modules` enlazado. Ejecuta las herramientas con `node`, nunca con
+  `pnpm <script>`: la verificación de dependencias de pnpm reescribiría el `node_modules` real a
+  través del enlace.
+- La copia aísla archivos, no bases de datos: nunca ejecuta `migration:*`, `db:*` ni `seed:*`, que
+  apuntan a la base de desarrollo, y una protección de esquema no se quita editando la copia.
 - Mientras revisa, la sesión principal espera: los E2E comparten la base de test.
 
 **Después:** la sesión verifica cada hallazgo y lo clasifica como real o falso positivo.
 
 - **Crítico o importante:** lo corrige, con el test primero.
 - **Menor:** va al informe.
-- **Segunda pasada:** solo si las correcciones cambiaron comportamiento de producción en más de un
-  archivo.
+- **Mutación otra vez** si alguna corrección tocó `domain/` o `application/`: el score del informe
+  es el del código final.
+- **Segunda pasada** si alguna corrección cambió el comportamiento de producción, aunque sea en un
+  solo archivo, acotada a los archivos tocados.
 
 **Uso suelto:** `/adversarial-review` (base opcional; por defecto, la bifurcación con `main`), o
-«revisa esta rama antes del PR».
+«revisa esta rama antes del PR». Revisa **tu árbol** contra esa base: no recibe la rama de otro ni
+puede cambiar de rama. Para el PR de otra persona, `/code-review <PR>`.
 
 **Por qué sustituye a los revisores por tarea:**
 
@@ -341,29 +363,50 @@ independiente.
 ```bash
 pnpm test:mutation:changed              # desde la bifurcación con main
 pnpm test:mutation:changed <commit>     # desde una base concreta (la que guardó el flujo al empezar)
-pnpm test:mutation:changed <commit> --reporters json,clear-text   # flags extra, tal cual a Stryker
+pnpm test:mutation:changed -- <commit>  # igual: el `--` que reenvía pnpm se ignora
+pnpm test:mutation:changed <commit> --concurrency 2   # flags extra, tal cual a Stryker
 ```
 
-**Qué muta** ([`scripts/mutation-targets.mjs`](../scripts/mutation-targets.mjs)):
+**Qué audita** ([`scripts/mutation-targets.mjs`](../scripts/mutation-targets.mjs)), siempre
+dentro del alcance de `stryker.config.mjs` (`domain/` y `application/` de cada módulo, más
+`src/shared/domain/`), que el script lee de la propia config:
 
-- el alcance de `stryker.config.mjs` (`domain/` y `application/` de cada módulo, más
-  `src/shared/domain/`);
-- dentro de ese alcance, las líneas añadidas o cambiadas desde la base, como rangos `archivo:ini-fin`;
-- los archivos nuevos enteros, incluidos los que aún no están en git.
+- las líneas añadidas o cambiadas desde la base. Re-indentar no cuenta (`git diff -w`), y un
+  archivo movido o renombrado solo aporta lo que cambió respecto al original, también si el
+  movimiento aún no está confirmado;
+- los archivos nuevos enteros, incluidos los que aún no están en git;
+- **el archivo que prueba cada spec o helper de test que haya cambiado, entero**. Un test
+  debilitado puede dejar vivo cualquier mutante de su SUT, y hasta el 2026-10-01 un cambio que solo
+  tocaba tests salía con «nada que mutar».
+
+**Cómo lo calcula:** Stryker muta los archivos enteros y el script puntúa solo los mutantes que
+TOCAN esas líneas. Antes se le pasaban rangos `archivo:ini-fin` y Stryker solo muta lo que el
+rango contiene entero: un `&&` añadido a una condición de dos líneas o el cuerpo de un método nuevo
+quedaban fuera, y un cambio así podía dar cero mutantes y salir en verde.
 
 **Cómo leer el resultado:**
 
-- Todo superviviente es del cambio; no hay que cruzarlo a mano con el diff.
-- Por cada superviviente, el flujo propone el caso que lo mata.
-- Un mutante equivalente (no cambia el comportamiento) se justifica en el informe, sin escribir un
-  test que no pueda fallar.
-- El `thresholds.break: 85` de la config se aplica a ese código nuevo.
+- La lista de supervivientes que imprime es la del cambio; no hay que cruzarla a mano con el diff.
+- Por cada superviviente, el flujo propone el caso que lo mata. Ese test pasa en verde a la
+  primera, porque el código ya hace lo que afirma: el rojo se demuestra aplicando el mutante a
+  mano, viendo el test fallar por aserción y restaurando (ver la skill `express`, paso 3).
+- Un mutante equivalente —ningún test puede distinguirlo— se marca en el código con
+  `// Stryker disable next-line <Mutador>: <motivo>` y se cita en el informe. Sin marcar cuenta
+  como superviviente, y con pocos mutantes uno solo basta para bajar del umbral.
+- El `thresholds.break: 85` de la config se aplica a los mutantes del cambio. Sin mutantes
+  válidos el script lo dice y sale con 0: no hay nada que auditar, que no es un 100 %.
+- Las filas `P` (propiedad, `@fast-check/jest`) matan mutantes bajo Stryker porque
+  `test/stryker-setup.ts` fija la semilla de fast-check en esas corridas. Sin ella, el título del
+  test cambiaba de una corrida a otra, Stryker no lo encontraba y daba por vivo lo que la
+  propiedad mataba.
 
 **Y el gate global:** `pnpm test:mutation` sigue mutando todo el alcance, y el job `mutation` de la
-CI es el que protege `main`. Para un módulo entero:
+CI es el que protege `main`. Para un módulo entero, con los dos globs separados por coma y **sin
+llaves** —Stryker parte `--mutate` por comas antes de expandirlas, y `{domain,application}` daba
+cero mutantes, score `NaN` y salida 0—:
 
 ```bash
-pnpm test:mutation --mutate "src/modules/<context>/{domain,application}/**/*.ts"
+pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"
 ```
 
 ## 10. Git: quién hace los commits
@@ -371,26 +414,36 @@ pnpm test:mutation --mutate "src/modules/<context>/{domain,application}/**/*.ts"
 **El asistente nunca hace commits.** Es una regla de `CLAUDE.md` que desde el 2026-09-30 también
 impone el repo. [`.claude/settings.json`](../.claude/settings.json) deniega a todos los agentes
 (sesión principal, subagentes y agentes de un Workflow) los subcomandos de git que escriben
-historia, mueven `HEAD` o descartan trabajo:
+historia, mueven `HEAD` o una ref, tocan el índice o descartan trabajo:
 
-- `add`, `commit`, `push`, `pull`, `tag`;
-- `rebase`, `merge`, `cherry-pick`, `revert`, `am`;
-- `stash`, `reset`, `checkout`, `switch`, `restore`, `clean`;
-- borrar, renombrar o forzar una rama.
+- `add` y su sinónimo `stage`, `apply`, `commit`, `push`, `pull`, `tag`, `rebase`, `merge`,
+  `cherry-pick`, `revert`, `am`;
+- `branch` entero, `update-ref`, `symbolic-ref`, `notes`, `replace`, `bisect`, `worktree`;
+- `stash` entero, `reset`, `checkout`, `switch`, `restore`, `clean`, `mv`, `rm`, `checkout-index`,
+  `read-tree`, `update-index`;
+- `filter-branch`, `gc`, `prune`, `reflog expire` y `reflog delete`, que borran lo que permitiría
+  recuperar trabajo.
 
-Cada uno va en dos formas: `git <sub>` y `git -C <dir> <sub>`. La lista la fija
-[`src/__tests__/claude-settings.spec.ts`](../src/__tests__/claude-settings.spec.ts).
+Cada uno va en tres formas —`git <sub> *`, `git * <sub> *` y `git * <sub>`—, así que cubren el
+subcomando a secas y cualquier opción global delante (`-C <dir>`, `-c k=v`, `--no-pager`…). La
+tercera hace falta porque el ` *` final solo casa con nada cuando es el único comodín de la regla.
+La lista la fija [`src/__tests__/claude-settings.spec.ts`](../src/__tests__/claude-settings.spec.ts).
 
-| Comando                                                                                    | Resultado medido (Claude Code 2.1.283) |
-| ------------------------------------------------------------------------------------------ | -------------------------------------- |
-| `git commit …`, `git -C <dir> commit …`, `cd <dir> && git commit …`                        | Denegado; ningún commit en el repo     |
-| `git stash list`, `git checkout -b x`, `git add …`, `git branch -D x`                      | Denegado                               |
-| `git status`, `git log`, `git merge-base`, `git branch --show-current`, `git -C <dir> log` | Permitido                              |
+| Comando                                                                                                              | Resultado medido (Claude Code 2.1.283) |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `git commit …`, `git -C <dir> commit …`, `git -c k=v -C <dir> commit …`, `cd <dir> && git commit …`                  | Denegado; ningún commit en el repo     |
+| `git -C <dir> stash`, `git -C <dir> branch -q -D x`, `git -C <dir> mv a b`, `git -C <dir> read-tree -u --reset HEAD` | Denegado                               |
+| `git status`, `git log`, `git diff`, `git merge-base`, `git reflog`, `git --no-pager -C <dir> log`                   | Permitido                              |
 
-**Límites:**
+**Lo que cuesta y lo que no cubre:**
 
-- Es una barandilla, no un sandbox: `bash -c "git commit"` o un script que llame a git la esquivan.
-  La norma sigue siendo la de `CLAUDE.md`.
+- `git branch` y `git stash` se deniegan enteros, también para leer. En su lugar:
+  `git rev-parse --abbrev-ref HEAD` y `git log -g refs/stash`.
+- Una búsqueda cuyo término es un subcomando (`git log -S reset`) da un falso positivo; el Grep de
+  la sesión no tiene ese problema.
+- Es una barandilla, no un sandbox: solo ve comandos que empiezan por `git`, y un `git fetch` con
+  refspec local (`git fetch . a:b`) sigue moviendo una ref. La norma sigue siendo
+  la de `CLAUDE.md`.
 - No está documentado si el prefijo `!` dentro de una sesión se somete a estas reglas, y no se
   midió.
 
@@ -412,8 +465,8 @@ Para que un flujo corra sin rescates:
 - **Node y pnpm de `.nvmrc` y `packageManager`.** Comprueba qué `node` ve la herramienta de
   terminal del asistente: si el primero del `PATH` es otro, `pnpm` falla antes de ejecutar nada.
   La solución que se midió es un hook `SessionStart` en tu `.claude/settings.local.json`, que no se
-  versiona. Añade a `$CLAUDE_ENV_FILE` la activación de la versión correcta, y así la sesión y sus
-  subagentes la heredan:
+  versiona. Resuelve UNA vez, al arrancar la sesión, la versión de `.nvmrc`, y escribe en
+  `$CLAUDE_ENV_FILE` solo el `PATH` resultante; la sesión y sus subagentes lo heredan:
 
   ```json
   {
@@ -423,7 +476,7 @@ Para que un flujo corra sin rescates:
           "hooks": [
             {
               "type": "command",
-              "command": "echo 'source ~/.nvm/nvm.sh && nvm use >/dev/null' >> \"$CLAUDE_ENV_FILE\""
+              "command": "source ~/.nvm/nvm.sh && nvm use >/dev/null && echo \"export PATH=\\\"$(dirname \"$(nvm which current)\")\\\":\\\"\\$PATH\\\"\" >> \"$CLAUDE_ENV_FILE\""
             }
           ]
         }
@@ -432,7 +485,10 @@ Para que un flujo corra sin rescates:
   }
   ```
 
-  Si tu PostgreSQL de Docker no usa el puerto por defecto, exporta también `DB_PORT` en esa línea.
+  Escribir en `$CLAUDE_ENV_FILE` el propio `source ~/.nvm/nvm.sh && nvm use`, como hacía la receta
+  anterior, también funciona, pero ese archivo se ejecuta antes de **cada** comando: medido, 0,19 s
+  por comando, frente a 0,016 s con el `PATH` ya resuelto. Si tu PostgreSQL de Docker no usa el
+  puerto por defecto, añade también `export DB_PORT=…` al archivo desde el mismo hook.
 
 - **Base de datos:** `pnpm db:up` y, en un clon nuevo, `pnpm db:migrate:test` (o `pnpm db:reset`,
   que migra las dos). Los E2E y la revisión adversarial la necesitan.
@@ -444,7 +500,7 @@ Para que un flujo corra sin rescates:
 
 ### Qué se comparó
 
-La misma feature se implementó cinco veces desde el mismo commit: cancelar un pedido
+La misma feature se implementó en cuatro ramas desde el mismo commit: cancelar un pedido
 (`POST /orders/:id/cancel`, idempotente, con concurrencia optimista, el evento por el outbox y una
 migración aditiva).
 

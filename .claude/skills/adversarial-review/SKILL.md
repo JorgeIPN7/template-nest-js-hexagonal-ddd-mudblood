@@ -18,17 +18,19 @@ revisores por tarea. En el experimento del 2026-09-30 (`docs/development-workflo
 
 - Paso final de `express`, `executing-plans` y `subagent-driven-development`, antes de la DoD.
 - Sola, antes de abrir un PR de algo que no pasó por un flujo, si el cambio toca comportamiento.
-  Un cambio trivial (errata, config, bump) no la necesita.
-- En `subagent-driven-development`, también acotada a una tarea de riesgo: seguridad,
-  concurrencia, migración o un cambio entre contextos.
+  Un cambio trivial (errata, config que no es de seguridad, bump) no la necesita.
+- **No revisa el PR de otra persona tal cual.** Revisa el árbol actual contra una base, y ningún
+  agente puede cambiar de rama. Para un PR ajeno, `/code-review <PR>`; o tú haces checkout de su
+  rama en tu terminal y la invocas con su base.
 
 ## 1. Alcance
 
 - **Base** (`<BASE>`): la que te pasa el flujo, que es el `git rev-parse HEAD` guardado al
   empezar. Si se invoca sola, `$ARGUMENTS`, o `git merge-base HEAD main` si no viene ninguna.
-- **Cambios**: `git diff --stat <BASE>` más los archivos que `git status --porcelain` marca con
-  `??`. Nada está confirmado mientras trabaja un flujo, así que el diff incluye el árbol de
-  trabajo y los archivos nuevos no salen en ningún diff.
+- **Cambios**: `git diff --stat <BASE>` más los archivos que
+  `git status --porcelain --untracked-files=all` marca con `??`. Nada está confirmado mientras
+  trabaja un flujo, así que el diff incluye el árbol de trabajo y los archivos nuevos no salen en
+  ningún diff; sin `--untracked-files=all`, una carpeta nueva sale como una sola línea.
 - **Contexto**: la spec o el plan que se implementó, si existe.
 
 ## 2. Lanzar al revisor
@@ -53,8 +55,13 @@ El informe del revisor es una hipótesis, no un veredicto. Por cada hallazgo:
 3. **Menor** → va al informe. Solo se corrige si es trivial y está dentro del alcance del cambio.
    Si no, se propone una entrada para `docs/backlog.md` y la decisión es del usuario.
 
-**Segunda pasada** solo si las correcciones cambiaron el comportamiento de producción en más de
-un archivo. Se lanza el mismo prompt, acotado a esos archivos. Cambios menores no la justifican.
+**Después de corregir:**
+
+- Si alguna corrección tocó `domain/` o `application/`, se vuelve a correr
+  `pnpm test:mutation:changed <BASE>`: el score del informe es el del código final.
+- **Segunda pasada** si alguna corrección cambió el comportamiento de producción, aunque sea en un
+  solo archivo: el mismo prompt, acotado a los archivos que tocaste. Correcciones de tests,
+  documentación o redacción no la justifican.
 
 ## 4. Qué va al informe del flujo
 

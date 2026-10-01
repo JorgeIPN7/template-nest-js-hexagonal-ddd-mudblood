@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: 'First step of the FULL flow: turns an idea into an approved design spec before any code, for work that needs one — a new bounded context, a change across contexts (facades, shared ports), a destructive migration, auth or security, more than ~10 tasks, or work someone else will continue. A feature or behavioural bug inside ONE existing context uses the express flow instead, and a trivial change (typo, config, dependency bump, one-line bug) uses no skill.'
+description: 'First step of the FULL flow: turns an idea into an approved design spec before any code, for work that needs one — a new bounded context, a change across contexts (facades, shared ports), a destructive migration, auth, credentials, tokens or permissions (their config included, even a one-line change), more than ~10 tasks, or work someone else will continue. A feature or behavioural bug inside ONE existing context uses the express flow instead, and a trivial change (typo, non-security config, dependency bump, one-line bug) uses no skill.'
 ---
 
 # Brainstorming Ideas Into Designs
@@ -19,9 +19,9 @@ This repo has three levels of work (`CLAUDE.md`, «Skills and development flows�
 
 | Level       | Typical change                                                                                                                                       | Entry                                   |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| Trivial     | typo, docs, config, dependency bump, one-line bug with an obvious test                                                                               | no skill — `CLAUDE.md` + DoD            |
+| Trivial     | typo, docs, non-security config, dependency bump, one-line bug with an obvious test                                                                  | no skill — `CLAUDE.md` + DoD            |
 | Express     | a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks                                                                         | `/express`                              |
-| **Full**    | new bounded context; change across contexts; destructive migration (expand/contract); auth, credentials, tokens or permissions; > ~10 tasks; handoff | **this skill** → writing-plans → …      |
+| **Full**    | auth, credentials, tokens or permissions — their config included; new bounded context; change across contexts; destructive migration (expand/contract); > ~10 tasks; handoff | **this skill** → writing-plans → …      |
 
 If the request is express or trivial, say so in one sentence and propose that path instead — the cost of the full flow is the user's decision (measured on 2026-09-30: ~3 h 30 min and 52.54 USD with subagents, against 41 min and 11.82 USD with the express flow, for the same feature).
 

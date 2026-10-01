@@ -23,9 +23,9 @@ instante y publicando `OrderCancelled` por el outbox.
 - **T1. Versión esperada.** El agregado lleva la `version` con la que se leyó (0 = nunca guardado). El adaptador: con versión 0 hace `INSERT` con versión 1; si no, `UPDATE … SET status, cancelled_at, version = v + 1 WHERE id = … AND version = v`. Con 0 filas afectadas lanza `OrderVersionConflictError` dentro de la transacción, así que el outbox tampoco se escribe. Depende de READ COMMITTED: el `UPDATE` bloqueado reevalúa su `WHERE` sobre la fila ya confirmada.
 - **T2. ⚠️ Quien pierde la carrera recibe 200, y no hay 409.** Al combinar B2 y B4, el caso de uso reintenta **una vez** ante `OrderVersionConflictError`: relee el pedido y vuelve a aplicar `cancel()`. Como `cancel()` es idempotente, el perdedor de un doble clic recibe 200 con el `cancelledAt` del ganador y no se emite un segundo evento. Con dos estados, la única escritura posible sobre un pedido existente es otra cancelación, así que el reintento **siempre** relee un pedido cancelado y no guarda: un segundo conflicto es imposible y el 409 no se publica. El reintento acotado y la traducción a 409 del filter se quedan como defensa, con un comentario: el día que exista un tercer estado, el 409 será alcanzable y habrá que declararlo. Solo se reintenta ante un conflicto; cualquier otro fallo se propaga tal cual.
 - **T3. La idempotencia vive en el dominio:** `cancel()` sobre un pedido cancelado no hace nada. El caso de uso solo guarda si el agregado produjo eventos.
-- **T4. La propiedad del pedido se comprueba en el caso de uso, no en el dominio.** Que el pedido de otro no exista para ti es una regla de visibilidad. Los dos caminos lanzan el mismo `OrderNotFoundError`, con el mismo mensaje, y cuestan lo mismo: una lectura.
+- **T4. La propiedad del pedido se comprueba en el caso de uso, no en el dominio.** Que el pedido de otro no exista para ti es una regla de visibilidad. Los dos caminos lanzan el mismo `OrderNotFoundError`, con el mismo mensaje, y cuestan lo mismo: una lectura. _Corrección del 2026-10-01:_ el dueño va ahora en la propia lectura, `findByIdAndCustomer(id, customerId)`, que devuelve `null` tanto para un pedido inexistente como para uno ajeno. Si la fila ajena llegaba a reconstruirse y estaba corrupta, el mapper fallaba con un 500 y delataba que existía. Sigue siendo una regla de visibilidad fuera del dominio, y los dos caminos cuestan lo mismo: una lectura.
 - **T5. El directorio de clientes se consulta antes que nada**, igual que en `PlaceOrderUseCase`.
-- **T6. `cancelledAt` se omite en vez de valer `null`.** El contract guard (Ajv) ignora `nullable`, como documenta su propio comentario, así que un ejemplo con `null` rompería la build. La clave solo aparece cuando `status` vale `cancelled`.
+- **T6. `cancelledAt` se omite en vez de valer `null`.** La clave solo aparece cuando `status` vale `cancelled`. _Corrección del 2026-10-01:_ la razón que se dio aquí —«el contract guard (Ajv) ignora `nullable`, así que un ejemplo con `null` rompería la build»— era falsa para un escalar. Medido con Ajv 8.20.0: junto a un `type` explícito, `nullable: true` acepta `null`; solo un DTO anidado (`$ref` sin `type`) no compila. La omisión se queda como decisión de diseño, no como imposición.
 - **T7. `ORDER_STATUSES`** es una constante más una unión, con el patrón de `USER_ROLES`. La columna es un `varchar` sin `CHECK`, y el mapper **falla cerrado**: un estado que no conoce (por ejemplo, el que escribiera una versión futura antes de un rollback) lanza al leer, en vez de dejar cancelar un pedido en un estado que este código no entiende.
 - **T8. El payload del outbox es el propio evento expandido** (`{ ...event }`) en vez de listar los campos, porque ahora hay dos tipos de evento. Las dos clases son planas y `JSON.stringify` convierte las fechas a ISO.
 - **T9. `version` no se expone en la respuesta**, así que no hay `ETag` ni `If-Match`.
@@ -64,8 +64,8 @@ instante y publicando `OrderCancelled` por el outbox.
 | A7  | debería devolver el pedido ya cancelado sin un segundo evento cuando otro proceso lo cancela a la vez | lectura obsoleta en v1; el ganador lo dejó en v2 | `cancelledAt` del ganador; ningún `save` más                     |
 | A8  | debería rendirse con un conflicto si el pedido vuelve a cambiar durante el reintento                  | `save` choca dos veces                           | `OrderVersionConflictError`; exactamente 2 intentos              |
 | A9  | debería propagar sin reintentar un fallo de guardado que no es de concurrencia                        | `save` falla con otro error                      | ese error; 1 solo intento                                        |
-| A10 | debería rechazar al cliente que ya no existe antes de validar o leer el pedido                        | directorio vacío, id `'no-es-uuid'`              | `CustomerGoneError`; `findById` no se llama                      |
-| A11 | debería leer el pedido una sola vez tanto si es ajeno como si no existe                               | un pedido ajeno y un id inexistente              | 1 `findById` en cada camino                                      |
+| A10 | debería rechazar al cliente que ya no existe antes de validar o leer el pedido                        | directorio vacío, id `'no-es-uuid'`              | `CustomerGoneError`; `findByIdAndCustomer` no se llama           |
+| A11 | debería leer el pedido una sola vez tanto si es ajeno como si no existe                               | un pedido ajeno y un id inexistente              | 1 `findByIdAndCustomer` en cada camino                           |
 
 D10 y D11 salen de la segunda revisión adversarial (M3): desde este endpoint, `OrderId.from()` es la
 única validación del `:id`, y sin sus anclas un id con texto alrededor llegaría a PostgreSQL y daría
@@ -88,14 +88,19 @@ versión optimista. **Tests de guarda**, comprobados sin su protección:
 
 `POST /api/v1/orders/:id/cancel`, con `@Auth()` y sin body. `operationId: cancelOrder`.
 
-| Código    | Motivo                                                                                               | Camino que lo produce hoy                                             |
-| --------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| 200       | Pedido cancelado, o ya lo estaba (B2). Envelope con el pedido: `status: 'cancelled'` y `cancelledAt` | pedido propio, `placed` o `cancelled`                                 |
-| 400       | El `id` no es un UUID v4: `"no-es-uuid" is not a valid order id`                                     | `OrderId.from()` lanza `InvalidOrderIdError` → filter                 |
-| 401       | Sin token o con un token inválido (`@Auth()`)                                                        | `JwtAuthGuard` global                                                 |
-| 403       | El cliente del token ya no existe o está inactivo: `Forbidden`                                       | `CustomerDirectory.exists()` → `false` → `CustomerGoneError`          |
-| 404       | El pedido no existe o es de otro cliente, con el mismo cuerpo: `Order <id> was not found`            | `findById()` → `null`, o `customerId` distinto → `OrderNotFoundError` |
-| 429 / 500 | Estándar (`@ApiStandardErrors()`)                                                                    | throttler de la app / error no controlado                             |
+| Código    | Motivo                                                                                               | Camino que lo produce hoy                                                        |
+| --------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 200       | Pedido cancelado, o ya lo estaba (B2). Envelope con el pedido: `status: 'cancelled'` y `cancelledAt` | pedido propio, `placed` o `cancelled`                                            |
+| 400       | El `id` no es un UUID v4: `"no-es-uuid" is not a valid order id`                                     | `OrderId.from()` lanza `InvalidOrderIdError` → filter                            |
+| 401       | Sin token o con un token inválido (`@Auth()`)                                                        | `JwtAuthGuard` global                                                            |
+| 403       | El cliente del token ya no existe o está inactivo: `Forbidden`                                       | `CustomerDirectory.exists()` → `false` → `CustomerGoneError`                     |
+| 404       | El pedido no existe o es de otro cliente, con el mismo cuerpo: `Order <id> was not found`            | `findByIdAndCustomer()` → `null`, sea inexistente o ajeno → `OrderNotFoundError` |
+| 408       | La respuesta superó `REQUEST_TIMEOUT_MS`; la cancelación puede confirmarse igualmente después        | `TimeoutInterceptor` global: el UPDATE espera un bloqueo sin límite              |
+| 429 / 500 | Estándar (`@ApiStandardErrors()`)                                                                    | throttler de la app / error no controlado                                        |
+
+_Corrección del 2026-10-01:_ la fila del 408 faltaba. El interceptor es global y la tabla daba por
+completa una lista que no lo era; ahora `@ApiStandardErrors()` lo declara en todo endpoint sujeto a
+él.
 
 **Sin 409** (T2): ningún camino lo produce hoy. Se publicó en la primera versión y la revisión a
 ciegas lo detectó como contrato imposible; se retiró el 2026-09-30.
