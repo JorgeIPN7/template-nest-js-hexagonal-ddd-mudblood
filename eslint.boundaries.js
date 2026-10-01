@@ -2,13 +2,14 @@
 /**
  * Fronteras de módulo y de capa — las 5 reglas de la spec de fronteras del
  * 2026-08-04 (perdida en la reconstrucción del historial del 2026-08-08, backlog
- * #29: este archivo y su suite son la única fuente), en la API VIGENTE del
+ * #29: este archivo y su suite son la única fuente) más la 6, «un adaptador HTTP no
+ * toca el repositorio», del 2026-10-01, en la API VIGENTE del
  * plugin 7.x: `boundaries/dependencies` con `policies`. Las reglas
  * `element-types`/`external` y la clave `mode` están deprecadas y aquí NO se
  * usan — criterio de la enmienda: cero warnings de deprecación en la salida.
  *
  * Compartido entre `eslint.config.mjs` (el gate real) y
- * `src/__tests__/eslint-boundaries.spec.ts` (la suite de 34 casos + P1): un solo
+ * `src/__tests__/eslint-boundaries.spec.ts` (sus casos por regla + P1): un solo
  * objeto, cero copias — mismo principio que `.swcrc` para build y Jest.
  *
  * Clasificación: POR ORDEN DEL ARRAY, no por profundidad calculada.
@@ -19,7 +20,7 @@
  * añadido después de `app` queda muerto en silencio — inserta los nuevos
  * SIEMPRE antes de `app`. El `*.module.ts` se clasifica aparte como CATEGORÍA
  * de archivo (`boundaries/files`): es la única puerta legal cross-módulo
- * (spec §4, «module-public»).
+ * (§4 de la spec perdida, «module-public»; backlog #29).
  *
  * Cómo añadir piezas:
  * (a) carpeta transversal nueva en `src/` → su descriptor ANTES de `app`, su
@@ -107,7 +108,7 @@ module.exports = [
     settings: {
       'boundaries/elements': elements,
       'boundaries/files': [{ category: 'module-entry', pattern: 'src/modules/*/*.module.ts' }],
-      // Los tests importan internals de su módulo y AppModule por diseño (spec §4);
+      // Los tests importan internals de su módulo y AppModule por diseño (§4 de la spec perdida);
       // los barrels no participan del grafo (ver cabecera).
       'boundaries/ignore': ['src/**/__tests__/**', 'src/**/index.ts'],
       'import/resolver': { typescript: { alwaysTryTypes: true } },
@@ -118,7 +119,14 @@ module.exports = [
         {
           default: 'disallow',
           checkAllOrigins: true,
-          message: 'Frontera violada (spec 2026-08-04-module-boundaries)',
+          // Los imports DENTRO de un mismo elemento también pasan por las policies (por defecto
+          // el plugin los ignora). Lo exige la regla 6: `http/` y `persistence/` son el mismo
+          // elemento, `module-infrastructure`, y sin esto el controller que importa el adaptador
+          // de persistencia no se veía. El resto de imports internos ya estaban permitidos por
+          // las policies de cada capa; solo `bootstrap` y `app` necesitaron declararse a sí mismos.
+          checkInternals: true,
+          message:
+            'Frontera violada: las reglas y su porqué están en eslint.boundaries.js, y sus casos en src/__tests__/eslint-boundaries.spec.ts',
           policies: [
             // D2: base de externos — sin ella, `default: 'disallow'` + `checkAllOrigins`
             // vetaría todo import de node_modules y de builtins. Va PRIMERO para que
@@ -155,11 +163,35 @@ module.exports = [
                 // El kernel compartido, igual que para domain y application: un mapper o un
                 // controller pueden necesitar el tipo base de un VO.
                 { to: { element: { type: 'shared-domain' } } },
-                // Regla 3, lado permitido (enmienda 2026-08-06, plan orders-minimal): de
+                // Regla 3, lado permitido (enmienda 2026-08-06 del plan orders-minimal, perdido): de
                 // OTRO módulo, solo su *.module.ts. Solo para infraestructura y raíz —
                 // application y domain siguen sin poder tocar un módulo ajeno (reglas
                 // 1-2), y eso lo fijan los casos G3-G4 de la suite.
                 { to: { file: { categories: 'module-entry' } } },
+              ],
+            },
+            // Regla 6: un adaptador HTTP llama a un caso de uso, nunca al repositorio. Saltárselo
+            // se lleva las reglas que el caso de uso aplica (el dueño, el directorio, los eventos)
+            // y hasta el 2026-10-01 nada lo impedía: era una línea de la checklist de un revisor
+            // que la reescritura de las skills borró. Va DESPUÉS de la policy de infraestructura
+            // a propósito: la evaluación es last-match-wins, y esta resta de lo que aquella abre.
+            // La raíz del módulo sí cablea puerto y adaptador, y sigue pudiendo.
+            {
+              from: { element: { type: 'module-infrastructure', fileInternalPath: 'http/**' } },
+              disallow: [
+                {
+                  to: {
+                    element: { type: 'module-domain', fileInternalPath: 'ports/*.repository.ts' },
+                  },
+                },
+                {
+                  to: {
+                    element: { type: 'module-infrastructure', fileInternalPath: 'persistence/**' },
+                  },
+                },
+                // La tercera puerta: `@InjectRepository(OrmEntity)` le da al controller un
+                // repositorio de TypeORM sin pasar ni por el puerto ni por el adaptador.
+                { to: { module: { origin: 'external', source: ['typeorm', '@nestjs/typeorm'] } } },
               ],
             },
             // Regla 3 (lado permitido): app-root entra a los módulos SOLO por su *.module.ts.
@@ -169,14 +201,16 @@ module.exports = [
                 { to: { file: { categories: 'module-entry' } } },
                 {
                   to: {
-                    element: { types: { anyOf: ['common', 'config', 'database', 'bootstrap'] } },
+                    element: {
+                      types: { anyOf: ['app', 'common', 'config', 'database', 'bootstrap'] },
+                    },
                   },
                 },
               ],
             },
             {
               from: { element: { type: 'bootstrap' } },
-              allow: { to: { element: { types: { anyOf: ['common', 'config'] } } } },
+              allow: { to: { element: { types: { anyOf: ['bootstrap', 'common', 'config'] } } } },
             },
             {
               from: { element: { type: 'common' } },
@@ -202,7 +236,7 @@ module.exports = [
               allow: { to: { element: { type: 'shared-domain' } } },
             },
             // Regla 1 (externals): pureza de dominio — la lista de CLAUDE.md, ahora mecánica.
-            // `argon2` se suma por la Tabla C (gate de boundaries, plan 2026-08-05-auth-roles):
+            // `argon2` se suma por la Tabla C del plan 2026-08-05-auth-roles (perdido, backlog #29):
             // `@nestjs/jwt` NO se añade aparte — el wildcard `@nestjs/*` ya lo cubre.
             {
               from: { element: { type: 'module-domain' } },
@@ -215,17 +249,26 @@ module.exports = [
                 },
               },
             },
-            // Regla 2 (externals): aplicación sin ORM ni clientes HTTP.
-            // `argon2` y `@nestjs/jwt` se suman por la Tabla C (gate de boundaries, plan
+            // Regla 2 (externals): aplicación sin ORM, sin clientes HTTP y sin validación de
+            // transporte. `argon2` y `@nestjs/jwt` se suman por la Tabla C (gate de boundaries, plan
             // 2026-08-05-auth-roles): aquí no hay wildcard `@nestjs/*` previo, así que
-            // `@nestjs/jwt` sí necesita su propia entrada.
+            // `@nestjs/jwt` sí necesita su propia entrada. `class-validator` y `class-transformer`,
+            // desde el 2026-10-01: CLAUDE.md ya decía que esta regla los prohibía, y no lo hacía.
+            // El input de un caso de uso es un `type`; validar es trabajo del DTO de HTTP.
             {
               from: { element: { type: 'module-application' } },
               disallow: {
                 to: {
                   module: {
                     origin: 'external',
-                    source: ['typeorm', 'axios', 'argon2', '@nestjs/jwt'],
+                    source: [
+                      'typeorm',
+                      'axios',
+                      'argon2',
+                      '@nestjs/jwt',
+                      'class-validator',
+                      'class-transformer',
+                    ],
                   },
                 },
               },
@@ -269,7 +312,7 @@ module.exports = [
         {
           selector: 'Program',
           message:
-            'Sin barrels en src/: importa el archivo concreto (regla 5, spec 2026-08-04-module-boundaries).',
+            'Sin barrels en src/: importa el archivo concreto (regla 5 de eslint.boundaries.js).',
         },
       ],
     },

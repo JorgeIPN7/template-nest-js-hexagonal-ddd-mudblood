@@ -181,7 +181,37 @@
  *
  * Subir el techo sigue aplazado hasta que los 16 supervivientes conocidos tengan casos
  * aprobados.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Remedición del 2026-10-01 (arreglos de las revisiones de los PR #90 y #91). Cambió la mecánica
+ * de la corrida, que es el evento que esta cabecera manda remedir: `test/stryker-setup.ts` fija la
+ * semilla de fast-check, y sin ella las filas `P` no mataban nada bajo `perTest` —el título del test
+ * llevaba la semilla de Jest, cambiaba de una corrida a otra y Stryker no lo encontraba—. Copiado
+ * de la salida de Stryker: **96.70 %** global — 288 killed, 34 timeout, 11 survived, 0 sin
+ * cobertura, 6 error (322/333).
+ *
+ *     auth     100.00 %   47/47     ( 47 válidos, 14.1 % del censo)
+ *     users     95.09 %  155/163    (163 válidos, 48.9 %)
+ *     orders    97.00 %   97/100    (100 válidos, 30.0 %)
+ *     shared   100.00 %   23/23     ( 23 válidos,  6.9 %)
+ *
+ * Los supervivientes bajan de 16 a 11 **sin un solo caso nuevo**: eran mutantes que una fila de
+ * propiedad ya mataba y Stryker daba por vivos. Murieron `email.vo.ts` 1, `user.errors.ts` 2,
+ * `order.errors.ts` 1 y el `< 1` de `order-concept.vo.ts`. Quedan `users.facade.ts` 5,
+ * `user-id.vo.ts` 2 (las anclas de la regex), `user.errors.ts` 1, `order-concept.vo.ts` 1 (`> 140` →
+ * `>= 140`: ningún caso usa exactamente 140 caracteres), `order-amount.vo.ts` 1 (el tope) y
+ * `order.errors.ts` 1. `orders` pasa de 101 a 100 mutantes válidos porque su código cambió —el caso
+ * de uso de la cancelación lee ahora acotado por dueño—, así que ese módulo no es comparable
+ * mutante a mutante con la medición anterior. Los 34 timeouts (22 el 2026-09-30) son la familia
+ * sensible a la carga de arriba y cuentan como detectados.
+ *
+ * El umbral se queda en `break: 85`: hacen falta ≥284 detectados (85 % de 333), así que caben 38
+ * kills perdidos antes del rojo. Subirlo sigue aplazado hasta que los 11 supervivientes tengan casos
+ * aprobados.
  */
+import unitJestConfig from './jest.config.mjs';
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {
   // El default (`['@stryker-mutator/*']`) expande el glob contra el realpath de
@@ -202,6 +232,17 @@ const config = {
     projectType: 'custom',
     configFile: 'jest.config.mjs',
     enableFindRelatedTests: true,
+    // El jest-runner mezcla `config` sobre la del archivo de forma SUPERFICIAL: un `setupFiles`
+    // aquí sustituye al de `jest.config.mjs`, así que se parte del suyo. `stryker-setup.ts` fija
+    // la semilla de fast-check, sin la que las filas de propiedad no matan nada (ver el archivo).
+    //
+    // `cacheDirectory` dentro del sandbox (`<rootDir>` es el sandbox): cada corrida tiene una
+    // ruta distinta, así que su caché de Jest nunca se reutiliza, y en el temp del sistema se
+    // acumulaba sin que nadie la borrara (422 MB medidos el 2026-10-01). Aquí se va con él.
+    config: {
+      setupFiles: [...unitJestConfig.setupFiles, '<rootDir>/test/stryker-setup.ts'],
+      cacheDirectory: '<rootDir>/.jest-cache',
+    },
   },
   mutate: [
     'src/modules/*/domain/**/*.ts',
@@ -217,6 +258,9 @@ const config = {
   reporters: ['clear-text', 'progress', 'html'],
   thresholds: { high: 90, low: 80, break: 85 },
   tempDirName: '.stryker-tmp',
+  // `true` (el default) solo borra los sandboxes tras una corrida con éxito, y una que no llega al
+  // umbral cuenta como fallida: cada `break` dejaba una copia del repo en `.stryker-tmp/`.
+  cleanTempDir: 'always',
 };
 
 export default config;

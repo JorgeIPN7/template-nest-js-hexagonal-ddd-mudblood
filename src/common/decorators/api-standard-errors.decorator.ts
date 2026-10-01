@@ -4,12 +4,20 @@ import { ApiResponse } from '@nestjs/swagger';
 import { buildErrorExample } from '../dto/error-example.factory';
 import { ErrorResponseDto } from '../dto/error-response.dto';
 
+import { REQUEST_TIMEOUT_MESSAGE } from './timeout.decorator';
+
 export type StandardErrorsOptions = {
   /**
    * Declara 429. Por defecto `true`, porque `ThrottlerGuard` es global. Ponlo en `false` en
    * los controllers marcados con `@SkipThrottle()`, que nunca devuelven 429.
    */
   throttled?: boolean;
+  /**
+   * Declara 408. Por defecto `true`, porque `TimeoutInterceptor` es global: cualquier handler que
+   * tarde más de `REQUEST_TIMEOUT_MS` —una base que se atasca, una espera de bloqueo sin límite—
+   * responde 408. Ponlo en `false` en los marcados con `@SkipTimeout()`, que nunca lo devuelven.
+   */
+  timeout?: boolean;
 };
 
 /**
@@ -36,8 +44,23 @@ const GENERIC_PATH = '/api/v1/resource';
  */
 export const ApiStandardErrors = ({
   throttled = true,
+  timeout = true,
 }: StandardErrorsOptions = {}): MethodDecorator & ClassDecorator => {
   const decorators: (MethodDecorator & ClassDecorator)[] = [];
+
+  if (timeout) {
+    decorators.push(
+      ApiResponse({
+        status: 408,
+        description:
+          'La petición superó el tiempo máximo (`REQUEST_TIMEOUT_MS`). Se corta la respuesta, no ' +
+          'la operación: una escritura puede haberse aplicado igualmente, así que antes de ' +
+          'repetirla hay que comprobar su estado.',
+        type: ErrorResponseDto,
+        example: buildErrorExample(408, { path: GENERIC_PATH, message: REQUEST_TIMEOUT_MESSAGE }),
+      }),
+    );
+  }
 
   if (throttled) {
     decorators.push(

@@ -17,6 +17,10 @@ Agent({
     **Stack:** NestJS 12 + TypeScript 6.0, hexagonal/DDD layout under src/modules/<context>/
     (concrete shape: `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md`).
 
+    **You are read-only.** Do not edit, move or restore any file of the repo, not even
+    temporarily, and run no git command that writes. Your output is the report below; the spec's
+    author applies the changes.
+
     ## What to Check
 
     | Category | What to Look For |
@@ -31,6 +35,7 @@ Agent({
     | Rule-code coverage | Cross-cutting concerns (auth, validation, errors, logging, throttling, caching) tagged with `nestjs-best-practices` rule codes |
     | Contract reachability | Every declared response names the input/state and code path that produce it today; a response no request can produce is a finding (CLAUDE.md: «a declared-but-impossible response is the same defect as an undeclared one») |
     | Guarantees | Every guarantee (concurrency, ownership, authorization, atomicity, anti-enumeration, idempotency) names the test that will protect it |
+    | Migrations | A schema change says whether it is additive or expand/contract; an added `NOT NULL` column has a `DEFAULT` (CLAUDE.md, «Destructive migrations») |
 
     ## Calibration
 

@@ -364,6 +364,47 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **Arreglos de las revisiones de los PR #90 y #91** (2026-10-01). Dos `/code-review`, 30
+  hallazgos y unos 25 menores; el detalle de cada uno, con su medición, vive en el código y en las
+  docs que cambia. Por área:
+  - **`orders`.** La transacción pide `READ COMMITTED` explícitamente: con un aislamiento por
+    defecto distinto, el perdedor del doble clic recibía un `40001` y un 500 (un E2E abre una
+    conexión con defecto SERIALIZABLE para probarlo). La lectura lleva el dueño en la consulta
+    (`findByIdAndCustomer`): un pedido ajeno con la fila corrupta respondía 500 en vez del 404
+    indistinguible, y en desarrollo con datos de la fila. El mapper rechaza una `version` menor
+    que 1. El outbox se escribe con `insert`, no con `save`. El byte NUL en `concept` (y en el
+    nombre del alta) daba 500; ahora el DTO lo rechaza con 400.
+  - **Tests de guarda que no fallaban sin su protección.** El INSERT solo traduce el `23505`, y
+    ahora un test lo fija forzando un `22021`; el doble guardado lleva su `OrderPlaced`, así que
+    «sin tocar el outbox» puede fallar. Las tres guardas se comprobaron en rojo quitando la
+    protección. Más higiene: un factory de `Order`, helpers compartidos en `test/helpers/`
+    (`captureError`, `captureRejection`, `expectDocumentedError`, que además exige `timestamp` y
+    `requestId`) y un fake que se comporta como el adaptador con mayúsculas y en el UPDATE.
+  - **Contrato.** `@ApiStandardErrors()` declara el 408 del `TimeoutInterceptor` global, y el
+    guardián lo comprueba en los dos sentidos; health queda exento con `@SkipTimeout()`.
+  - **Migraciones.** La de la cancelación acota la espera de bloqueos (`SET LOCAL lock_timeout`):
+    con otra sesión sujetando `orders`, el `ALTER` esperaba sin límite y el pod nuevo no
+    arrancaba. `migration-conventions.spec.ts` lo exige a toda migración desde esa.
+  - **Mutación.** El comando documentado para mutar un módulo (`{domain,application}`) mutaba
+    cero archivos y salía en verde con score `NaN`. Las filas `P` de fast-check no mataban nada
+    bajo Stryker: `test/stryker-setup.ts` fija su semilla, y el censo pasa de 16 a 11
+    supervivientes sin casos nuevos. `test:mutation:changed` muta archivos enteros y puntúa los
+    mutantes que tocan el cambio (antes, un `&&` sobre dos líneas quedaba fuera), ignora la
+    re-indentación y los movimientos, cuenta los cambios que solo tocan tests, acepta el `--` de
+    pnpm, lee el alcance de la config y ya no necesita `NODE_PATH` (`jest-environment-node` es
+    dependencia directa). Stryker limpia siempre sus sandboxes y deja la caché de Jest dentro.
+  - **Guardas.** El `deny` de git cubre cada subcomando a secas y tras cualquier opción global
+    (antes pasaban `git -C <dir> stash`, `git -c k=v commit` o `git branch -q -D x`) y suma `mv`,
+    `rm`, `read-tree`, `update-ref`, `symbolic-ref`, `bisect` y otros; medido con el arnés real.
+    La regla 2 de boundaries prohíbe por fin `class-validator` en `application/`, y la 6, nueva,
+    impide que un adaptador HTTP toque el repositorio.
+  - **Flujos y skills.** El riesgo de seguridad se evalúa antes que «trivial»; el stub del TDD
+    devuelve un valor neutro en vez de lanzar; el rojo de un caso que mata un superviviente se
+    demuestra aplicando el mutante a mano; la mutación se repite tras los arreglos de la
+    revisión; la copia del revisor ya no escribe en el `node_modules` real ni toca la base de
+    desarrollo; la comprobación mecánica de SDD funciona dentro de Claude Code; el hook de nvm
+    documentado deja de recargarse en cada comando (0,19 s → 0,016 s).
+
 - **El apagado por señal vuelve a pasar por `main.ts` y pino se vacía antes de salir**
   (2026-09-28). Cierra lo que la entrada del 2026-09-25 («Un hook de apagado que falla…») dejaba
   anotado sin arreglar: por señal, el `.then`/`.catch` de `main.ts` no corría nunca.

@@ -1,5 +1,7 @@
 import { test as fcTest, fc } from '@fast-check/jest';
 
+import { captureError } from '@test/helpers/capture-error';
+
 import { Order } from '../../../domain/entities/order.entity';
 import { OrderDomainError } from '../../../domain/errors/order.errors';
 import { OrderAmount } from '../../../domain/value-objects/order-amount.vo';
@@ -14,16 +16,21 @@ import {
   persistedVersionArb,
   timestampArb,
 } from '../../helpers/arbitraries';
+import {
+  DEFAULT_AMOUNT_CENTS,
+  DEFAULT_CONCEPT,
+  DEFAULT_CUSTOMER_ID,
+  DEFAULT_PLACED_AT,
+  rehydrateOrder,
+} from '../../helpers/order.factory';
 
-const CUSTOMER_ID = '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012';
-const PLACED_AT = new Date('2026-08-06T09:30:00.000Z');
 const CANCELLED_AT = new Date('2026-08-06T11:00:00.000Z');
 
 describe('OrderMapper', () => {
   describe('toPersistence()', () => {
     it('debería volcar el agregado a columnas primitivas', () => {
       // Arrange
-      const order = buildOrder();
+      const order = rehydrateOrder();
 
       // Act
       const row = OrderMapper.toPersistence(order);
@@ -31,15 +38,15 @@ describe('OrderMapper', () => {
       // Assert
       expect(row).toBeInstanceOf(OrderOrmEntity);
       expect(row.id).toBe(order.id.value);
-      expect(row.customerId).toBe(CUSTOMER_ID);
-      expect(row.concept).toBe('Suscripción anual plan Pro');
-      expect(row.amountCents).toBe(149_900);
-      expect(row.placedAt).toEqual(PLACED_AT);
+      expect(row.customerId).toBe(DEFAULT_CUSTOMER_ID);
+      expect(row.concept).toBe(DEFAULT_CONCEPT);
+      expect(row.amountCents).toBe(DEFAULT_AMOUNT_CENTS);
+      expect(row.placedAt).toEqual(DEFAULT_PLACED_AT);
     });
 
     it('debería volcar el estado, la fecha de cancelación y la versión de un pedido cancelado', () => {
       // Arrange
-      const order = buildOrder({ status: 'cancelled', cancelledAt: CANCELLED_AT, version: 4 });
+      const order = rehydrateOrder({ status: 'cancelled', cancelledAt: CANCELLED_AT, version: 4 });
 
       // Act
       const row = OrderMapper.toPersistence(order);
@@ -54,7 +61,7 @@ describe('OrderMapper', () => {
   describe('toDomain()', () => {
     it('debería reconstruir el agregado desde la fila sin emitir eventos', () => {
       // Arrange
-      const row = buildRow();
+      const row = buildRow({ status: 'cancelled', cancelledAt: CANCELLED_AT, version: 4 });
 
       // Act
       const order = OrderMapper.toDomain(row);
@@ -76,8 +83,7 @@ describe('OrderMapper', () => {
     it('debería rechazar una fila con un estado que este código no conoce', () => {
       // Arrange: lo que dejaría una versión futura con un tercer estado tras volver atrás. Si
       // pasara, `cancel()` —que solo mira `=== 'cancelled'`— cancelaría un pedido enviado.
-      const row = buildRow();
-      row.status = 'shipped';
+      const row = buildRow({ status: 'shipped', cancelledAt: null });
 
       // Act
       const act = () => OrderMapper.toDomain(row);
@@ -88,8 +94,7 @@ describe('OrderMapper', () => {
 
     it('debería rechazar una fila cancelada sin fecha de cancelación', () => {
       // Arrange: publicaría un pedido cancelado sin `cancelledAt`, contra lo que dice el DTO.
-      const row = buildRow();
-      row.cancelledAt = null;
+      const row = buildRow({ status: 'cancelled', cancelledAt: null });
 
       // Act
       const act = () => OrderMapper.toDomain(row);
@@ -100,8 +105,7 @@ describe('OrderMapper', () => {
 
     it('debería rechazar una fila colocada con fecha de cancelación', () => {
       // Arrange
-      const row = buildRow();
-      row.status = 'placed';
+      const row = buildRow({ status: 'placed', cancelledAt: CANCELLED_AT });
 
       // Act
       const act = () => OrderMapper.toDomain(row);
@@ -110,12 +114,35 @@ describe('OrderMapper', () => {
       expect(act).toThrow(`El pedido ${row.id} está en "placed" y tiene cancelled_at`);
     });
 
+    it('debería rechazar una fila guardada con versión 0, la que el adaptador reserva para lo nunca guardado', () => {
+      // Arrange: solo puede venir de fuera del código (un arreglo a mano, un backfill). Si se
+      // aceptara, el adaptador tomaría el pedido por nuevo y su cancelación chocaría para siempre.
+      const row = buildRow({ status: 'placed', cancelledAt: null, version: 0 });
+
+      // Act
+      const act = () => OrderMapper.toDomain(row);
+
+      // Assert
+      expect(act).toThrow(
+        `El pedido ${row.id} tiene una versión imposible para una fila guardada: 0`,
+      );
+    });
+
+    it('debería aceptar la versión 1, la que deja el primer guardado', () => {
+      // Arrange
+      const row = buildRow({ status: 'placed', cancelledAt: null, version: 1 });
+
+      // Act
+      const order = OrderMapper.toDomain(row);
+
+      // Assert
+      expect(order.version).toBe(1);
+    });
+
     it('debería fallar cerrado ante una fila que las reglas actuales del dominio rechazan', () => {
       // Arrange: un importe que una versión futura admitiera y esta no. Como error de dominio,
-      // el filter lo publicaría como 400 con el importe en el mensaje, también para un pedido
-      // ajeno, porque el mapper corre antes de comprobar el dueño.
-      const row = buildRow();
-      row.amountCents = 0;
+      // el filter lo publicaría como 400 con el importe en el mensaje.
+      const row = buildRow({ amountCents: 0 });
 
       // Act
       const act = () => OrderMapper.toDomain(row);
@@ -124,7 +151,7 @@ describe('OrderMapper', () => {
       expect(act).toThrow(
         `El pedido ${row.id} tiene datos que el dominio rechaza: 0 is not a valid order amount in cents`,
       );
-      expect(thrownBy(act)).not.toBeInstanceOf(OrderDomainError);
+      expect(captureError(act)).not.toBeInstanceOf(OrderDomainError);
     });
   });
 
@@ -143,7 +170,7 @@ describe('OrderMapper', () => {
         // Arrange
         const original = Order.rehydrate({
           id: OrderId.generate(),
-          customerId: CUSTOMER_ID,
+          customerId: DEFAULT_CUSTOMER_ID,
           concept: OrderConcept.from(concept),
           amount: OrderAmount.from(amountCents),
           placedAt,
@@ -164,41 +191,28 @@ describe('OrderMapper', () => {
 
 // Helpers
 
-const thrownBy = (fn: () => unknown): unknown => {
-  try {
-    fn();
-  } catch (error) {
-    return error;
-  }
-  throw new Error('Se esperaba que la función lanzara y no lo hizo');
-};
+type RowOverrides = Partial<
+  Pick<OrderOrmEntity, 'status' | 'cancelledAt' | 'version' | 'amountCents'>
+>;
 
-const buildOrder = (
-  overrides: Partial<
-    Pick<Parameters<typeof Order.rehydrate>[0], 'status' | 'cancelledAt' | 'version'>
-  > = {},
-): Order =>
-  Order.rehydrate({
-    id: OrderId.generate(),
-    customerId: CUSTOMER_ID,
-    concept: OrderConcept.from('Suscripción anual plan Pro'),
-    amount: OrderAmount.from(149_900),
-    placedAt: PLACED_AT,
-    status: 'placed',
-    cancelledAt: null,
-    version: 1,
-    ...overrides,
-  });
-
-const buildRow = (): OrderOrmEntity => {
+/**
+ * Fila tal como la devolvería la base. Cada test de `readStatus` pasa el estado Y la fecha que
+ * prueba: depender de los valores por defecto escondería cuál de los dos campos rompe la fila.
+ */
+const buildRow = ({
+  status = 'cancelled',
+  cancelledAt = CANCELLED_AT,
+  version = 4,
+  amountCents = 5_000,
+}: RowOverrides = {}): OrderOrmEntity => {
   const row = new OrderOrmEntity();
   row.id = OrderId.generate().value;
-  row.customerId = CUSTOMER_ID;
+  row.customerId = DEFAULT_CUSTOMER_ID;
   row.concept = 'Fila persistida';
-  row.amountCents = 5_000;
-  row.placedAt = PLACED_AT;
-  row.status = 'cancelled';
-  row.cancelledAt = CANCELLED_AT;
-  row.version = 4;
+  row.amountCents = amountCents;
+  row.placedAt = DEFAULT_PLACED_AT;
+  row.status = status;
+  row.cancelledAt = cancelledAt;
+  row.version = version;
   return row;
 };

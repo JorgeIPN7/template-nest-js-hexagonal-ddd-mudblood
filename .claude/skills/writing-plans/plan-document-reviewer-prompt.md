@@ -16,6 +16,10 @@ Agent({
     **Plan to review:** [PLAN_FILE_PATH]
     **Spec for reference:** [SPEC_FILE_PATH]
 
+    **You are read-only.** Do not edit, move or restore any file of the repo, not even
+    temporarily, and run no git command that writes. Your output is the report below; the plan's
+    author applies the changes.
+
     ## What to Check
 
     | Category | What to Look For |
@@ -35,7 +39,8 @@ Agent({
     | Guard tests | Every guarantee in the spec (concurrency, ownership, authorization, atomicity, anti-enumeration, idempotency) has a test and a step that proves it fails without the protection |
     | Rule codes | Rule codes are cited where they change what the implementer does (cross-cutting concerns), not on every task by ritual |
     | Test stack | Tests use Jest + Supertest only — not Python/pytest, not Mocha |
-    | No autocommit | No task contains `git commit`, `git add` or `git push` instructions |
+    | Migrations | Additive or expand/contract; an added `NOT NULL` column has a `DEFAULT`; `up()` and `down()` start with `SET LOCAL lock_timeout` (CLAUDE.md, «Destructive migrations») |
+    | No autocommit | No task contains `git commit`, `git add`, `git push` or any other git command that writes |
 
     ## Calibration
 

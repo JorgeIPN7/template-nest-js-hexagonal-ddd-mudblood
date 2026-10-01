@@ -1463,6 +1463,24 @@ medición que explica por qué existe una regla, no la regla.
 **Cómo se sabrá que está hecho.** `CLAUDE.md` pesa la mitad o menos, y el cotejo de reglas no deja
 ninguna sin su sitio.
 
+## 33. Un 408 en `POST /orders` no dice si el pedido se creó, y reintentar puede duplicarlo
+
+**Qué pasa.** El `TimeoutInterceptor` global corta la **respuesta** a los `REQUEST_TIMEOUT_MS`
+(15 s), no la operación: si la base se atasca, el INSERT del pedido y su `OrderPlaced` pueden
+confirmarse después de que el cliente haya recibido el 408. Desde el 2026-10-01 el 408 está
+declarado en el contrato con esa advertencia («antes de repetir una escritura, comprueba su
+estado»), pero `POST /orders` no es idempotente y no hay forma de comprobar si un pedido concreto
+se creó: el cliente que reintenta crea otro. La cancelación no tiene el problema, porque repetirla
+devuelve el pedido ya cancelado.
+
+**Criterio propuesto, pendiente de decisión.** Una cabecera `Idempotency-Key` en `POST /orders`,
+guardada con el pedido bajo un índice único por cliente: repetir la clave devuelve el pedido ya
+creado, con 201. Es una feature, y toca el contrato público, así que el alcance y la caducidad de
+las claves los decide el mantenedor.
+
+**Cómo se sabrá que está hecho.** Un E2E repite el mismo `POST /orders` con la misma clave y
+encuentra un solo pedido y un solo `OrderPlaced`, y el contrato documenta la cabecera.
+
 ---
 
 ## Cerrado al verificarlo

@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { captureError } from '@test/helpers/capture-error';
+
 import {
   CustomerGoneError,
   InvalidOrderAmountError,
@@ -90,14 +92,3 @@ describe('OrdersDomainExceptionFilter', () => {
     });
   });
 });
-
-// Helpers
-
-const captureError = (fn: () => unknown): Error => {
-  try {
-    fn();
-  } catch (error) {
-    return error as Error;
-  }
-  throw new Error('Se esperaba que la función lanzara un error y no lo hizo');
-};

@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  RequestTimeoutException,
   UnauthorizedException,
   type ArgumentsHost,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import type { HttpAdapterHost } from '@nestjs/core';
 import { ThrottlerException } from '@nestjs/throttler';
 import type { PinoLogger } from 'nestjs-pino';
 
+import { REQUEST_TIMEOUT_MESSAGE } from '../../decorators/timeout.decorator';
 import { buildErrorExample, VERIFIED_ERROR_STATUSES } from '../../dto/error-example.factory';
 import { AllExceptionsFilter, type ErrorPayload } from '../../filters/all-exceptions.filter';
 
@@ -42,6 +44,9 @@ describe('buildErrorExample', () => {
     ['401', 401, () => new UnauthorizedException('Unauthorized')],
     ['403', 403, () => new ForbiddenException('Forbidden')],
     ['404', 404, () => new NotFoundException('User abc was not found')],
+    // Como lo construye `TimeoutInterceptor`, con un string, así que `error` es el canónico. Que el
+    // interceptor use de verdad esa constante lo fija su propio spec.
+    ['408', 408, () => new RequestTimeoutException(REQUEST_TIMEOUT_MESSAGE)],
     ['409', 409, () => new ConflictException('Email a@b.com is already registered')],
     ['429', 429, () => new ThrottlerException()],
   ])(
@@ -68,7 +73,7 @@ describe('buildErrorExample', () => {
 
   it('debería cubrir con casos reales todos los status que declara verificados', () => {
     // Arrange
-    const covered = new Set([400, 401, 403, 404, 409, 429, 500]);
+    const covered = new Set([400, 401, 403, 404, 408, 409, 429, 500]);
 
     // Act
     const uncovered = [...VERIFIED_ERROR_STATUSES].filter((status) => !covered.has(status));

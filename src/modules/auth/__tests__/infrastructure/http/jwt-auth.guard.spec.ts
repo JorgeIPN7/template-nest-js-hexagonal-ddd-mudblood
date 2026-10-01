@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 
 import { Auth } from '@common/decorators/auth.decorator';
 import { Public } from '@common/decorators/public.decorator';
+import { captureRejection } from '@test/helpers/capture-error';
 
 import type { TokenClaims } from '../../../domain/ports/token-signer';
 import { JwtAuthGuard } from '../../../infrastructure/http/jwt-auth.guard';
@@ -104,8 +105,8 @@ describe('JwtAuthGuard', () => {
     });
 
     // Act
-    const noTokenError = await catchError(() => guard.canActivate(noTokenContext));
-    const badTokenError = await catchError(() => guard.canActivate(badTokenContext));
+    const noTokenError = await captureRejection(guard.canActivate(noTokenContext));
+    const badTokenError = await captureRejection(guard.canActivate(badTokenContext));
 
     // Assert
     expect(noTokenError).toBeInstanceOf(UnauthorizedException);
@@ -127,8 +128,8 @@ describe('JwtAuthGuard', () => {
     });
 
     // Act
-    const noTokenError = await catchError(() => guard.canActivate(noTokenContext));
-    const expiredError = await catchError(() => guard.canActivate(expiredContext));
+    const noTokenError = await captureRejection(guard.canActivate(noTokenContext));
+    const expiredError = await captureRejection(guard.canActivate(expiredContext));
 
     // Assert
     expect(expiredError).toBeInstanceOf(UnauthorizedException);
@@ -151,8 +152,8 @@ describe('JwtAuthGuard', () => {
     });
 
     // Act
-    const noTokenError = await catchError(() => guard.canActivate(noTokenContext));
-    const wrongSignatureError = await catchError(() => guard.canActivate(wrongSignatureContext));
+    const noTokenError = await captureRejection(guard.canActivate(noTokenContext));
+    const wrongSignatureError = await captureRejection(guard.canActivate(wrongSignatureContext));
 
     // Assert
     expect(wrongSignatureError).toBeInstanceOf(UnauthorizedException);
@@ -219,8 +220,8 @@ describe('JwtAuthGuard', () => {
     });
 
     // Act
-    const unauthorizedError = await catchError(() => guard.canActivate(noTokenContext));
-    const forbiddenError = await catchError(() => guard.canActivate(forbiddenContext));
+    const unauthorizedError = await captureRejection(guard.canActivate(noTokenContext));
+    const forbiddenError = await captureRejection(guard.canActivate(forbiddenContext));
 
     // Assert
     expect((unauthorizedError as UnauthorizedException).getResponse()).toEqual({
@@ -254,15 +255,3 @@ const buildContext = (
     getClass: () => carrierClass,
     switchToHttp: () => ({ getRequest: () => request }),
   }) as unknown as ExecutionContext;
-
-const catchError = async (fn: () => Promise<unknown>): Promise<unknown> => {
-  try {
-    await fn();
-  } catch (error) {
-    return error;
-  }
-  // FUERA del try/catch: si quedara dentro, este mismo throw caería en el catch de
-  // arriba y el test vería su propio sentinel como si fuera el error del SUT — el
-  // diagnóstico jamás llegaría a superficie.
-  throw new Error('Se esperaba que la función lanzara.');
-};

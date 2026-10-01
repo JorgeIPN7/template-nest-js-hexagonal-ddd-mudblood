@@ -345,6 +345,9 @@ importers:
       jest:
         specifier: 30.5.2
         version: 30.5.2(@types/node@24.19.0)(supports-color@10.2.2)(ts-node@10.9.2(@swc/core@1.16.2(@swc/helpers@0.5.23))(@types/node@24.19.0)(typescript@6.0.3))
+      jest-environment-node:
+        specifier: 30.5.2
+        version: 30.5.2
       lint-staged:
         specifier: 17.6.0
         version: 17.6.0

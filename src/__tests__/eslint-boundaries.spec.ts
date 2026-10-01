@@ -8,9 +8,10 @@ const boundariesBlocks = require('../../eslint.boundaries.js') as Linter.Config[
 
 const D = 'src/modules/users/domain/f.ts';
 const A = 'src/modules/users/application/f.ts';
+const HTTP = 'src/modules/users/infrastructure/http/f.ts';
 const SD = 'src/shared/domain/f.ts';
 
-describe('eslint.boundaries (gate de fronteras — spec 2026-08-04)', () => {
+describe('eslint.boundaries (gate de fronteras)', () => {
   describe('regla 1: pureza de dominio', () => {
     it('debería rechazar `@nestjs/common` en domain', async () => {
       // Arrange + Act
@@ -177,6 +178,22 @@ describe('eslint.boundaries (gate de fronteras — spec 2026-08-04)', () => {
       // Assert
       expect(ruleIds(messages)).toContain('boundaries/dependencies');
     });
+
+    // CLAUDE.md lo daba por prohibido («boundaries rule 2 bans that library») y la lista de la
+    // regla no lo llevaba: un input de caso de uso con decoradores de validación pasaba el lint.
+    it.each([['class-validator'], ['class-transformer']])(
+      'debería rechazar `%s` en application: validar es cosa del DTO de HTTP',
+      async (library) => {
+        // Arrange
+        const code = `import { IsString } from '${library}';`;
+
+        // Act
+        const messages = await lint(A, code);
+
+        // Assert
+        expect(ruleIds(messages)).toContain('boundaries/dependencies');
+      },
+    );
   });
 
   describe('regla 3: aislamiento entre módulos', () => {
@@ -287,6 +304,83 @@ describe('eslint.boundaries (gate de fronteras — spec 2026-08-04)', () => {
       const messages = await lint('src/common/f.ts', "import { Entity } from 'typeorm';");
       // Assert
       expect(ruleIds(messages)).toContain('boundaries/dependencies');
+    });
+  });
+
+  describe('regla 6: un adaptador HTTP no toca el repositorio', () => {
+    it('debería rechazar que un controller importe el puerto del repositorio', async () => {
+      // Arrange
+      const code = "import { UserRepository } from '../../domain/ports/user.repository';";
+
+      // Act
+      const messages = await lint(HTTP, code);
+
+      // Assert
+      expect(ruleIds(messages)).toContain('boundaries/dependencies');
+    });
+
+    it('debería rechazar que un controller importe el adaptador de persistencia', async () => {
+      // Arrange
+      const code =
+        "import { UserTypeOrmRepository } from '../persistence/user.typeorm.repository';";
+
+      // Act
+      const messages = await lint(HTTP, code);
+
+      // Assert
+      expect(ruleIds(messages)).toContain('boundaries/dependencies');
+    });
+
+    it.each([['typeorm'], ['@nestjs/typeorm']])(
+      'debería rechazar que un controller use `%s` directamente',
+      async (library) => {
+        // Arrange: `@InjectRepository(OrmEntity)` daría un repositorio sin puerto ni adaptador.
+        const code = `import { InjectRepository } from '${library}';`;
+
+        // Act
+        const messages = await lint(HTTP, code);
+
+        // Assert
+        expect(ruleIds(messages)).toContain('boundaries/dependencies');
+      },
+    );
+
+    it('debería aceptar que un controller importe un caso de uso', async () => {
+      // Arrange
+      const code =
+        "import { CreateUserUseCase } from '../../application/use-cases/create-user.use-case';";
+
+      // Act
+      const messages = await lint(HTTP, code);
+
+      // Assert
+      expect(messages).toHaveLength(0);
+    });
+
+    it('debería aceptar que un adaptador HTTP importe un puerto que no es un repositorio', async () => {
+      // Arrange: el guard de auth lee del puerto de tokens el tipo de sus claims. Sin `import type`:
+      // esta suite lintea sin el parser de TypeScript, y lo que se mide es la frontera, no la forma.
+      const code = "import { TokenSigner } from '../../domain/ports/token-signer';";
+
+      // Act
+      const messages = await lint('src/modules/auth/infrastructure/http/f.ts', code);
+
+      // Assert
+      expect(messages).toHaveLength(0);
+    });
+
+    it('debería seguir dejando que la raíz del módulo cablee el puerto con su adaptador', async () => {
+      // Arrange
+      const code = [
+        "import { UserRepository } from './domain/ports/user.repository';",
+        "import { UserTypeOrmRepository } from './infrastructure/persistence/user.typeorm.repository';",
+      ].join('\n');
+
+      // Act
+      const messages = await lint('src/modules/users/f.module.ts', code);
+
+      // Assert
+      expect(messages).toHaveLength(0);
     });
   });
 

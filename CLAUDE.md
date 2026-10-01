@@ -51,7 +51,10 @@ pnpm migration:generate src/database/migrations/<Name>   # diff entities vs sche
 
 ## Git policy — never commit on the user's behalf
 
-Never run `git commit`, `git add` for commit purposes, `git push`, `git tag`, or `git rebase` without an explicit instruction **in the user's current turn**. A previous authorization is never reused.
+Agents never run `git commit`, `git add`, `git push`, `git tag`, `git rebase` or any other git
+command that writes history, moves `HEAD` or a ref, touches the index or discards work — **not
+even when asked**: the deny list below blocks them for every agent, so the only way a commit
+happens is the user's own terminal.
 
 When a commit seems appropriate, suggest it and stop:
 
@@ -60,11 +63,19 @@ When a commit seems appropriate, suggest it and stop:
 This applies to subagents too.
 
 **Enforced, not only written (since 2026-09-30).** `.claude/settings.json` denies, to every agent
-(subagents and Workflow agents included), each git subcommand that writes history, moves `HEAD`
-or discards work — plain and with `-C <dir>`; `src/__tests__/claude-settings.spec.ts` pins the
-list. Measured with Claude Code 2.1.283: `cd <dir> && git commit` is blocked too; `status`,
-`log` and `merge-base` stay allowed. A guardrail, not a sandbox (`bash -c "…"` gets past
-it), so the rule above still governs. **The user commits from their own terminal.**
+(subagents and Workflow agents included), each of those subcommands in three forms —
+`git <sub> *`, `git * <sub> *` and `git * <sub>` — so the bare subcommand and any global option in
+front of it (`-C <dir>`, `-c k=v`, `--no-pager`, `--git-dir=…`) are covered. The third form is
+needed because a trailing ` *` only matches nothing when it is the rule's single wildcard
+(measured with Claude Code 2.1.283; until 2026-10-01 the list had two forms and let
+`git -C <dir> stash`, `git -c k=v commit` and `git branch -q -D x` through).
+`src/__tests__/claude-settings.spec.ts` pins the list and models that semantics. Measured too:
+`cd <dir> && git commit` is blocked (compound commands are checked part by part), and `status`,
+`log`, `diff`, `show`, `rev-parse`, `merge-base` and `reflog` stay allowed. `git branch` and
+`git stash` are denied whole, reads included: use `git rev-parse --abbrev-ref HEAD` and
+`git log -g refs/stash`. A guardrail, not a sandbox — it only sees commands that start with
+`git`, and `git fetch` with a local refspec (`git fetch . a:b`) still moves a ref — so the rule
+above still governs. **The user commits from their own terminal.**
 
 ## Formato de respuesta — cómo el usuario quiere que se le responda
 
@@ -130,11 +141,11 @@ Nine skills live in `.claude/skills/`. **Pick the level of the change before tou
 full guide — task types, steps, what the user does at each one, artefacts, cost and the measured
 evidence — is [`docs/development-workflows.md`](docs/development-workflows.md).
 
-| Level                              | When                                                                                                                                                                                 | Flow                                                                                                                                                                                                         |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Trivial**                        | typo, docs, config, dependency bump, a one-line bug with an obvious test                                                                                                             | No skill: the change, its test if it has behaviour, the DoD                                                                                                                                                  |
-| **Express** (default for features) | a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks, at most an additive migration                                                                          | `/express`: ≤ 2 rounds of grouped questions → spec ≤ 150 lines with the case table and the contract → TDD, red by assertion → `pnpm test:mutation:changed` → `adversarial-review` → DoD                      |
-| **Full**                           | a new bounded context; a change across contexts (facades, shared ports); a destructive migration; auth, credentials, tokens or permissions; > ~10 tasks; work someone else continues | `/brainstorming` → `writing-plans` (plan WITHOUT production code) → `executing-plans` in a new session, or `subagent-driven-development` only for ~10+ mostly independent tasks → `adversarial-review` → DoD |
+| Level                              | When                                                                                                                                                                                                                        | Flow                                                                                                                                                                                                         |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Trivial**                        | typo, docs, non-security config, dependency bump, a one-line bug with an obvious test                                                                                                                                       | No skill: the change, its test if it has behaviour, the DoD                                                                                                                                                  |
+| **Express** (default for features) | a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks, at most an additive migration                                                                                                                 | `/express`: ≤ 2 rounds of grouped questions → spec ≤ 150 lines with the case table and the contract → TDD, red by assertion → `pnpm test:mutation:changed` → `adversarial-review` → DoD                      |
+| **Full**                           | a new bounded context; a change across contexts (facades, shared ports); a destructive migration; auth, credentials, tokens or permissions — their config included, even one line; > ~10 tasks; work someone else continues | `/brainstorming` → `writing-plans` (plan WITHOUT production code) → `executing-plans` in a new session, or `subagent-driven-development` only for ~10+ mostly independent tasks → `adversarial-review` → DoD |
 
 Doubt between trivial and express → express. Doubt between express and full → ask the user, with
 your recommendation: the full flow costs several times more (measured: 52.54 USD against 11.82 for
@@ -173,8 +184,10 @@ reconstrucción del 2026-08-08 y no existe en el repo (backlog #29). Tres fases:
 3. **Validación:** la mutación del código nuevo (`pnpm test:mutation:changed <base>`), la
    revisión adversarial (`adversarial-review`) y la DoD. El humano coteja tabla ↔ suite verde, el
    score y el informe de la revisión, sin leer el diff línea a línea. Para medir un módulo
-   entero: `pnpm test:mutation --mutate "src/modules/<context>/{domain,application}/**/*.ts"`; a
-   secas muta todos.
+   entero: `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"`;
+   a secas muta todos. ⚠️ Sin llaves: el CLI de Stryker parte `--mutate` por comas ANTES de
+   expandirlas, así que `{domain,application}` daba dos patrones que no casan con nada, cero
+   mutantes, un score `NaN` que pasa cualquier umbral y salida 0 (medido con Stryker 10).
 
 **La mutación es gate, no sugerencia** (desde 2026-08-06, backlog #9): `thresholds.break: 85`
 en `stryker.config.mjs` y job `mutation` propio en `ci.yml`. El 85 sale del baseline medido
@@ -206,7 +219,10 @@ src/modules/<context>/
 ```
 
 - **Dependency rule:** outer → inner only. `domain/` imports nothing from `@nestjs/*`, ORMs, `axios`, `class-validator` decorators, or `pino`.
-- **Controllers are driver adapters** → they live in `infrastructure/http/`.
+- **Controllers are driver adapters** → they live in `infrastructure/http/`, and they call a use case, never a
+  repository: boundaries rule 6 stops `infrastructure/http/` from importing a `domain/ports/*.repository.ts`,
+  anything under `infrastructure/persistence/`, `typeorm` or `@nestjs/typeorm` (since 2026-10-01; before, only a
+  reviewer's checklist said so). The module root still wires port and adapter.
 - **Two routes that can match the same request abort the boot.** `NEST_APP_OPTIONS` in `src/main.ts`, shared with `createTestApp()`, sets `routeConflictPolicy: { duplicate: 'error', shadow: 'error' }`, so every E2E checks it too. `shadow` is symmetric: `users/me` next to `users/:id` fails in **either** order, including the one Express would resolve correctly (`src/__tests__/main.spec.ts` pins both). Lowering `shadow` to `'warn'` is a decision to take knowingly, not a fix.
 - **Ports are `abstract class`, never `type` + `Symbol` token.** A class survives compilation, so one single reference is both the contract's type and its injection token — Nest accepts `Abstract<T>` as an `InjectionToken` and SWC emits it into `design:paramtypes`. The module wires `{ provide: UserRepository, useClass: UserTypeOrmRepository }` and **no consumer needs `@Inject`**. No `Port` suffix: `UserRepository` doesn't collide, TypeORM's `Repository` only shows up inside the adapter with its own import. Three consequences, all load-bearing:
   - **A port declares only public `abstract` members** — no fields, no `protected`/`private`, no constructor. Two bans, two different causes, both measured with `tsc 6.0.3 --noEmit --strict`. A **field** (public, `protected` or `private`) or a **parameter property** makes the object-literal fakes stop compiling (`TS2741`; there is a real fake in `orders/__tests__/infrastructure/users-customer.directory.spec.ts`). An **empty `protected constructor()` compiles fine** — it is banned for another reason: adapters `implements` and never `extends`, so the port never enters their prototype chain and that constructor never runs. It is dead code promising an initialisation nobody executes, and the doorway parameter properties come in through.
@@ -277,21 +293,30 @@ from the token's `sub`, never from the body) and cancel one (`POST /orders/:id/c
   `cancelled`, no time window. `cancel()` on a cancelled order is a no-op in the domain — 200
   with the original `cancelledAt`, no second event — and the use case only saves when the
   aggregate produced events. Another customer's order throws the same `OrderNotFoundError`, with
-  the same message, as a missing one: 404 either way. The aggregate carries the `version` it was
+  the same message, as a missing one: 404 either way. The owner goes **into the read**
+  (`findByIdAndCustomer`), not into a comparison after it: a foreign row never reaches the
+  fail-closed mapper, whose 500 on a corrupt row would otherwise betray that the order exists.
+  The aggregate carries the `version` it was
   **read** with (0 = never saved); the adapter INSERTs new rows at 1 and writes the rest with
   `UPDATE … WHERE version = v`, and 0 affected rows throws `OrderVersionConflictError` inside the
   transaction, so the outbox rolls back too; an INSERT whose id already exists (`23505`) is the
-  same conflict. `CancelOrderUseCase` retries **once**, on that error only: the loser of a
+  same conflict — and only that code: any other INSERT failure propagates untranslated, which an
+  E2E pins by forcing a `22021`. `CancelOrderUseCase` retries **once**, on that error only: the loser of a
   double click re-reads a cancelled order and gets 200 with the winner's `cancelledAt`. With two
   states a second conflict cannot happen — the only write to an existing order is a
   cancellation — so **the contract publishes no 409**; the filter still maps it, as a defence
-  that a third state would make reachable (and then it gets declared). That relies on READ
-  COMMITTED — under REPEATABLE READ the blocked loser gets a `40001` instead. The adapter E2E
+  that a third state would make reachable (and then it gets declared). That needs READ
+  COMMITTED — under REPEATABLE READ or SERIALIZABLE the blocked loser gets a `40001` that nobody
+  retries — so the adapter **asks for it explicitly** (`transaction('READ COMMITTED', …)`)
+  instead of inheriting whatever the server, database or role defaults to. The adapter E2E
   proves it deterministically: another connection holds the row lock, the save is seen waiting
-  in `pg_blocking_pids`, and only then the rival commits. The mapper **fails closed**: an unknown
-  `status`, or a status that disagrees with `cancelled_at`, throws on read. `cancelledAt` is
-  **omitted**, not `null`, on a placed order: the contract guard's Ajv ignores `nullable`, so a
-  `null` example would break the build.
+  in `pg_blocking_pids`, and only then the rival commits; it repeats the interleaving through a
+  connection whose default is SERIALIZABLE. The mapper **fails closed**: an unknown `status`, a
+  status that disagrees with `cancelled_at`, or a `version` below 1, throws on read. `cancelledAt` is
+  **omitted**, not `null`, on a placed order — a design choice, not a constraint. Measured with
+  the contract guard's Ajv (8.20.0): `nullable: true` next to an explicit `type` does accept
+  `null`; what breaks the build is `nullable` next to a `$ref` with no `type` (a nested DTO),
+  which Ajv refuses to compile. Only there is omitting the key mandatory.
 - **Transactional outbox.** `OrderTypeOrmRepository.save` writes the order and its
   `orders_outbox` rows inside one `dataSource.transaction`. The relay is a CLI
   (`pnpm outbox:relay`, `src/database/outbox/` — a module cannot import `database`, same
@@ -312,7 +337,7 @@ Each operation declares:
 | ----------------- | -------------------------------------------------------------------------------------------------- |
 | `@ApiOperation`   | Unique `operationId`, non-empty `summary` **and** `description`                                    |
 | Success responses | `@ApiEnvelope` / `@ApiPaginatedEnvelope` with an `example` of the full body, envelope included     |
-| Standard errors   | `@ApiStandardErrors({ throttled })` — declares 429 and 500                                         |
+| Standard errors   | `@ApiStandardErrors({ throttled, timeout })` — declares 408, 429 and 500                           |
 | Endpoint errors   | `@ApiConflictResponse`, `@ApiNotFoundResponse`, `@ApiBadRequestResponse`… typed and with `example` |
 | Parameters        | `@ApiParam` / `@ApiQuery` with `description` **and** `example`                                     |
 | Request body      | `@ApiBody` with at least one named example; two when there are interesting edge cases              |
@@ -325,8 +350,13 @@ defect as an undeclared one: _the published contract describes something the ser
 - **400 only if the operation takes `path`, `query` or `cookie` parameters, or a body.** With no
   input there is nothing to reject. Documented headers don't count.
 - **`throttled: false` on controllers with `@SkipThrottle()`.** `HealthController` never returns 429.
-- **Every other status is on you: name the path that produces it.** The guard checks 400 and 429
-  both ways and demands 401/403 where `@Auth` attaches them; whether a 404, a 409 or a 403 outside
+- **`timeout: false` on controllers with `@SkipTimeout()`.** `TimeoutInterceptor` is global, so
+  any handler slower than `REQUEST_TIMEOUT_MS` answers 408 — and the operation may still commit
+  after the response is cut, which is why the 408's description says so. `HealthController` is
+  exempt: each check has its own limit (the database ping, 1 s) and fails with a 503 long before.
+  Missing until 2026-10-01: the cancellation's status list claimed to be complete without it.
+- **Every other status is on you: name the path that produces it.** The guard checks 400, 408 and
+  429 both ways and demands 401/403 where `@Auth` attaches them; whether a 404, a 409 or a 403 outside
   roles is reachable depends on the code. The
   spec's contract table gives each declared status the input or state and the branch that returns
   it — no path, no declaration; a defence for a future state is a code comment. Measured on
@@ -419,7 +449,24 @@ PostgreSQL through TypeORM. Config lives in `src/config/database.config.ts`, wir
 
 **Any migration that drops or renames a column or a table is split in two — expand and
 contract — with the code deploy in between. Never in the same release.** Additive migrations
-(`CREATE TABLE`, `ADD COLUMN`) need none of this: old code ignores what it doesn't know.
+(`CREATE TABLE`, `ADD COLUMN`) need none of this: old code ignores what it doesn't know. Two
+rules still apply to them, and neither shows up in the test suite — both break the deploy:
+
+- **An added `NOT NULL` column carries a `DEFAULT`.** On a table with rows,
+  `ADD COLUMN … NOT NULL` alone fails with `contains null values`; on an empty one it succeeds,
+  and then every `INSERT` from the old replicas, which don't name the column, fails. The E2E
+  database is empty after every `TRUNCATE`, so the suite sees neither.
+  `1790796856575-add-cancellation-to-orders.ts` is the example.
+- **Every `up()` and `down()` starts with `SET LOCAL lock_timeout = '5s'`.** `ALTER TABLE` takes
+  `ACCESS EXCLUSIVE`. With `DB_MIGRATIONS_RUN=true`, an unbounded wait behind any session that
+  holds the table (`idle in transaction`, a long report, `pg_dump`) keeps the new pod from
+  booting and queues every query on that table from the old replicas behind it. With the limit
+  it fails with `55P03` and the boot retries (`@nestjs/typeorm` retries `initialize()` 9 times,
+  3 s apart). Measured on 2026-10-01 against the test database: with another session holding
+  `orders`, `migration:run` aborts with `canceling statement due to lock timeout` after ~5 s
+  instead of waiting for it. `migration:generate` does not write it, so
+  `src/database/__tests__/migration-conventions.spec.ts` fails for a migration that forgets it
+  (the ones before the cancellation predate the rule).
 
 | Step         | Contains                                                                                                          | Safe while old replicas serve traffic |
 | ------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
@@ -490,7 +537,7 @@ Related: Zod's `.default()` only fires on `undefined`, so a variable that is pre
 - **Path aliases:** `@/` → `src/`, plus `@common/`, `@config/`, `@database/`, `@modules/`, `@shared/`, and `@test/` → `test/`. Shared test helpers are imported via `@test/`, not `@/`. Declared in three places that must stay in sync: `tsconfig.json`, `.swcrc` and `jest.config.mjs` — `test/jest-e2e.config.mjs` inherits from the latter instead of keeping its own copy.
 - **Inside a module, import relatively.** `../../domain/user.entity`, not `@modules/users/domain/user.entity` — a relative path survives the module being moved.
 - **No barrels in `src/` — the lint verifies it.** No `index.ts` anywhere: every import targets
-  the concrete file, and across modules only the `*.module.ts` is importable. The 5 boundary
+  the concrete file, and across modules only the `*.module.ts` is importable. The 6 boundary
   rules live in `eslint.boundaries.js` (shared with its suite,
   `src/__tests__/eslint-boundaries.spec.ts`); their original design spec was lost in the
   2026-08-08 history rebuild (backlog #29), so those two files are the only source.

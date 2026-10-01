@@ -6,9 +6,11 @@ import type { OpenAPIObject } from '@nestjs/swagger';
 
 import { AuthRoles } from '@common/decorators/auth.decorator';
 import { Public } from '@common/decorators/public.decorator';
+import { SkipTimeout } from '@common/decorators/timeout.decorator';
 import { expectedErrorName, VERIFIED_ERROR_STATUSES } from '@common/dto/error-example.factory';
 import { buildOpenApiDocument } from '../openapi-document';
 import type { ErrorPayload } from '@common/filters/all-exceptions.filter';
+import { SSE_METADATA } from '@common/nest-metadata.constants';
 import { createTestApp } from '@test/helpers/create-test-app';
 
 /**
@@ -32,6 +34,7 @@ describe('contrato OpenAPI', () => {
   let document: OpenAPIObject;
   let operations: Entry[];
   let skipThrottleOperations: Set<string>;
+  let skipTimeoutOperations: Set<string>;
   let authMetadata: Map<string, AuthMetadata>;
 
   beforeAll(async () => {
@@ -42,6 +45,7 @@ describe('contrato OpenAPI', () => {
     document = buildOpenApiDocument(app, appConfig);
     operations = collectOperations(document);
     skipThrottleOperations = collectSkipThrottleOperations(app);
+    skipTimeoutOperations = collectSkipTimeoutOperations(app);
     authMetadata = collectAuthMetadata(app);
 
     await app.close();
@@ -187,6 +191,35 @@ describe('contrato OpenAPI', () => {
       expect(offenders).toEqual([]);
     });
 
+    it('debería declarar 408 exactamente cuando el endpoint está sujeto al TimeoutInterceptor', () => {
+      // Arrange
+      const offenders: string[] = [];
+
+      // Act
+      for (const entry of operations) {
+        const operationId = entry.op.operationId;
+        if (!operationId) {
+          offenders.push(
+            `${describeEntry(entry)} (sin operationId: no se puede resolver la exencion)`,
+          );
+          continue;
+        }
+        const skipsTimeout = skipTimeoutOperations.has(operationId);
+        const declares408 = Boolean(entry.op.responses?.['408']);
+        // Misma forma que la del 429. El interceptor es global, así que todo endpoint puede
+        // responder 408 salvo los exentos; declararlo en uno exento sería publicar una respuesta
+        // que ningún camino produce, y omitirlo en otro, esconder una que sí.
+        if (skipsTimeout === declares408) {
+          offenders.push(
+            `${describeEntry(entry)} (SkipTimeout: ${skipsTimeout}, declara 408: ${declares408})`,
+          );
+        }
+      }
+
+      // Assert
+      expect(offenders).toEqual([]);
+    });
+
     // ⚠️ VERIFICADO, no simplificar: en un parámetro de query `description` vive a nivel de
     // parámetro pero `example` vive DENTRO de `schema`, junto a `minimum`, `maximum` y `default`.
     // Reducir la condición a `p.example` daría un guardián que falla sobre código correcto.
@@ -242,8 +275,13 @@ describe('contrato OpenAPI', () => {
     // Alcance medido, para que nadie le atribuya más de lo que hace:
     //
     //   • SÍ detecta `exclusiveMinimum` booleano y un `type` inválido: violan el meta-esquema.
-    //   • **NO detecta `nullable`**, la divergencia 3.0/3.1 más probable. Ajv la ignora en
-    //     silencio tanto con `strict: true` como con `false` — comprobado.
+    //   • **NO señala `nullable`** como divergencia 3.0/3.1, la más probable. Ajv 8 implementa
+    //     la de OpenAPI 3.0: junto a un `type` la aplica (`{ type: 'string', nullable: true }`
+    //     acepta `null`) y sin `type` —al lado de un `$ref`, la forma de un DTO anidado— se niega
+    //     a compilar con `"nullable" cannot be used without "type"`. Medido con 8.20.0, con
+    //     `strict: true` y con `false`. Hasta el 2026-10-01 este comentario decía que la ignoraba
+    //     en silencio, y de ahí salió una regla falsa para los escalares (ver `cancelledAt` en
+    //     `order-response.dto.ts`).
     //   • `strict: true` añadiría detección de keywords inventadas, pero obliga a declarar todo
     //     el vocabulario de OpenAPI (`example`, `xml`, `discriminator`…) y cada adición futura
     //     rompería el guardián con un error que no habla del defecto real.
@@ -683,6 +721,44 @@ const collectSkipThrottleOperations = (app: INestApplication): Set<string> => {
         // `HealthController_check`. Se lee el mismo valor que acaba publicado y el factory queda
         // solo como respaldo para un handler sin `@ApiOperation`.
         const declared = Reflect.getMetadata(API_OPERATION_META, prototype[methodName]) as
+          { operationId?: string } | undefined;
+        exempt.add(declared?.operationId ?? `${metatype.name}_${methodName}`);
+      }
+    }
+  }
+  return exempt;
+};
+
+/**
+ * Operaciones exentas del `TimeoutInterceptor`, por `operationId`.
+ *
+ * Replica la decisión del interceptor (`timeout.interceptor.ts`) con su misma lectura: `SkipTimeout`
+ * con `Reflector.getAllAndOverride` y el orden `[handler, clase]`, y los handlers SSE, que el
+ * interceptor tampoco corta. Leerlo de otra forma haría que el guardián verificara un contrato
+ * distinto del que se aplica, el riesgo que ya señala `collectSkipThrottleOperations`.
+ */
+const collectSkipTimeoutOperations = (app: INestApplication): Set<string> => {
+  const exempt = new Set<string>();
+  const reflector = new Reflector();
+  const controllers = app.get(DiscoveryService, { strict: false }).getControllers();
+
+  for (const wrapper of controllers) {
+    const metatype = wrapper.metatype as (new (...args: never[]) => unknown) | undefined;
+    if (!metatype) {
+      continue;
+    }
+
+    const prototype = metatype.prototype as Record<string, unknown>;
+
+    for (const methodName of methodNamesOf(prototype)) {
+      const handler = prototype[methodName];
+      if (typeof handler !== 'function') {
+        continue;
+      }
+      const skips = reflector.getAllAndOverride(SkipTimeout, [handler, metatype]) === true;
+      const isSse = Boolean(Reflect.getMetadata(SSE_METADATA, handler));
+      if (skips || isSse) {
+        const declared = Reflect.getMetadata(API_OPERATION_META, handler) as
           { operationId?: string } | undefined;
         exempt.add(declared?.operationId ?? `${metatype.name}_${methodName}`);
       }

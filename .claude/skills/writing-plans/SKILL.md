@@ -162,8 +162,8 @@ protection.
 
 **Rule codes** (optional): only the ones that change what the implementer does.
 
-- [ ] **Stub:** create the SUT with the interfaces above; bodies `throw new Error('no implementado')` → `pnpm typecheck`
-- [ ] **Red:** write one `it` per row, run `pnpm test <spec>`, confirm every one fails **by assertion** (not `Cannot find module`, not a compile error)
+- [ ] **Stub:** create the SUT with the interfaces above; bodies return a neutral value of the right type, never throw (a throwing stub fails value tests by exception, not by assertion, and leaves a classless `toThrow()` green) → `pnpm typecheck`
+- [ ] **Red:** write one `it` per row (every `toThrow` names the error class), run `pnpm test <spec>` (`pnpm test:e2e <spec>` for an `*.e2e-spec.ts`), confirm every one fails **by assertion** (not `Cannot find module`, not a compile error)
 - [ ] **Green:** implement the minimum → `pnpm test <spec>` passes
 - [ ] **Guard check** (if any): remove the protection, see red, restore
 - [ ] **Refactor** → `pnpm typecheck`

@@ -8,10 +8,10 @@ import {
 } from '../helpers/swagger-metadata';
 
 describe('ApiStandardErrors', () => {
-  it('debería declarar solo 500 cuando el endpoint no está limitado', () => {
+  it('debería declarar solo 500 cuando el endpoint no está limitado ni tiene tiempo máximo', () => {
     // Arrange
     class Target {
-      @ApiStandardErrors({ throttled: false })
+      @ApiStandardErrors({ throttled: false, timeout: false })
       handler(): void {
         // Solo existe para portar la metadata del decorador.
       }
@@ -40,10 +40,43 @@ describe('ApiStandardErrors', () => {
     expect(statuses).toContain(429);
   });
 
+  it('debería añadir 408 por defecto, porque el TimeoutInterceptor es global', () => {
+    // Arrange
+    class Target {
+      @ApiStandardErrors()
+      handler(): void {
+        // Solo existe para portar la metadata del decorador.
+      }
+    }
+
+    // Act
+    const statuses = declaredStatuses(Target, 'handler');
+
+    // Assert
+    expect(statuses).toContain(408);
+  });
+
+  it('debería omitir el 408 con timeout: false sin tocar el 429', () => {
+    // Arrange
+    class Target {
+      @ApiStandardErrors({ timeout: false })
+      handler(): void {
+        // Solo existe para portar la metadata del decorador.
+      }
+    }
+
+    // Act
+    const statuses = declaredStatuses(Target, 'handler');
+
+    // Assert
+    expect(statuses).toEqual([429, 500]);
+  });
+
   // El `example` es la razón de ser de este decorador: sin él Scalar muestra el esquema pero
   // no el cuerpo. Comprobar solo los status code deja pasar un `example` borrado o vaciado,
   // que es exactamente el fallo silencioso que este bloque existe para detectar.
   it.each([
+    [408, 'Request Timeout'],
     [429, 'ThrottlerException'],
     [500, 'InternalServerError'],
   ])('debería publicar en el %i un example con el error real del filtro', (status, error) => {
@@ -66,6 +99,7 @@ describe('ApiStandardErrors', () => {
   // el DTO es lo que tipa. Y el 400 no puede reutilizar `ErrorResponseDto`, que trae ejemplos
   // de un 404.
   it.each([
+    [408, ErrorResponseDto],
     [429, ErrorResponseDto],
     [500, ErrorResponseDto],
   ])('debería tipar la respuesta %i con su DTO', (status, dto) => {
@@ -116,6 +150,6 @@ describe('ApiStandardErrors', () => {
     const statuses = statusesIn(responsesOf(Target));
 
     // Assert
-    expect(statuses).toEqual([429, 500]);
+    expect(statuses).toEqual([408, 429, 500]);
   });
 });

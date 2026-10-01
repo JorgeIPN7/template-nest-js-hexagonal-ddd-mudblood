@@ -26,8 +26,9 @@ Agent({
 
     - Repo: `<REPO>`. Base: `<BASE>`.
     - Cambios: `git diff <BASE>`, que incluye lo no confirmado, más los archivos que
-      `git status --porcelain` marca con `??`. Lee entero cada archivo nuevo: ningún diff te lo
-      enseña. <ALCANCE>
+      `git status --porcelain --untracked-files=all` marca con `??`. Sin `--untracked-files=all`,
+      una carpeta nueva sale como una sola línea y sus archivos no se ven. Lee entero cada archivo
+      nuevo: ningún diff te lo enseña. <ALCANCE>
     - Qué se pidió y qué se decidió: <SPEC_O_PLAN>. Te dice qué debería hacer el código; no
       prueba que lo haga.
 
@@ -58,7 +59,9 @@ Agent({
        - Idioma.
        - Tests: «debería…», los tres marcadores AAA, `describe`, 1:1 y mocking por capa.
        - Documentación OpenAPI.
-       - Migraciones: aditivas, o en expand/contract si borran o renombran.
+       - Migraciones: aditivas, o en expand/contract si borran o renombran. Una columna
+         `NOT NULL` añadida lleva `DEFAULT`, y `up()` y `down()` empiezan con
+         `SET LOCAL lock_timeout` (CLAUDE.md, «Destructive migrations»).
 
     Clasifica cada hallazgo, con `archivo:línea`, en una de tres severidades:
 
@@ -72,16 +75,34 @@ Agent({
     ## Reglas
 
     - **No edites, muevas ni restaures ningún archivo del repo, ni siquiera temporalmente.** Nada
-      de git que escriba: ni `stash`, `checkout`, `reset`, `restore`, `commit` ni `add`.
-    - Para demostrar un hallazgo, trabaja en una copia dentro de tu scratchpad:
-      1. `rsync -a --exclude node_modules --exclude .git <REPO>/ <copia>/`. No uses
-         `git archive`: no lleva lo no confirmado.
-      2. `ln -s <REPO>/node_modules <copia>/node_modules`.
-      3. Ejecuta allí lo que necesites y borra la copia al terminar.
-    - Puedes ejecutar `pnpm typecheck`, `pnpm lint:check` y `pnpm test <ruta>`.
-    - `pnpm test:e2e <ruta>` solo si un hallazgo lo necesita. La base de test es compartida, pero
-      la sesión principal está parada esperando tu informe.
-    - Si `pnpm` falla antes de ejecutar nada (por la versión de Node o de pnpm), dilo en el
+      de git que escriba: ni `stash`, `checkout`, `reset`, `restore`, `commit`, `add`, `mv` ni `rm`.
+    - Para demostrar un hallazgo, trabaja en una copia NUEVA dentro de tu scratchpad, una por
+      prueba:
+      1. `copia=$(mktemp -d)`, y después
+         `rsync -a --exclude node_modules --exclude .git --exclude .stryker-tmp --exclude dist --exclude coverage --exclude coverage-e2e --exclude reports --exclude public --exclude logs <REPO>/ "$copia"/`.
+         Sin esas exclusiones la copia pesa unas diez veces más. No uses `git archive`: no lleva lo
+         no confirmado.
+      2. `ln -s <REPO>/node_modules "$copia"/node_modules`. En una copia nueva el enlace aún no
+         existe: repetir `ln -s` sobre uno que ya existe lo crea DENTRO de `<REPO>/node_modules`.
+      3. Ejecuta las herramientas con `node`, **nunca con `pnpm <script>`**. pnpm verifica las
+         dependencias antes de cada script y, a través del enlace, reescribe el `node_modules` real
+         (medido con pnpm 12.7.0; si el `package.json` de la copia no cuadra, reinstala). Desde la
+         copia, lo mismo que hacen los scripts de `package.json`:
+         - `node node_modules/typescript/bin/tsc --noEmit`;
+         - `node node_modules/eslint/bin/eslint.js <archivos>`;
+         - `node --experimental-vm-modules node_modules/jest/bin/jest.js <ruta>` para los
+           unitarios;
+         - `node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./test/jest-e2e.config.mjs <ruta>`
+           para un E2E, solo si un hallazgo lo necesita. Si toca la documentación, genera antes el
+           bundle en la copia con `node scripts/copy-scalar-asset.mjs`.
+      4. Borra la copia al terminar: `rm -rf "$copia"`.
+    - **La copia aísla archivos, no bases de datos.** Sus E2E usan la misma base de test, ya
+      migrada: una protección de esquema (un índice único, un constraint, un trigger) no se quita
+      editando una migración en la copia. Razónala y dilo en el informe. Nunca ejecutes
+      `migration:*`, `db:*` ni `seed:*`, tampoco desde la copia: apuntan a la base de DESARROLLO,
+      y su efecto sobrevive a borrar la copia.
+    - La base de test es compartida, pero la sesión principal está parada esperando tu informe.
+    - Si las herramientas fallan antes de ejecutar nada (por la versión de Node), dilo en el
       informe y sigue leyendo código. No gastes turnos en arreglar el entorno.
 
     ## Formato del informe

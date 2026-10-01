@@ -20,7 +20,9 @@ export type CancelOrderInput = {
  * que en `PlaceOrderUseCase`: un token firmado puede sobrevivir a su usuario.
  *
  * El pedido de otro cliente se rechaza con el MISMO `OrderNotFoundError` que uno
- * inexistente, y cuesta lo mismo (una lectura): para quien pregunta no existe.
+ * inexistente, y cuesta lo mismo (una lectura): para quien pregunta no existe. El dueño va en
+ * la propia lectura (`findByIdAndCustomer`) y no en una comparación posterior: si la fila ajena
+ * llegara a reconstruirse y estuviera corrupta, el mapper fallaría con un 500 y lo delataría.
  *
  * Un solo reintento ante `OrderVersionConflictError`, y solo ante ese error. Quien pierde
  * la carrera de dos cancelaciones simultáneas relee el pedido, lo encuentra ya cancelado y,
@@ -57,9 +59,8 @@ export class CancelOrderUseCase {
   }
 
   private async cancelOnce(orderId: OrderId, customerId: string): Promise<Order> {
-    const order = await this.orders.findById(orderId);
-    // Sin pedido, `order?.customerId` es `undefined`: el inexistente y el ajeno caen juntos.
-    if (order?.customerId !== customerId) {
+    const order = await this.orders.findByIdAndCustomer(orderId, customerId);
+    if (!order) {
       throw new OrderNotFoundError(orderId.value);
     }
 

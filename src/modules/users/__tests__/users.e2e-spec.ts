@@ -3,9 +3,9 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 
-import { buildErrorExample } from '@common/dto/error-example.factory';
 import type { ErrorPayload } from '@common/filters/all-exceptions.filter';
 import { createTestApp } from '@test/helpers/create-test-app';
+import { expectDocumentedError } from '@test/helpers/documented-error';
 import { resetThrottler } from '@test/helpers/reset-throttler';
 
 import { UserOrmEntity } from '../infrastructure/persistence/user.orm-entity';
@@ -115,18 +115,11 @@ describe('Users (e2e)', () => {
         .set('Authorization', `Bearer ${userToken}`);
 
       // Assert
-      // Se compara contra la misma factoría de la que salen los `example` del controller, así que
-      // el ejemplo publicado y la respuesta real no pueden divergir sin que esto se ponga rojo.
-      // Fue justo esa divergencia la que colaba `error: 'UserNotFoundError'` en la documentación
-      // cuando el servidor devuelve `'Not Found'`.
+      // Contra la misma factoría de la que salen los `example` del controller: fue justo esa
+      // divergencia la que colaba `error: 'UserNotFoundError'` en la documentación cuando el
+      // servidor devuelve `'Not Found'`.
       const body = response.body as ErrorPayload;
-      const documented = buildErrorExample(404, { path, message: body.message });
-
-      // `timestamp` y `requestId` cambian en cada petición; se igualan para que la comparación
-      // sea sobre lo estable: el juego exacto de claves, el `statusCode`, el `error` y el `path`.
-      expect({ ...body, timestamp: documented.timestamp, requestId: documented.requestId }).toEqual(
-        documented,
-      );
+      expectDocumentedError(body, 404, { path, message: body.message });
     });
 
     // El perfil dejó de conocer el hash en el ciclo 4: ni siquiera un endpoint autenticado
@@ -286,15 +279,8 @@ describe('Users (e2e)', () => {
       // Act
       const response = await request(app.getHttpServer()).get(path);
 
-      // Assert
-      // Misma técnica que el 404 de arriba: `timestamp` y `requestId` cambian en cada
-      // petición y se igualan para comparar lo estable. Cierra el lazo ejemplo↔realidad
-      // para el 401 que `@Auth` documenta desde `common/`.
-      const body = response.body as ErrorPayload;
-      const documented = buildErrorExample(401, { path, message: 'Unauthorized' });
-      expect({ ...body, timestamp: documented.timestamp, requestId: documented.requestId }).toEqual(
-        documented,
-      );
+      // Assert: cierra el lazo ejemplo↔realidad para el 401 que `@Auth` documenta desde `common/`.
+      expectDocumentedError(response.body, 401, { path, message: 'Unauthorized' });
     });
 
     it('debería responder 403 en GET /users con un token de rol user', async () => {

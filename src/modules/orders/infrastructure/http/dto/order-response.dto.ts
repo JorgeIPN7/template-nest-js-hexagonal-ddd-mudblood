@@ -41,10 +41,11 @@ export class OrderResponseDto {
   })
   status!: OrderStatus;
 
-  // Opcional y no `nullable`, a propósito: el contract guard valida los ejemplos con Ajv, que
-  // ignora `nullable` (lo mide y lo documenta `openapi-contract.e2e-spec.ts`), así que un
-  // ejemplo con `null` rompería la build. Una clave ausente es la única forma en la que
-  // OpenAPI 3.0 y Ajv coinciden.
+  // Opcional y no `nullable`: es una decisión de diseño —un pedido colocado no tiene fecha de
+  // cancelación, así que la clave no aparece— y no algo que imponga el contract guard. Medido
+  // con su Ajv (8.20.0): con `type` explícito, `nullable: true` acepta `null`; lo que no compila
+  // es `nullable` junto a un `$ref` sin `type`, que es la forma de un DTO anidado. Solo ahí
+  // omitir la clave es obligatorio.
   @ApiPropertyOptional({
     description:
       'Momento de la cancelación, en UTC. Solo está presente cuando `status` es `cancelled`: ' +

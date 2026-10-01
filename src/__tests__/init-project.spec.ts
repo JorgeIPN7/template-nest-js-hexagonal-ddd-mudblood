@@ -55,6 +55,7 @@ const GIT_METADATA = '.git';
 
 /** Directorios que nunca contienen fuente versionada: artefactos, dependencias o caches. */
 const SKIPPED_DIRECTORIES = new Set([
+  '.jest-cache', // la caché de Jest que `stryker.config.mjs` deja dentro de cada sandbox
   '.stryker-tmp',
   '.swc',
   '.temp',

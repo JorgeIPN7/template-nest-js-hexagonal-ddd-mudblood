@@ -193,8 +193,13 @@ When mocks are appropriate (i.e. infrastructure or cross-cutting), the operation
 ## Testing async code
 
 - Use `async`/`await` in `it` callbacks. Always return a promise or await it — never fire-and-forget.
-- For rejection assertions: `await expect(useCase.execute({ invoiceId })).rejects.toThrow(InvoiceNotFoundError)`.
-- For resolution assertions: `await expect(repo.findById(id)).resolves.toBeNull()`.
+- For rejection assertions, start the call under `// Act` and await the assertion under
+  `// Assert`, as CLAUDE.md's AAA rule asks — never a combined `// Act + Assert`:
+  `const act = useCase.execute({ invoiceId });` then
+  `await expect(act).rejects.toThrow(InvoiceNotFoundError);`. The class always goes in the
+  `toThrow`: without it, any error — a stub's included — passes.
+- For resolution assertions, the same split: `const found = await repo.findById(id);` under
+  `// Act`, `expect(found).toBeNull();` under `// Assert`.
 - Set timeouts only when justified: `jest.setTimeout(20_000)` for genuinely slow integration tests. Default is 15 s (unit) / 30 s (E2E).
 
 ## E2E with Supertest

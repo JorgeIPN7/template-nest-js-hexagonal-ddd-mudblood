@@ -1,7 +1,9 @@
 import { fc, test as fcTest } from '@fast-check/jest';
 
+import { captureRejection } from '@test/helpers/capture-error';
+
 import { CancelOrderUseCase } from '../../../application/use-cases/cancel-order.use-case';
-import { Order } from '../../../domain/entities/order.entity';
+import type { Order } from '../../../domain/entities/order.entity';
 import {
   CustomerGoneError,
   InvalidOrderIdError,
@@ -9,13 +11,11 @@ import {
   OrderVersionConflictError,
 } from '../../../domain/errors/order.errors';
 import { OrderCancelled } from '../../../domain/events/order-cancelled.event';
-import { OrderAmount } from '../../../domain/value-objects/order-amount.vo';
-import { OrderConcept } from '../../../domain/value-objects/order-concept.vo';
 import { OrderId } from '../../../domain/value-objects/order-id.vo';
 import { FakeCustomerDirectory } from '../../helpers/fake-customer.directory';
 import { InMemoryOrderRepository } from '../../helpers/in-memory-order.repository';
+import { DEFAULT_CUSTOMER_ID as CUSTOMER_ID, buildPlacedOrder } from '../../helpers/order.factory';
 
-const CUSTOMER_ID = '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012';
 const OTHER_CUSTOMER_ID = '3f0c8b6e-2d4a-4c1e-8b7f-5a9d1e2c3b40';
 const FIRST_CANCELLED_AT = new Date('2026-09-30T08:00:00.000Z');
 const NOW = new Date('2026-09-30T12:00:00.000Z');
@@ -93,7 +93,10 @@ describe('CancelOrderUseCase', () => {
         // Arrange
         fc.pre(ownerId !== CUSTOMER_ID);
         const foreign = buildUseCase([CUSTOMER_ID]);
-        await foreign.repository.save(placedOrder(OrderId.from(orderIdValue), ownerId), []);
+        await foreign.repository.save(
+          buildPlacedOrder({ id: OrderId.from(orderIdValue), customerId: ownerId }),
+          [],
+        );
         const savesBefore = foreign.repository.saveCalls.length;
         const missing = buildUseCase([CUSTOMER_ID]);
         const input = { customerId: CUSTOMER_ID, orderId: orderIdValue };
@@ -122,7 +125,7 @@ describe('CancelOrderUseCase', () => {
       // Assert
       await expect(act).rejects.toThrow(CustomerGoneError);
       expect(repository.saveCalls).toHaveLength(savesBefore);
-      expect((await repository.findById(orderId))?.status).toBe('placed');
+      expect((await repository.findByIdAndCustomer(orderId, CUSTOMER_ID))?.status).toBe('placed');
     });
 
     it('debería rechazar un id de pedido mal formado', async () => {
@@ -145,7 +148,7 @@ describe('CancelOrderUseCase', () => {
       const winner = await loadOrder(repository, orderId);
       winner.cancel(FIRST_CANCELLED_AT);
       await repository.save(winner, winner.pullEvents());
-      jest.spyOn(repository, 'findById').mockResolvedValueOnce(stale);
+      jest.spyOn(repository, 'findByIdAndCustomer').mockResolvedValueOnce(stale);
       const savesBefore = repository.saveCalls.length;
 
       // Act
@@ -191,24 +194,27 @@ describe('CancelOrderUseCase', () => {
     it('debería rechazar al cliente que ya no existe antes de validar o leer el pedido', async () => {
       // Arrange: directorio vacío y un id que, validado antes, daría InvalidOrderIdError.
       const { useCase, repository } = buildUseCase([]);
-      const findById = jest.spyOn(repository, 'findById');
+      const reads = jest.spyOn(repository, 'findByIdAndCustomer');
 
       // Act
       const act = useCase.execute({ customerId: CUSTOMER_ID, orderId: 'no-es-uuid' });
 
       // Assert
       await expect(act).rejects.toThrow(CustomerGoneError);
-      expect(findById).not.toHaveBeenCalled();
+      expect(reads).not.toHaveBeenCalled();
     });
 
     it('debería leer el pedido una sola vez tanto si es ajeno como si no existe', async () => {
       // Arrange: el mismo id, de otro cliente en un repositorio e inexistente en el otro.
       const orderId = OrderId.generate();
       const foreign = buildUseCase([CUSTOMER_ID]);
-      await foreign.repository.save(placedOrder(orderId, OTHER_CUSTOMER_ID), []);
+      await foreign.repository.save(
+        buildPlacedOrder({ id: orderId, customerId: OTHER_CUSTOMER_ID }),
+        [],
+      );
       const missing = buildUseCase([CUSTOMER_ID]);
-      const foreignReads = jest.spyOn(foreign.repository, 'findById');
-      const missingReads = jest.spyOn(missing.repository, 'findById');
+      const foreignReads = jest.spyOn(foreign.repository, 'findByIdAndCustomer');
+      const missingReads = jest.spyOn(missing.repository, 'findByIdAndCustomer');
       const input = { customerId: CUSTOMER_ID, orderId: orderId.value };
 
       // Act
@@ -230,20 +236,11 @@ const buildUseCase = (knownCustomerIds: readonly string[]) => {
   return { useCase: new CancelOrderUseCase(directory, repository), repository };
 };
 
-const placedOrder = (id: OrderId, customerId: string): Order =>
-  Order.place({
-    id,
-    customerId,
-    concept: OrderConcept.from('Suscripción anual plan Pro'),
-    amount: OrderAmount.from(149_900),
-    now: new Date('2026-09-29T10:00:00.000Z'),
-  });
-
 const seedPlacedOrder = async (
   repository: InMemoryOrderRepository,
   customerId: string,
 ): Promise<OrderId> => {
-  const order = placedOrder(OrderId.generate(), customerId);
+  const order = buildPlacedOrder({ customerId });
   await repository.save(order, order.pullEvents());
   return order.id;
 };
@@ -261,18 +258,9 @@ const seedCancelledOrder = async (
 };
 
 const loadOrder = async (repository: InMemoryOrderRepository, id: OrderId): Promise<Order> => {
-  const order = await repository.findById(id);
+  const order = await repository.findByIdAndCustomer(id, CUSTOMER_ID);
   if (!order) {
     throw new Error(`El pedido ${id.value} debería existir en el fake`);
   }
   return order;
-};
-
-const captureRejection = async (promise: Promise<unknown>): Promise<Error> => {
-  try {
-    await promise;
-  } catch (error) {
-    return error as Error;
-  }
-  throw new Error('Se esperaba que la promesa se rechazara y no lo hizo');
 };

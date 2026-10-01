@@ -1,6 +1,6 @@
 ---
 name: express
-description: 'Flujo por defecto para una feature o un bug con lógica dentro de UN bounded context que ya existe (hasta ~8 tareas): mini-diseño con pocas preguntas agrupadas, spec corta con la tabla de casos y el contrato, TDD con rojo por aserción sin plan escrito, mutación del código nuevo, revisión adversarial final y DoD. No es para cambios triviales (errata, config, un bump de dependencia, un bug de una línea) ni para lo que pide la cadena completa: un contexto nuevo, cambios entre contextos, una migración destructiva, auth o seguridad, más de ~10 tareas o trabajo que otra persona continuará.'
+description: 'Flujo por defecto para una feature o un bug con lógica dentro de UN bounded context que ya existe (hasta ~8 tareas): mini-diseño con pocas preguntas agrupadas, spec corta con la tabla de casos y el contrato, TDD con rojo por aserción sin plan escrito, mutación del código nuevo, revisión adversarial final y DoD. No es para cambios triviales (errata, config que no es de seguridad, un bump de dependencia, un bug de una línea) ni para lo que pide la cadena completa: auth, credenciales, tokens o permisos —también su configuración—, un contexto nuevo, cambios entre contextos, una migración destructiva, más de ~10 tareas o trabajo que otra persona continuará.'
 argument-hint: '<qué quieres construir o arreglar>'
 ---
 
@@ -15,22 +15,25 @@ por tarea y la lectura de las skills de referencia. La evidencia y el resto de f
 ## 0. ¿Es el nivel correcto?
 
 Clasifica la petición antes de nada (tabla de niveles en `CLAUDE.md`, «Skills and development
-flows»):
+flows»), **en este orden**: el riesgo se mira antes que el tamaño, porque un cambio de seguridad de
+una línea sigue siendo un cambio de seguridad.
 
-- **Trivial** —errata, texto, configuración, un bump, un bug de una línea con su test evidente—:
-  no uses este flujo. Haz el cambio, su test si aplica y la DoD.
-- **Completo** si toca cualquiera de estas cosas: un bounded context nuevo; más de un contexto
-  (fachadas, puertos entre módulos); una migración que borra o renombra (expand/contract); auth,
-  credenciales, tokens o permisos; más de ~10 tareas; trabajo que otra persona o sesión
-  continuará. **Para y propón `/brainstorming`** al usuario con el motivo en una frase: el coste
-  de la cadena completa lo decide él.
-- En cualquier otro caso, sigue.
+1. **Completo** si toca cualquiera de estas cosas: auth, credenciales, tokens o permisos —también
+   su configuración: CORS, CSP, cabeceras, los costes de argon2, el `deny` de
+   `.claude/settings.json`—; un bounded context nuevo; más de un contexto (fachadas, puertos entre
+   módulos); una migración que borra o renombra (expand/contract); más de ~10 tareas; trabajo que
+   otra persona o sesión continuará. **Para y propón `/brainstorming`** al usuario con el motivo
+   en una frase: el coste de la cadena completa lo decide él.
+2. **Trivial** —errata, texto, configuración que no es de seguridad, un bump, un bug de una línea
+   con su test evidente—: no uses este flujo. Haz el cambio, su test si aplica y la DoD.
+3. En cualquier otro caso, sigue.
 
 ## Reglas que valen durante todo el flujo
 
-- **Nada de git que escriba**: ni `commit`, `add`, `push`, `stash`, `reset`, `checkout`,
-  `switch`, `restore` ni `merge`. `.claude/settings.json` los bloquea; no busques un rodeo. Al
-  final sugieres el commit y lo hace el usuario.
+- **Nada de git que escriba** historia, mueva `HEAD` o una ref, toque el índice o descarte
+  trabajo: ni `commit`, `add`, `push`, `stash`, `reset`, `checkout`, `switch`, `restore`, `merge`,
+  `branch`, `mv` ni `rm`. `.claude/settings.json` los bloquea; no busques un rodeo. Al final
+  sugieres el commit y lo hace el usuario.
 - **Sin plan escrito ni subagentes**, salvo el revisor del paso 4.
 - **`CLAUDE.md` basta para las convenciones.** No leas las skills de referencia. La excepción es
   una feature que necesite un tipo de artefacto que el módulo todavía no tiene: entonces lee solo
@@ -59,6 +62,8 @@ flows»):
      la declares. Si es una defensa para el futuro, va en un comentario del código, junto con la
      condición que la haría alcanzable. Marca con ⚠️ los cambios en respuestas que ya existen.
    - **Persistencia**: si hay migración y si es aditiva. Una destructiva no cabe en este flujo.
+     Una columna `NOT NULL` añadida lleva `DEFAULT`, o el despliegue falla sobre una tabla con
+     filas aunque los E2E pasen sobre la vacía (`CLAUDE.md`, «Destructive migrations»).
    - **Fuera de alcance**.
 4. Presenta la spec y la tabla para **una sola aprobación**. Si cambian, corrige y sigue. Solo hay
    segunda ronda de aprobación si cambia el comportamiento.
@@ -73,10 +78,13 @@ E2E.
 
 - Cada fila de la tabla se convierte exactamente en un `it`, con el texto del caso como título.
   La infraestructura no lleva tabla, pero sí tests, unitarios o E2E según `CLAUDE.md`.
-- **El rojo tiene que ser por aserción.** Si el SUT no existe, crea antes un _stub_ que compile:
-  un método que lanza `new Error('no implementado')` o devuelve un valor neutro. `pnpm test <spec>`
-  tiene que fallar **en la aserción**, no con «Cannot find module» ni con un error de
-  compilación. Después implementa lo mínimo para pasar a verde, y luego refactoriza.
+- **El rojo tiene que ser por aserción.** Si el SUT no existe, crea antes un _stub_ que compile y
+  **devuelva un valor neutro del tipo correcto**, sin lanzar. Un stub que lanza
+  `new Error('no implementado')` hace fallar los tests de valor en la línea `// Act`, por
+  excepción y no por aserción, y deja en verde cualquier `toThrow()` sin clase: por eso los
+  `toThrow` llevan siempre la clase del error. `pnpm test <spec>` (o `pnpm test:e2e <spec>` para un
+  `*.e2e-spec.ts`) tiene que fallar **en la aserción**, no con «Cannot find module» ni con un
+  error de compilación. Después implementa lo mínimo para pasar a verde, y luego refactoriza.
 - **Los tests de guarda tienen que fallar sin la protección.** Un test de guarda es el que
   protege una garantía: concurrencia, propiedad o visibilidad, autorización, atomicidad,
   anti-enumeración o idempotencia.
@@ -91,6 +99,8 @@ E2E.
   en una sola pregunta, salvo que te bloquee.
 - Migración:
   - créala con `pnpm migration:generate src/database/migrations/<Name>`;
+  - empieza su `up()` y su `down()` con `SET LOCAL lock_timeout = '5s'`, que el generador no
+    escribe y `migration-conventions.spec.ts` exige;
   - aplícala a desarrollo y a test con `pnpm migration:run` y `pnpm db:migrate:test`;
   - comprueba que no queda diff entre las entidades y el esquema con
     `pnpm migration:generate src/database/migrations/Check --check`.
@@ -103,20 +113,29 @@ E2E.
 pnpm test:mutation:changed <BASE>
 ```
 
-Muta solo lo que añadiste o cambiaste en `domain/` y `application/` desde `<BASE>`: las líneas
-cambiadas y los archivos nuevos enteros.
+Audita lo que añadiste o cambiaste en `domain/` y `application/` desde `<BASE>`: las líneas
+cambiadas, los archivos nuevos enteros y el SUT entero de cada spec que tocaste. Qué entra y cómo
+lo puntúa: `docs/development-workflows.md`, «Mutación del código nuevo».
 
 - Por cada superviviente, propón el caso que lo mata, que será una fila más para la tabla.
   **Pregunta todos juntos en una sola `AskUserQuestion`**, con los casos que dejó el paso 2.
-- Con los casos aprobados: añade las filas a la spec, escribe los tests en rojo por aserción,
-  pásalos a verde y vuelve a correr la mutación.
-- Un superviviente equivalente, es decir, un mutante que no cambia el comportamiento, se
-  justifica en el informe. No se escribe un test que no pueda fallar.
+- Con los casos aprobados: añade las filas a la spec y escribe los tests. **Pasan en verde a la
+  primera**, porque el código ya hace lo que afirman: el rojo por aserción se demuestra aplicando
+  el mutante a mano (la sustitución que imprime el informe), viendo el test fallar en su
+  aserción y restaurando el código. Anótalo como el rojo de ese caso y vuelve a correr la
+  mutación.
+- Un superviviente equivalente —ningún test puede distinguirlo— se marca en el código con
+  `// Stryker disable next-line <Mutador>: <motivo>` y se cita en el informe. No se escribe un
+  test que no pueda fallar, y sin la marca cuenta como superviviente.
 
 ## 4. Revisión adversarial
 
 Invoca la skill `adversarial-review` con `<BASE>` y la ruta de la spec. Corrige lo crítico y lo
 importante como ella indica; lo menor va al informe.
+
+Si alguna corrección tocó `domain/` o `application/`, **vuelve a correr
+`pnpm test:mutation:changed <BASE>`**: el score que llega al informe es el del código final, no el
+de antes de la revisión.
 
 ## 5. Definition of Done y documentación
 
@@ -136,7 +155,7 @@ Corto y en el formato de `CLAUDE.md`, con estos puntos:
 - qué se hizo y en qué archivos;
 - casos ↔ tests (ninguna fila sin `it`, ningún `it` sin fila) y el rojo por aserción de cada spec;
 - los tests de guarda comprobados sin su protección;
-- la mutación del código nuevo;
+- la mutación del código nuevo: el score de la última corrida, la de después de la revisión;
 - los hallazgos de la revisión y qué se hizo con cada uno;
 - la DoD, con el resultado de cada comando;
 - ⚠️ los cambios de contrato;

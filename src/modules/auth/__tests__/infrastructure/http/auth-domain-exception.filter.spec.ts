@@ -5,6 +5,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 
+import { captureError } from '@test/helpers/capture-error';
+
 import {
   AuthDomainError,
   EmailAlreadyRegisteredError,
@@ -136,12 +138,3 @@ class UnmappedDomainError extends AuthDomainError {
     super('Regla de dominio nueva sin mapeo HTTP');
   }
 }
-
-const captureError = (fn: () => unknown): Error => {
-  try {
-    fn();
-  } catch (error) {
-    return error as Error;
-  }
-  throw new Error('Se esperaba que la función lanzara un error y no lo hizo');
-};

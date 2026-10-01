@@ -1,6 +1,6 @@
 ---
 name: clean-ddd-hexagonal
-description: Proactively apply when designing APIs, microservices, or scalable backend structure. Triggers on DDD, Clean Architecture, Hexagonal, ports and adapters, entities, value objects, domain events, CQRS, event sourcing, repository pattern, use cases, onion architecture, outbox pattern, aggregate root, anti-corruption layer. Use when working with domain models, aggregates, repositories, or bounded contexts. Tailored to NestJS 12 + TypeScript 6.0 in this repo; conceptual references stay language-agnostic.
+description: Reference for DDD and hexagonal design in this NestJS 12 + TypeScript 6.0 repo — read it, never invoke it as a workflow step, and only when the work needs it (CLAUDE.md, «Skills and development flows»). Covers aggregates, value objects, ports and adapters, domain events, the outbox, anti-corruption layers, repositories and bounded contexts; `references/NESTJS-MAPPING.md` is the source of truth for code shape, and the other references stay language-agnostic. For conventions, CLAUDE.md is enough.
 allowed-tools: Read, Grep, Glob
 ---
 

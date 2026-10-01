@@ -41,11 +41,14 @@ to one.
 
 1. Mark it `in_progress`. Re-read its **Files**, **Interfaces**, **Decisions**, **Casos
    acordados** and **Guard tests**.
-2. **Stub** — create the SUT with the declared interfaces; bodies
-   `throw new Error('no implementado')` or a neutral value. `pnpm typecheck`.
+2. **Stub** — create the SUT with the declared interfaces; bodies return **a neutral value of the
+   right type** and never throw. A stub that throws `new Error('no implementado')` fails value
+   tests on the `// Act` line, by exception and not by assertion, and leaves any classless
+   `toThrow()` green — so every `toThrow` names the error class. `pnpm typecheck`.
 3. **Red by assertion** — write one `it` per row (the `it` text IS the case; `P` rows are
-   `@fast-check/jest` properties), run `pnpm test <spec>` and keep the output: every new test must
-   fail **on an assertion**, not on `Cannot find module` or a compile error.
+   `@fast-check/jest` properties), run `pnpm test <spec>` (`pnpm test:e2e <spec>` for an
+   `*.e2e-spec.ts`) and keep the output: every new test must fail **on an assertion**, not on
+   `Cannot find module` or a compile error.
 4. **Green** — implement the minimum; `pnpm test <spec>` passes.
 5. **Guard check** — for each guard test the task lists (concurrency, ownership, authorization,
    atomicity, anti-enumeration, idempotency): remove the protection for a moment, see the test
@@ -71,12 +74,18 @@ task. An approved new case gets its row in the plan before its test.
 
 ## Step 3 — Audit the result once
 
-1. **Mutation of the new code:** `pnpm test:mutation:changed <BASE>` mutates only the lines of
-   `domain/` and `application/` changed since the base. For each survivor, propose the case that
-   kills it (all of them in one question); approved cases get their row, a red test and a rerun.
-   An equivalent mutant is justified in the report, not tested.
+1. **Mutation of the new code:** `pnpm test:mutation:changed <BASE>` audits the lines of
+   `domain/` and `application/` changed since the base, new files whole, and the whole SUT of
+   every spec or test helper that changed (`docs/development-workflows.md`, «Mutación del código
+   nuevo»). For each survivor, propose the case that kills it (all of them in one question);
+   approved cases get their row and a rerun. Their test passes at once — the code already does
+   what it asserts — so its red by assertion is shown by applying the mutant by hand, watching
+   the test fail and restoring the code. An equivalent mutant is marked in the code with
+   `// Stryker disable next-line <Mutator>: <reason>` and cited in the report, not tested.
 2. **Adversarial review:** invoke the `adversarial-review` skill with `<BASE>` and the plan path.
-   Fix critical and important findings (test first, red by assertion); list minor ones.
+   Fix critical and important findings (test first, red by assertion); list minor ones. If a fix
+   touched `domain/` or `application/`, **rerun the mutation**: the score in the report is the
+   final code's, not the pre-review one.
 3. **Documentation:** update `CLAUDE.md` / `README.md` if a module's description, a public
    contract or the endpoints table changed, and the spec or plan if a decision changed.
 
@@ -102,7 +111,7 @@ Report, in the format of `CLAUDE.md`:
 - tasks completed, and any deviation from the plan with its reason;
 - cases ↔ tests (no row without an `it`, no `it` without a row) and the red-by-assertion evidence;
 - guard tests proven to fail without their protection;
-- mutation of the new code;
+- mutation of the new code: the score of the last run, after the review's fixes;
 - review findings and what was done with each;
 - DoD results;
 - ⚠️ contract changes;
@@ -111,7 +120,8 @@ Report, in the format of `CLAUDE.md`:
 > _"Te sugiero hacer un commit de los cambios por implementar el plan `<plan-file>`. Avísame y lo
 > redacto."_
 
-**Never run `git commit`, `git add` or `git push`.** `.claude/settings.json` denies them; the user
+**Never run a git command that writes history, moves `HEAD` or a ref, touches the index or
+discards work.** `.claude/settings.json` denies them, whatever options go in front; the user
 commits.
 
 ## When to stop and ask
