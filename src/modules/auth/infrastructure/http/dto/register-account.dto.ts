@@ -1,10 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsString, MaxLength, MinLength, NotContains } from 'class-validator';
 
 /**
  * Sustituye a `CreateUserDto`: el alta pasó a `auth` porque quien nace en el alta es una
  * CUENTA (perfil + credencial), no solo un perfil. Los límites son los mismos que publicaba
  * `POST /users`, así que ningún cliente que ya cumplía deja de cumplir.
+ *
+ * El byte NUL se rechaza en el nombre porque PostgreSQL no lo admite dentro de un texto: sin
+ * esta regla, el INSERT del perfil fallaba con un `22021` y el alta acababa en 500 (medido). El
+ * email ya lo rechaza `@IsEmail`, y la contraseña nunca llega a la base en claro.
  */
 export class RegisterAccountDto {
   @ApiProperty({
@@ -19,7 +23,7 @@ export class RegisterAccountDto {
   email!: string;
 
   @ApiProperty({
-    description: 'Nombre visible del usuario. Entre 2 y 120 caracteres.',
+    description: 'Nombre visible del usuario. Entre 2 y 120 caracteres, sin el carácter NUL.',
     example: 'María González',
     minLength: 2,
     maxLength: 120,
@@ -27,6 +31,7 @@ export class RegisterAccountDto {
   @IsString()
   @MinLength(2)
   @MaxLength(120)
+  @NotContains('\u0000', { message: 'name must not contain the NUL character' })
   name!: string;
 
   @ApiProperty({

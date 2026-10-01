@@ -3,9 +3,8 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 
-import { buildErrorExample } from '@common/dto/error-example.factory';
-import type { ErrorPayload } from '@common/filters/all-exceptions.filter';
 import { createTestApp } from '@test/helpers/create-test-app';
+import { expectDocumentedError } from '@test/helpers/documented-error';
 import { resetThrottler } from '@test/helpers/reset-throttler';
 
 /** Cumple `@MinLength(12)` de `RegisterAccountDto`; el valor en sí es irrelevante. */
@@ -214,6 +213,27 @@ describe('Auth (e2e)', () => {
       expect(rows[0]?.count).toBe(0);
     });
 
+    // PostgreSQL no admite el byte NUL dentro de un texto: sin rechazarlo en el DTO, el INSERT
+    // del perfil fallaba con un `22021` y el alta acababa en 500 (medido).
+    it('debería responder 400 cuando el nombre lleva un byte NUL, sin crear nada', async () => {
+      // Arrange
+
+      // Act
+      const response = await postRegister({
+        email: 'nul@example.com',
+        name: 'Nombre \u0000 nulo',
+        password: DEFAULT_PASSWORD,
+      });
+
+      // Assert
+      expect(response.status).toBe(400);
+      const counts = await dataSource.query<{ users: number; credentials: number }[]>(
+        `SELECT (SELECT COUNT(*)::int FROM users) AS users,
+                (SELECT COUNT(*)::int FROM auth_credentials) AS credentials`,
+      );
+      expect(counts[0]).toEqual({ users: 0, credentials: 0 });
+    });
+
     /**
      * Altas simultáneas del mismo email. Cuál de las dos defensas actúa —el pre-check de
      * `CreateUserUseCase` o el índice único traducido en el repositorio— depende de cómo se
@@ -341,12 +361,7 @@ describe('Auth (e2e)', () => {
 
       // Assert
       expect(response.status).toBe(401);
-      expect(response.body.message).toBe('Invalid credentials');
-      const body = response.body as ErrorPayload;
-      const documented = buildErrorExample(401, { path, message: 'Invalid credentials' });
-      expect({ ...body, timestamp: documented.timestamp, requestId: documented.requestId }).toEqual(
-        documented,
-      );
+      expectDocumentedError(response.body, 401, { path, message: 'Invalid credentials' });
     });
 
     it('debería emitir un token para una cuenta recién registrada', async () => {

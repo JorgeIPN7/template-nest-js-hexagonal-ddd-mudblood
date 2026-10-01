@@ -1,3 +1,5 @@
+import { captureError } from '@test/helpers/capture-error';
+
 import { validateEnv } from '../validate-env';
 
 describe('validateEnv', () => {
@@ -73,14 +75,3 @@ describe('validateEnv', () => {
     });
   });
 });
-
-// Helpers
-
-const captureError = (fn: () => unknown): Error => {
-  try {
-    fn();
-  } catch (error) {
-    return error as Error;
-  }
-  throw new Error('Se esperaba que la función lanzara un error y no lo hizo');
-};

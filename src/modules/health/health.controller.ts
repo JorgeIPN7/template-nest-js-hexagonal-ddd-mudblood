@@ -19,6 +19,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { ApiStandardErrors } from '@common/decorators/api-standard-errors.decorator';
 import { Public } from '@common/decorators/public.decorator';
 import { SkipTransform } from '@common/decorators/skip-transform.decorator';
+import { SkipTimeout } from '@common/decorators/timeout.decorator';
 import type { AppConfig } from '@config/app.config';
 
 /**
@@ -182,6 +183,10 @@ const serviceUnavailable = ({
 @ApiTags('Health')
 @SkipTransform()
 @SkipThrottle({ default: true })
+// Cada chequeo lleva su propio límite (el ping a la base, 1 s): un fallo es un 503 con el
+// indicador que cayó, mucho antes de los 15 s del interceptor global. Fuera de él, el contrato
+// no tiene que publicar un 408 que ningún camino puede producir.
+@SkipTimeout()
 // Las sondas del orquestador no llevan token: un guard que las rechazara sacaría el pod
 // de rotación por un 401, no por estar caído.
 @Public()
@@ -227,7 +232,7 @@ export class HealthController {
       },
     }),
   )
-  @ApiStandardErrors({ throttled: false })
+  @ApiStandardErrors({ throttled: false, timeout: false })
   check(): Promise<HealthCheckResult> {
     return this.health.check([...this.memoryIndicators(), () => this.databaseIndicator()]);
   }
@@ -275,7 +280,7 @@ export class HealthController {
       error: {},
     }),
   )
-  @ApiStandardErrors({ throttled: false })
+  @ApiStandardErrors({ throttled: false, timeout: false })
   liveness(): Promise<HealthCheckResult> {
     return this.health.check([]);
   }
@@ -313,7 +318,7 @@ export class HealthController {
       error: { database: { status: 'down', responseTime: 4 } },
     }),
   )
-  @ApiStandardErrors({ throttled: false })
+  @ApiStandardErrors({ throttled: false, timeout: false })
   readiness(): Promise<HealthCheckResult> {
     return this.health.check([...this.memoryIndicators(), () => this.databaseIndicator()]);
   }

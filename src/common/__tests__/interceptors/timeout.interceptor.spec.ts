@@ -5,7 +5,13 @@ import { Reflector } from '@nestjs/core';
 import { firstValueFrom, of, throwError, timer } from 'rxjs';
 import { map } from 'rxjs/operators';
 
-import { SkipTimeout, TimeoutMs } from '../../decorators/timeout.decorator';
+import { captureRejection } from '@test/helpers/capture-error';
+
+import {
+  REQUEST_TIMEOUT_MESSAGE,
+  SkipTimeout,
+  TimeoutMs,
+} from '../../decorators/timeout.decorator';
 import { TimeoutInterceptor } from '../../interceptors/timeout.interceptor';
 
 describe('TimeoutInterceptor', () => {
@@ -31,6 +37,22 @@ describe('TimeoutInterceptor', () => {
       await expect(
         firstValueFrom(interceptor.intercept(buildHttpContext(), slowHandler)),
       ).rejects.toBeInstanceOf(RequestTimeoutException);
+    });
+
+    // El ejemplo del 408 de `@ApiStandardErrors()` publica esa misma constante: si el interceptor
+    // volviera a un literal propio, el ejemplo dejaría de describir lo que se envía.
+    it('debería responder con el mensaje que publica el ejemplo del 408 del contrato', async () => {
+      // Arrange
+      const { interceptor } = buildInterceptor(20);
+      const slowHandler = { handle: () => timer(100).pipe(map(() => 'late')) };
+
+      // Act
+      const error = await captureRejection(
+        firstValueFrom(interceptor.intercept(buildHttpContext(), slowHandler)),
+      );
+
+      // Assert
+      expect(error.message).toBe(REQUEST_TIMEOUT_MESSAGE);
     });
 
     it('debería relanzar tal cual los errores que no son de timeout', async () => {

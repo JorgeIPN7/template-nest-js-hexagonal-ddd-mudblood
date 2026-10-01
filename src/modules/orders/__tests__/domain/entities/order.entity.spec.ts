@@ -7,9 +7,15 @@ import { OrderAmount } from '../../../domain/value-objects/order-amount.vo';
 import { OrderConcept } from '../../../domain/value-objects/order-concept.vo';
 import { OrderId } from '../../../domain/value-objects/order-id.vo';
 import { timestampArb } from '../../helpers/arbitraries';
+import {
+  DEFAULT_AMOUNT_CENTS,
+  DEFAULT_CONCEPT,
+  DEFAULT_CUSTOMER_ID as CUSTOMER_ID,
+  DEFAULT_PLACED_AT,
+  buildPlacedOrder,
+  rehydrateOrder,
+} from '../../helpers/order.factory';
 
-const CUSTOMER_ID = '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012';
-const NOW = new Date('2026-08-06T09:30:00.000Z');
 const CANCELLED_AT = new Date('2026-08-06T10:45:00.000Z');
 const LATER = new Date('2026-08-07T08:00:00.000Z');
 
@@ -20,16 +26,18 @@ describe('Order', () => {
       const id = OrderId.generate();
 
       // Act
-      const order = placeOrder(id);
+      const order = buildPlacedOrder({ id });
       const events = order.pullEvents();
 
       // Assert: el payload lleva los datos primitivos que irán tal cual al outbox.
-      expect(events).toEqual([new OrderPlaced(id.value, CUSTOMER_ID, 149_900, NOW)]);
+      expect(events).toEqual([
+        new OrderPlaced(id.value, CUSTOMER_ID, DEFAULT_AMOUNT_CENTS, DEFAULT_PLACED_AT),
+      ]);
     });
 
     it('debería drenar los eventos al hacer pull', () => {
       // Arrange
-      const order = placeOrder(OrderId.generate());
+      const order = buildPlacedOrder();
       order.pullEvents();
 
       // Act
@@ -44,7 +52,7 @@ describe('Order', () => {
       const id = OrderId.generate();
 
       // Act
-      const order = placeOrder(id);
+      const order = buildPlacedOrder({ id });
 
       // Assert
       expect(order.status).toBe('placed');
@@ -56,7 +64,7 @@ describe('Order', () => {
   describe('cancel()', () => {
     it('debería cancelar un pedido colocado con el instante de la cancelación', () => {
       // Arrange
-      const order = placeOrder(OrderId.generate());
+      const order = buildPlacedOrder();
 
       // Act
       order.cancel(CANCELLED_AT);
@@ -69,7 +77,7 @@ describe('Order', () => {
     it('debería emitir OrderCancelled con el pedido, el cliente y el instante al cancelar', () => {
       // Arrange
       const id = OrderId.generate();
-      const order = placeOrder(id);
+      const order = buildPlacedOrder({ id });
       order.pullEvents();
 
       // Act
@@ -81,7 +89,7 @@ describe('Order', () => {
 
     it('debería dejar intacto un pedido ya cancelado, con su fecha de cancelación original y sin emitir evento', () => {
       // Arrange
-      const order = rehydrateCancelled(CANCELLED_AT);
+      const order = rehydrateOrder({ status: 'cancelled', cancelledAt: CANCELLED_AT, version: 3 });
 
       // Act
       order.cancel(LATER);
@@ -96,7 +104,7 @@ describe('Order', () => {
       'debería emitir un único OrderCancelled y conservar la primera fecha por muchas veces que se cancele',
       (instants) => {
         // Arrange
-        const order = placeOrder(OrderId.generate());
+        const order = buildPlacedOrder();
         order.pullEvents();
 
         // Act
@@ -116,13 +124,15 @@ describe('Order', () => {
 
   describe('rehydrate()', () => {
     it('debería reconstruir sin emitir eventos', () => {
+      // Arrange
+
       // Act
       const order = Order.rehydrate({
         id: OrderId.generate(),
         customerId: CUSTOMER_ID,
-        concept: OrderConcept.from('Suscripción anual plan Pro'),
-        amount: OrderAmount.from(149_900),
-        placedAt: NOW,
+        concept: OrderConcept.from(DEFAULT_CONCEPT),
+        amount: OrderAmount.from(DEFAULT_AMOUNT_CENTS),
+        placedAt: DEFAULT_PLACED_AT,
         status: 'placed',
         cancelledAt: null,
         version: 1,
@@ -137,15 +147,20 @@ describe('Order', () => {
       const id = OrderId.generate();
 
       // Act
-      const order = rehydrateCancelled(CANCELLED_AT, id);
+      const order = rehydrateOrder({
+        id,
+        status: 'cancelled',
+        cancelledAt: CANCELLED_AT,
+        version: 3,
+      });
 
       // Assert
       expect(order.toSnapshot()).toEqual({
         id: id.value,
         customerId: CUSTOMER_ID,
-        concept: 'Suscripción anual plan Pro',
-        amountCents: 149_900,
-        placedAt: NOW,
+        concept: DEFAULT_CONCEPT,
+        amountCents: DEFAULT_AMOUNT_CENTS,
+        placedAt: DEFAULT_PLACED_AT,
         status: 'cancelled',
         cancelledAt: CANCELLED_AT,
         version: 3,
@@ -154,26 +169,3 @@ describe('Order', () => {
     });
   });
 });
-
-// Helpers
-
-const placeOrder = (id: OrderId): Order =>
-  Order.place({
-    id,
-    customerId: CUSTOMER_ID,
-    concept: OrderConcept.from('Suscripción anual plan Pro'),
-    amount: OrderAmount.from(149_900),
-    now: NOW,
-  });
-
-const rehydrateCancelled = (cancelledAt: Date, id: OrderId = OrderId.generate()): Order =>
-  Order.rehydrate({
-    id,
-    customerId: CUSTOMER_ID,
-    concept: OrderConcept.from('Suscripción anual plan Pro'),
-    amount: OrderAmount.from(149_900),
-    placedAt: NOW,
-    status: 'cancelled',
-    cancelledAt,
-    version: 3,
-  });

@@ -3,11 +3,11 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 
-import { buildErrorExample } from '@common/dto/error-example.factory';
-import type { ErrorPayload } from '@common/filters/all-exceptions.filter';
 import { createTestApp } from '@test/helpers/create-test-app';
+import { expectDocumentedError } from '@test/helpers/documented-error';
 
 const DEFAULT_PASSWORD = 'contrasena-larga-de-prueba';
+const DEACTIVATED_EMAIL = 'desactivado@example.com';
 
 describe('Orders (e2e)', () => {
   let app: INestApplication<App>;
@@ -16,6 +16,7 @@ describe('Orders (e2e)', () => {
   let userToken: string;
   let customerId: string;
   let otherToken: string;
+  let deactivatedToken: string;
 
   beforeAll(async () => {
     ({ app, prefix } = await createTestApp());
@@ -23,15 +24,17 @@ describe('Orders (e2e)', () => {
 
     // Arranque limpio de las cuentas (perfil + credencial, dos tablas desde el ciclo 4) y un
     // login por cliente para toda la suite, no por test: `/auth/register` y `/auth/login`
-    // tienen 10/min cada uno. Contando los tests que registran cuentas propias, la suite gasta
-    // 5 de cada 10: cabe, pero cada cuenta nueva consume uno de cada, así que un test que pueda
-    // usar estas dos no debería registrar otra. Las filas deben sobrevivir a los beforeEach: el
-    // directorio de clientes las consulta en cada orden.
+    // tienen 10/min cada uno y la suite gasta 3 de cada 10. Ningún test registra cuentas
+    // propias: cada una consumiría uno de cada, y la de los clientes desactivados se reutiliza
+    // cambiando su `active`. Las filas deben sobrevivir a los beforeEach: el directorio de
+    // clientes las consulta en cada orden.
     await dataSource.query('TRUNCATE TABLE auth_credentials');
     await dataSource.query('TRUNCATE TABLE users CASCADE');
     ({ token: userToken, id: customerId } = await registerAndLogin('cliente@example.com'));
     // Un segundo cliente, también para toda la suite: los pedidos ajenos de la cancelación.
     ({ token: otherToken } = await registerAndLogin('otro-cliente@example.com'));
+    // Un tercero cuyo token sobrevive a su desactivación: cada test fija el `active` que necesita.
+    ({ token: deactivatedToken } = await registerAndLogin(DEACTIVATED_EMAIL));
   });
 
   beforeEach(async () => {
@@ -108,6 +111,7 @@ describe('Orders (e2e)', () => {
       ['importe cero', { concept: 'Orden', amountCents: 0 }],
       ['importe no entero', { concept: 'Orden', amountCents: 10.5 }],
       ['importe sobre el tope', { concept: 'Orden', amountCents: 10_000_001 }],
+      ['concepto con un byte NUL', { concept: 'Orden con \u0000 dentro', amountCents: 100 }],
     ])('debería responder 400 con %s', async (_caso, body) => {
       // Act
       const response = await postOrder(userToken, body);
@@ -138,32 +142,25 @@ describe('Orders (e2e)', () => {
       // justifica el `CustomerDirectory` (spec §5). UPDATE directo, patrón de la suite de
       // users para promover: la desactivación operativa no pasa por HTTP aquí.
       const path = `${prefix}/orders`;
-      const { token } = await registerAndLogin('desactivado@example.com');
-      await dataSource.query(`UPDATE users SET active = false WHERE email = $1`, [
-        'desactivado@example.com',
-      ]);
+      await setDeactivatedCustomerActive(false);
 
       // Act
-      const response = await postOrder(token, { concept: 'Orden tardía', amountCents: 100 });
+      const response = await postOrder(deactivatedToken, {
+        concept: 'Orden tardía',
+        amountCents: 100,
+      });
 
       // Assert: forma exacta contra la MISMA factoría que alimenta el example publicado.
       expect(response.status).toBe(403);
-      const body = response.body as ErrorPayload;
-      const documented = buildErrorExample(403, { path, message: 'Forbidden' });
-      expect({ ...body, timestamp: documented.timestamp, requestId: documented.requestId }).toEqual(
-        documented,
-      );
+      expectDocumentedError(response.body, 403, { path, message: 'Forbidden' });
     });
 
     it('debería no persistir nada cuando el cliente ya no está activo', async () => {
       // Arrange
-      const { token } = await registerAndLogin('desactivado2@example.com');
-      await dataSource.query(`UPDATE users SET active = false WHERE email = $1`, [
-        'desactivado2@example.com',
-      ]);
+      await setDeactivatedCustomerActive(false);
 
       // Act
-      await postOrder(token, { concept: 'Orden fantasma', amountCents: 100 });
+      await postOrder(deactivatedToken, { concept: 'Orden fantasma', amountCents: 100 });
 
       // Assert
       const counts = await dataSource.query<{ orders: number; outbox: number }[]>(
@@ -261,19 +258,30 @@ describe('Orders (e2e)', () => {
       const missing = await cancelOrder(otherToken, orderId);
 
       // Assert
-      const documented = buildErrorExample(404, {
-        path,
-        message: `Order ${orderId} was not found`,
-      });
       for (const response of [foreign, missing]) {
         expect(response.status).toBe(404);
-        const body = response.body as ErrorPayload;
-        expect({
-          ...body,
-          timestamp: documented.timestamp,
-          requestId: documented.requestId,
-        }).toEqual(documented);
+        expectDocumentedError(response.body, 404, {
+          path,
+          message: `Order ${orderId} was not found`,
+        });
       }
+    });
+
+    it('debería responder 404 y no 500 al pedido de otro cliente aunque su fila esté corrupta', async () => {
+      // Arrange: una fila ajena que el mapper rechazaría. Si se reconstruyera antes de mirar el
+      // dueño, el 500 —frente al 404 de un id cualquiera— delataría que el pedido existe.
+      const orderId = await placeOrderFor(userToken);
+      await dataSource.query(`UPDATE orders SET status = 'shipped' WHERE id = $1`, [orderId]);
+
+      // Act
+      const response = await cancelOrder(otherToken, orderId);
+
+      // Assert
+      expect(response.status).toBe(404);
+      expectDocumentedError(response.body, 404, {
+        path: `${prefix}/orders/${orderId}/cancel`,
+        message: `Order ${orderId} was not found`,
+      });
     });
 
     it('debería no cancelar el pedido de otro cliente', async () => {
@@ -296,14 +304,10 @@ describe('Orders (e2e)', () => {
 
       // Assert: forma exacta contra la MISMA factoría que alimenta el example publicado.
       expect(response.status).toBe(400);
-      const documented = buildErrorExample(400, {
+      expectDocumentedError(response.body, 400, {
         path: `${prefix}/orders/no-es-uuid/cancel`,
         message: '"no-es-uuid" is not a valid order id',
       });
-      const body = response.body as ErrorPayload;
-      expect({ ...body, timestamp: documented.timestamp, requestId: documented.requestId }).toEqual(
-        documented,
-      );
     });
 
     it('debería responder 401 sin token', async () => {
@@ -320,26 +324,20 @@ describe('Orders (e2e)', () => {
     });
 
     it('debería responder 403 sin cancelar nada cuando el cliente fue desactivado tras emitir el token', async () => {
-      // Arrange
-      const { token } = await registerAndLogin('desactivado3@example.com');
-      const orderId = await placeOrderFor(token);
-      await dataSource.query(`UPDATE users SET active = false WHERE email = $1`, [
-        'desactivado3@example.com',
-      ]);
+      // Arrange: el pedido se coloca mientras el cliente está activo; después se le desactiva.
+      await setDeactivatedCustomerActive(true);
+      const orderId = await placeOrderFor(deactivatedToken);
+      await setDeactivatedCustomerActive(false);
 
       // Act
-      const response = await cancelOrder(token, orderId);
+      const response = await cancelOrder(deactivatedToken, orderId);
 
       // Assert
       expect(response.status).toBe(403);
-      const documented = buildErrorExample(403, {
+      expectDocumentedError(response.body, 403, {
         path: `${prefix}/orders/${orderId}/cancel`,
         message: 'Forbidden',
       });
-      const body = response.body as ErrorPayload;
-      expect({ ...body, timestamp: documented.timestamp, requestId: documented.requestId }).toEqual(
-        documented,
-      );
       const rows = await dataSource.query<{ status: string }[]>('SELECT status FROM orders');
       expect(rows).toEqual([{ status: 'placed' }]);
       const cancelled = await dataSource.query<{ count: number }[]>(
@@ -359,6 +357,14 @@ describe('Orders (e2e)', () => {
   const placeOrderFor = async (token: string): Promise<string> => {
     const response = await postOrder(token, { concept: 'Plan Pro', amountCents: 100 }).expect(201);
     return response.body.data.id as string;
+  };
+
+  /** UPDATE directo, patrón de la suite de users: la desactivación operativa no pasa por HTTP. */
+  const setDeactivatedCustomerActive = async (active: boolean): Promise<void> => {
+    await dataSource.query(`UPDATE users SET active = $1 WHERE email = $2`, [
+      active,
+      DEACTIVATED_EMAIL,
+    ]);
   };
 
   const postOrder = (token: string, body: Record<string, unknown>) =>

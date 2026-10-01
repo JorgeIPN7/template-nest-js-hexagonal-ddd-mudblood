@@ -46,7 +46,7 @@ export const expectedErrorName = (status: number): string =>
  *   alguien lo contraste contra el filtro.
  */
 export const VERIFIED_ERROR_STATUSES: ReadonlySet<number> = new Set([
-  400, 401, 403, 404, 409, 429, 500,
+  400, 401, 403, 404, 408, 409, 429, 500,
 ]);
 
 export type ErrorExampleOptions = {

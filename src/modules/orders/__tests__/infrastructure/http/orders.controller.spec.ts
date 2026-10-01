@@ -63,8 +63,10 @@ describe('OrdersController', () => {
 
     it('debería declarar solo los códigos que la cancelación puede producir hoy', () => {
       // Arrange: la tabla «Contrato» de docs/specs/2026-09-30-cancel-order-express.md. Sin 409:
-      // el reintento del caso de uso absorbe el conflicto (comentario junto a `cancel`).
-      const reachable = ['200', '400', '401', '403', '404', '429', '500'];
+      // el reintento del caso de uso absorbe el conflicto (comentario junto a `cancel`). Con 408:
+      // el `TimeoutInterceptor` global corta la respuesta cuando el UPDATE espera un bloqueo más
+      // de `REQUEST_TIMEOUT_MS`, y la cancelación puede confirmarse igualmente después.
+      const reachable = ['200', '400', '401', '403', '404', '408', '429', '500'];
 
       // Act
       const declared = Object.keys(declaredResponses(OrdersController, 'cancel'));
