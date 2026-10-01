@@ -69,7 +69,7 @@
     "@nestjs/swagger": "12.0.2",
     "@nestjs/terminus": "12.1.0",
     "@nestjs/throttler": "6.7.1",
-    "@nestjs/typeorm": "12.0.1",
+    "@nestjs/typeorm": "12.0.2",
     "@scalar/nestjs-api-reference": "1.2.23",
     "argon2": "0.45.1",
     "class-transformer": "0.5.1",
