@@ -364,9 +364,22 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **El seed del primer admin ya no acepta credenciales que el login rechaza** (2026-10-01, #34).
+  `ADMIN_PASSWORD` solo exigía 12 caracteres a Zod, que cuenta los selectores de variación de los
+  emojis y el login no, y `ADMIN_EMAIL` solo pasaba por `z.email()`: con `'a'×129`, `'❤️'×6` o una parte local de 65 caracteres,
+  `pnpm seed:admin` creaba o promovía el admin y el login le respondía 400 — el rescate
+  documentado dejaba un admin que no podía entrar. Ahora `env.schema.ts` valida las dos con las
+  mismas funciones de class-validator que `LoginDto`, y los límites de la contraseña viven en
+  `src/config/password-policy.ts`, de donde los leen también los DTO, su `@ApiProperty` y el
+  ejemplo del 400 del login. El documento OpenAPI sale idéntico byte a byte. ⚠️ **Un `.env` con
+  un valor que el login rechazaría deja de arrancar** —la app, las migraciones que cargan
+  `data-source.ts`, `outbox:relay` y el seed—. Por ejemplo: un `ADMIN_PASSWORD` de más de 128
+  caracteres, o uno que solo llega a 12 contando los selectores de variación de sus emojis
+  (`'❤️'×6` se rechaza, `'❤️'×12` no); un `ADMIN_EMAIL` con más de 64 caracteres antes de la `@`,
+  una etiqueta de más de 63, más de 254 en total o una etiqueta que acaba en guion (`a@b-.com`).
 - **La documentación de `ADMIN_*` ya no dice que la app no las mira, y avisa del `#` y del `$`**
   (2026-10-01). `.env.example` y el README decían que solo las lee el seed (el comentario de
-  `env.schema.ts` lo sigue diciendo hasta #34); las usa solo él, pero las valida todo proceso que
+  `env.schema.ts` lo siguió diciendo hasta #34); las usa solo él, pero las valida todo proceso que
   carga la configuración, y un valor inválido impide arrancar la app. Ahora avisan de que dotenv
   corta en el `#` un valor sin comillas (`CLAVE=abc#123` vale `abc`, medido con dotenv 18): con
   una contraseña así, o el seed guardaba la versión cortada y el login respondía 401 sin pista de
@@ -716,7 +729,6 @@ que puede hacer al respecto quien despliegue:
 - El rate limiting cuenta en memoria, por réplica, y por `req.ip` (#3).
 - No hay bloqueo de cuenta por identidad en el login.
 - Las migraciones que mueven datos no las ejercita ninguna prueba (#17).
-- El seed del primer admin acepta credenciales que el login rechaza (#34).
 - No hay lista de contraseñas prohibidas: `123456789012` es una contraseña válida (#35).
 - Un `$` en el `.env` lo expande la app y no los CLI: cada proceso puede ver un valor distinto
   (#36).

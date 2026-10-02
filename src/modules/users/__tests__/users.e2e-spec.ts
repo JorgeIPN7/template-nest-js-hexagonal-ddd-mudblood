@@ -10,7 +10,7 @@ import { resetThrottler } from '@test/helpers/reset-throttler';
 
 import { UserOrmEntity } from '../infrastructure/persistence/user.orm-entity';
 
-/** Cumple `@MinLength(12)` de `RegisterAccountDto`; el valor en sí es irrelevante. */
+/** Cumple `PASSWORD_LENGTH` (`src/config/password-policy.ts`), que aplica `RegisterAccountDto`. */
 const DEFAULT_PASSWORD = 'contrasena-larga-de-prueba';
 
 /**

@@ -1485,6 +1485,22 @@ encuentra un solo pedido y un solo `OrderPlaced`, y el contrato documenta la cab
 
 ## 34. El seed del primer admin acepta credenciales que el login rechaza
 
+**Resuelto (2026-10-01, por el flujo completo: spec
+[`2026-10-01-admin-seed-login-parity-design.md`](./specs/2026-10-01-admin-seed-login-parity-design.md)
+y plan [`2026-10-01-admin-seed-login-parity.md`](./plans/2026-10-01-admin-seed-login-parity.md)).**
+Se aplicó el criterio de abajo tal cual: `PASSWORD_LENGTH` y `hasValidPasswordLength` en
+`src/config/password-policy.ts`, y `ADMIN_*` validadas con `minLength`/`maxLength` e `isEmail` de
+class-validator. El contrato publicado no cambió: el documento OpenAPI de antes y el de después
+son idénticos byte a byte. Lo que no estaba previsto, medido al ejecutar: con solo `maxLength`,
+`fc.array` de fast-check 4 genera arrays de tamaño «small» —ninguna de 5 000 muestras pasó de 10
+trozos—, así que la fila de propiedad de la contraseña no veía nunca el máximo y un `refine` sin
+máximo salía verde. Los dos arbitrarios se rehicieron pegados a las fronteras, y la revisión
+adversarial añadió filas fijas para cada frontera de los DTO y cada límite del email: aun con las
+bandas, un error de uno en un `@MinLength`/`@MaxLength` se escapaba en una de cada tres corridas,
+y un `refine` que olvidara el total de 254 caracteres, en más de la mitad. El porqué y la
+medición, con Zod y class-validator reales, están en los comentarios de
+`src/config/__tests__/env.schema.spec.ts`.
+
 **Qué pasa.** `ADMIN_PASSWORD` se valida con `z.string().min(12)` (`src/config/env.schema.ts`):
 sin máximo, y contando puntos de código. `LoginDto` aplica `@MinLength(12)` y `@MaxLength(128)`
 con class-validator, que además no cuenta los selectores de variación U+FE0E/U+FE0F. Medido el
@@ -1549,16 +1565,23 @@ sustituye: con 15 caracteres, `123456789012345` pasaría igual.
   servicio externo mete una dependencia de red en el alta, y con una copia local, un artefacto de
   gran tamaño que mantener. Si se quiere, lo decide el mantenedor.
 - El rechazo es un 400 que dice el motivo: NIST exige explicarlo.
-- En el mismo diseño se deciden dos cosas que hoy no se tocan. Subir el mínimo a 15, que es lo
+- En el mismo diseño se deciden tres cosas que hoy no se tocan. Subir el mínimo a 15, que es lo
   que pide NIST cuando la contraseña es el único factor, exige antes que el login deje de aplicar
-  el mínimo (#34). Y la normalización NFC: NIST la recomienda (SHOULD), pero ASVS 6.2.8 (nivel 1)
+  el mínimo (#34). La normalización NFC: NIST la recomienda (SHOULD), pero ASVS 6.2.8 (nivel 1)
   pide verificar la contraseña tal como llega, sin modificarla. Hay que decidir cuál pesa más, y
   sabiendo que introducirla más tarde invalida los hashes de las contraseñas que no estuvieran ya
-  normalizadas.
+  normalizadas. Y cómo se cuenta la longitud: NIST exige (SHALL) contar cada punto de código,
+  pero `minLength`/`maxLength` de class-validator, que comparten los DTO y `ADMIN_PASSWORD` desde
+  #34 (`src/config/password-policy.ts`), no cuentan un selector de variación U+FE0E/U+FE0F
+  detrás de otro carácter: `'❤️'×6` mide 6 y no 12. Contar como NIST cambia qué contraseñas acepta el alta, y en el login
+  solo puede relajarse, nunca endurecerse, porque las cuentas existentes no tienen cómo cambiar
+  la contraseña.
 
 **Cómo se sabrá que está hecho.** Un E2E registra `123456789012` y recibe 400 con el motivo, el
 contrato publicado declara ese 400, y ni `SECURITY.md` (la tabla de lo que el repositorio no hace
-y la viñeta de la política de contraseña) ni el CHANGELOG la listan ya como pendiente.
+y la viñeta de la política de contraseña) ni el CHANGELOG la listan ya como pendiente. Las tres
+decisiones de arriba quedan escritas, también la de no cambiarlas, y la viñeta de la política de
+`SECURITY.md` deja de remitir aquí la forma de contar.
 
 ---
 

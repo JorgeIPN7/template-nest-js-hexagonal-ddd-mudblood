@@ -14,6 +14,7 @@ import { Public } from '@common/decorators/public.decorator';
 import { ApiEnvelope } from '@common/dto/api-envelope.dto';
 import { buildErrorExample } from '@common/dto/error-example.factory';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '@common/dto/error-response.dto';
+import { PASSWORD_LENGTH } from '@config/password-policy';
 
 import { LoginUseCase } from '../../application/use-cases/login.use-case';
 import { RegisterAccountUseCase } from '../../application/use-cases/register-account.use-case';
@@ -202,7 +203,8 @@ export class AuthController {
     type: ValidationErrorResponseDto,
     example: errorExample(
       400,
-      'email must be a valid address, password must be longer than or equal to 12 characters',
+      'email must be a valid address, password must be longer than or equal to ' +
+        `${PASSWORD_LENGTH.min} characters`,
       LOGIN_PATH,
     ),
   })

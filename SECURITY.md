@@ -114,10 +114,15 @@ Detalles que importan y que no se ven en la tabla:
   y el seed del primer admin ([`seed-admin.ts`](./src/database/seeds/seed-admin.ts)).
 - **La credencial vive en su propia tabla.** Desde el ciclo 4, el hash está en `auth_credentials`,
   propiedad del bounded context `auth`; `users` (el perfil) ya no sabe qué es una contraseña.
-- **Contraseña de 12 a 128 caracteres, sin reglas de composición.** Lo aplican
-  [`register-account.dto.ts`](./src/modules/auth/infrastructure/http/dto/register-account.dto.ts)
-  y [`login.dto.ts`](./src/modules/auth/infrastructure/http/dto/login.dto.ts); `ADMIN_PASSWORD`,
-  en [`env.schema.ts`](./src/config/env.schema.ts), solo el mínimo (backlog #34). No se exige
+- **Contraseña de 12 a 128 caracteres, sin reglas de composición.** Los límites viven en
+  [`password-policy.ts`](./src/config/password-policy.ts) y los aplican
+  [`register-account.dto.ts`](./src/modules/auth/infrastructure/http/dto/register-account.dto.ts),
+  [`login.dto.ts`](./src/modules/auth/infrastructure/http/dto/login.dto.ts) y, para
+  `ADMIN_PASSWORD`, [`env.schema.ts`](./src/config/env.schema.ts), con las mismas funciones de
+  class-validator: el seed no puede crear un admin cuya contraseña rechace el login. Se cuentan
+  como los cuenta class-validator: uno por punto de código, salvo un selector de variación
+  (U+FE0E, U+FE0F) detrás de otro carácter, que no cuenta. `❤️` seis veces mide 6. NIST SP 800-63B-4 pide contar cada punto de código; es una desviación
+  consciente, que se decide en [backlog #35](./docs/backlog.md). No se exige
   mayúscula, número ni símbolo a propósito: NIST SP 800-63B-4 (§3.1.1.2) y OWASP ASVS 5.0 (6.2.5)
   lo prohíben, porque la gente cumple esas reglas de forma previsible (`password` →
   `Password1!`). Dos límites, dichos claro: para una contraseña que es el **único** factor, como
@@ -255,12 +260,6 @@ saberlo antes de desplegarla.
 - **Dos huecos latentes en la matriz de fronteras** ([backlog #19](./docs/backlog.md)): la lista
   negra de imports del kernel de dominio deja pasar `rxjs`, `express` y `class-transformer`. Es una
   regla de arquitectura que no se aplica del todo, no una vulnerabilidad — el impacto hoy es cero.
-- **El seed del primer admin acepta credenciales que el login rechaza**
-  ([backlog #34](./docs/backlog.md)). Un `ADMIN_PASSWORD` de más de 128 caracteres o con emojis
-  como `❤️` (class-validator no cuenta su selector de variación), o un `ADMIN_EMAIL` con más de 64
-  caracteres antes de la `@`, pasan la validación del entorno: el seed crea el admin y el login le
-  responde 400. El mensaje dice qué pasa; no es una puerta abierta, es un rescate que no rescata.
-  Hasta que se cierre, usa valores dentro de esos límites.
 - **Un `$` en el `.env` no vale lo mismo para todos los procesos** ([backlog #36](./docs/backlog.md)).
   La app lo expande como una referencia a otra variable (`expandVariables: true` en
   [`app.module.ts`](./src/app.module.ts)) y los CLI que cargan

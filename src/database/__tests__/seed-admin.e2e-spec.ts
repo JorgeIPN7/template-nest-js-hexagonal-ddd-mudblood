@@ -4,12 +4,13 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
+import { ZodError } from 'zod';
 
 import { createTestApp } from '@test/helpers/create-test-app';
 
 import { seedAdmin } from '../seeds/seed-admin';
 
-/** Cumple `ADMIN_PASSWORD: z.string().min(12)` de `env.schema`; el valor en sí es irrelevante. */
+/** Cumple `PASSWORD_LENGTH` de `src/config/password-policy.ts`; el valor en sí es irrelevante. */
 const ADMIN_PASSWORD = 'Password-Segura-1';
 const ADMIN_EMAIL = 'primer.admin@example.com';
 
@@ -182,6 +183,25 @@ describe('seedAdmin (e2e)', () => {
       .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
     expect(login.status).toBe(200);
     expect(login.body.data.user.active).toBe(true);
+  });
+
+  // Backlog #34: el esquema solo exigía 12 caracteres, así que 129 pasaban, el seed sembraba el
+  // admin y `@MaxLength(128)` de `LoginDto` lo dejaba fuera para siempre con un 400. Ahora el
+  // esquema rechaza lo que rechazaría el login, ANTES de abrir la transacción.
+  it('debería rechazar un ADMIN_PASSWORD que el login rechazaría, sin escribir ninguna fila', async () => {
+    // Arrange
+    setEnv(ADMIN_EMAIL, 'a'.repeat(129));
+
+    // Act
+    const seeding = seedAdmin(dataSource);
+
+    // Assert
+    await expect(seeding).rejects.toBeInstanceOf(ZodError);
+    const counts = await dataSource.query<{ users: number; credentials: number }[]>(
+      `SELECT (SELECT COUNT(*)::int FROM users) AS users,
+              (SELECT COUNT(*)::int FROM auth_credentials) AS credentials`,
+    );
+    expect(counts[0]).toEqual({ users: 0, credentials: 0 });
   });
 
   it('debería rechazar cuando faltan ADMIN_EMAIL o ADMIN_PASSWORD en el entorno', async () => {

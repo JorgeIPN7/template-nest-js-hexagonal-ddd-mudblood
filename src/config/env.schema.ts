@@ -1,7 +1,10 @@
 import { BlockList, isIP } from 'node:net';
 
+import { isEmail } from 'class-validator';
 import express from 'express';
 import { z } from 'zod';
+
+import { PASSWORD_LENGTH, hasValidPasswordLength } from './password-policy';
 
 // Zod 4: `.default()` takes the OUTPUT type and short-circuits parsing, so it cannot
 // receive a raw string here — this schema outputs a boolean. Use `.prefault()` instead,
@@ -158,6 +161,13 @@ export const splitList = (value: string): string[] =>
     .map((item) => item.trim())
     .filter(Boolean);
 
+/**
+ * `when` de un `refine` de campo: solo se evalúa si las reglas anteriores del MISMO campo pasaron.
+ * El `payload` que recibe es el del campo, no el del objeto.
+ */
+const onlyIfValidSoFar = (payload: { issues: readonly unknown[] }): boolean =>
+  payload.issues.length === 0;
+
 const baseEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
 
@@ -205,11 +215,44 @@ const baseEnvSchema = z.object({
   JWT_SECRET: z.string().min(32).optional(),
   JWT_EXPIRES_IN_S: rejectEmpty(int().positive()).default(3600),
 
-  // Credenciales del PRIMER admin. Solo las lee `pnpm seed:admin` (nunca la app).
-  // Par ambas-o-ninguna, como DOCS_USERNAME/DOCS_PASSWORD. `z.email()` y no
-  // `z.string().email()`: la forma encadenada está deprecada en Zod 4.
-  ADMIN_EMAIL: z.email().optional(),
-  ADMIN_PASSWORD: z.string().min(12).optional(),
+  // Credenciales del PRIMER admin. Las usa solo `pnpm seed:admin`, pero las valida todo proceso
+  // que carga la configuración —la app, las migraciones y `outbox:relay`—: un valor inválido
+  // impide arrancar. Par ambas-o-ninguna, como DOCS_USERNAME/DOCS_PASSWORD.
+  //
+  // Aceptan solo lo que acepta `POST /auth/login`, con las mismas funciones de class-validator
+  // que `LoginDto`: si no, el seed crearía un admin que el login rechaza con 400 (backlog #34).
+  // - `z.email()` se queda delante de `isEmail`: la intersección de los dos es lo que acepta
+  //   también `Email.from` de `users`, con el que el login busca al usuario (`isEmail` solo
+  //   acepta, por ejemplo, una parte local entre comillas con un espacio dentro).
+  // - `.min()` se queda por su mensaje, que citan el README y `.env.example`.
+  // - El `when` de cada `refine` lo salta si la regla anterior del mismo campo ya falló: una
+  //   dirección mal escrita o una contraseña corta no culpan además a otra regla. No es `abort`
+  //   a propósito: `abort` corta también los `refine` del objeto, y el arranque dejaría de avisar
+  //   de la falta de JWT_SECRET o de la pareja incompleta en el mismo intento (medido con Zod
+  //   4.6.5).
+  // `z.email()` y no `z.string().email()`: la forma encadenada está deprecada en Zod 4.
+  ADMIN_EMAIL: z
+    .email()
+    .refine((value) => isEmail(value), {
+      when: onlyIfValidSoFar,
+      message:
+        'ADMIN_EMAIL must also be an address that POST /auth/login accepts (at most 64 ' +
+        'characters before the @, at most 63 per domain label, 254 in total, no label ending ' +
+        'in a hyphen): otherwise the seed would create an admin who can never log in.',
+    })
+    .optional(),
+  ADMIN_PASSWORD: z
+    .string()
+    .min(PASSWORD_LENGTH.min)
+    .refine(hasValidPasswordLength, {
+      when: onlyIfValidSoFar,
+      message:
+        `ADMIN_PASSWORD must be between ${PASSWORD_LENGTH.min} and ${PASSWORD_LENGTH.max} ` +
+        'characters as POST /auth/login counts them (one per code point, except that a ' +
+        'variation selector U+FE0E/U+FE0F right after another character does not count): ' +
+        'otherwise the seed would create an admin who can never log in.',
+    })
+    .optional(),
 
   // `positive`, no `nonnegative`: con 0 el temporizador de gracia vence antes de que
   // `app.close()` resuelva y el proceso muere a mitad del cierre ordenado.

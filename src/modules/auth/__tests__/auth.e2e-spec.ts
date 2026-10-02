@@ -7,7 +7,7 @@ import { createTestApp } from '@test/helpers/create-test-app';
 import { expectDocumentedError } from '@test/helpers/documented-error';
 import { resetThrottler } from '@test/helpers/reset-throttler';
 
-/** Cumple `@MinLength(12)` de `RegisterAccountDto`; el valor en sí es irrelevante. */
+/** Cumple `PASSWORD_LENGTH` (`src/config/password-policy.ts`), que aplica `RegisterAccountDto`. */
 const DEFAULT_PASSWORD = 'contrasena-larga-de-prueba';
 
 /**

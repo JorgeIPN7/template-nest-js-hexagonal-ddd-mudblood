@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsString, MaxLength, MinLength, NotContains } from 'class-validator';
 
+import { PASSWORD_LENGTH } from '@config/password-policy';
+
 /**
  * Sustituye a `CreateUserDto`: el alta pasó a `auth` porque quien nace en el alta es una
  * CUENTA (perfil + credencial), no solo un perfil. Los límites son los mismos que publicaba
@@ -35,13 +37,15 @@ export class RegisterAccountDto {
   name!: string;
 
   @ApiProperty({
-    description: 'Contraseña en claro. Entre 12 y 128 caracteres. Nunca se persiste tal cual.',
+    description:
+      `Contraseña en claro. Entre ${PASSWORD_LENGTH.min} y ${PASSWORD_LENGTH.max} caracteres. ` +
+      'Nunca se persiste tal cual.',
     example: 'una-frase-larga-y-dificil-de-adivinar',
-    minLength: 12,
-    maxLength: 128,
+    minLength: PASSWORD_LENGTH.min,
+    maxLength: PASSWORD_LENGTH.max,
   })
   @IsString()
-  @MinLength(12)
-  @MaxLength(128)
+  @MinLength(PASSWORD_LENGTH.min)
+  @MaxLength(PASSWORD_LENGTH.max)
   password!: string;
 }
