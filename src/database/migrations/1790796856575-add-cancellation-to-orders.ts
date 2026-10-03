@@ -3,7 +3,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
 /**
  * Cancelación de pedidos: estado, fecha de cancelación y versión optimista sobre `orders`.
  *
- * **Aditiva, sin expand/contract** (ver «Migraciones destructivas» en `CLAUDE.md`): no suelta
+ * **Aditiva, sin expand/contract** (ver «Destructive migrations» en `CLAUDE.md`): no suelta
  * ni renombra nada, así que es segura con `DB_MIGRATIONS_RUN=true` mientras las réplicas
  * viejas siguen sirviendo. Los `DEFAULT` son los que lo hacen posible: el `INSERT` del código
  * viejo solo enumera las columnas que conoce, y sin ellos `status` y `version` —`NOT NULL`—

@@ -187,8 +187,8 @@ Detalles que importan y que no se ven en la tabla:
   ([`src/config/database.config.ts`](./src/config/database.config.ts), `resolveSynchronize()`) —
   `synchronize: true` puede borrar columnas y datos.
 - **Las migraciones destructivas se parten en expand/contract**, con el despliegue en medio. La
-  regla, con su ejemplo trabajado, está en
-  [`CLAUDE.md` §«Destructive migrations»](./CLAUDE.md#destructive-migrations-expandcontract).
+  regla está en [`CLAUDE.md` §«Destructive migrations»](./CLAUDE.md#destructive-migrations-expandcontract)
+  y su ejemplo trabajado, en [`docs/database.md`](./docs/database.md#expandcontract-el-ejemplo-trabajado).
 - **La imagen Docker corre como el usuario `node`**, sin privilegios ([`Dockerfile`](./Dockerfile)).
 - **TLS a la base de datos:** `DB_SSL=true` con `DB_SSL_CA` apuntando al bundle de CA. Ojo con
   `DB_SSL_REJECT_UNAUTHORIZED=false`: cifra pero **no verifica** la identidad del servidor.

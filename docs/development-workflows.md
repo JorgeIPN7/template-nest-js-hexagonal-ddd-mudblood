@@ -328,7 +328,7 @@ hoy»: la entrada o el estado, y la rama del código que devuelve ese código de
 
 - Sin camino, no se declara. Una defensa para un estado futuro va en un comentario, junto con la
   condición que la haría alcanzable.
-- El guard de contrato comprueba el 400 y el 429 en los dos sentidos, y exige el 401 y el 403
+- El guard de contrato comprueba el 400, el 408 y el 429 en los dos sentidos, y exige el 401 y el 403
   donde los pone `@Auth`. Si un 404, un 409 o un 403 sin roles son alcanzables depende del código:
   eso lo responde quien escribe la spec.
 - Caso real: la rama exprés publicó un 409 «si el reintento también choca». Con dos estados (y un
@@ -425,9 +425,14 @@ historia, mueven `HEAD` o una ref, tocan el índice o descartan trabajo:
   recuperar trabajo.
 
 Cada uno va en tres formas —`git <sub> *`, `git * <sub> *` y `git * <sub>`—, así que cubren el
-subcomando a secas y cualquier opción global delante (`-C <dir>`, `-c k=v`, `--no-pager`…). La
-tercera hace falta porque el ` *` final solo casa con nada cuando es el único comodín de la regla.
-La lista la fija [`src/__tests__/claude-settings.spec.ts`](../src/__tests__/claude-settings.spec.ts).
+subcomando a secas y cualquier opción global delante (`-C <dir>`, `-c k=v`, `--no-pager`,
+`--git-dir=…`). La tercera hace falta porque el ` *` final solo casa con nada cuando es el único
+comodín de la regla (medido con Claude Code 2.1.283). Hasta el 2026-10-01 la lista tenía solo dos
+formas y dejaba pasar `git -C <dir> stash`, `git -c k=v commit` y `git branch -q -D x`.
+[`src/__tests__/claude-settings.spec.ts`](../src/__tests__/claude-settings.spec.ts) fija la lista y
+modela esa semántica del comodín. Los comandos compuestos se comprueban parte a parte, y por eso
+`cd <dir> && git commit` también queda bloqueado; `show` y `rev-parse` siguen permitidos, igual que
+las lecturas de la tabla.
 
 | Comando                                                                                                              | Resultado medido (Claude Code 2.1.283) |
 | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
@@ -577,7 +582,7 @@ Las reglas de decisión se fijaron (y se sellaron con un hash) antes de ejecutar
 | D13 | El revisor del plan comprueba tablas de casos y contrato       | **Aplicado**                                                                                                     |
 | D14 | Quitar de las skills lo que ya dice `CLAUDE.md`                | **Aplicado** en `javascript-typescript-jest` y en los prompts                                                    |
 | D15 | Git mutante bloqueado por configuración                        | **Aplicado**: `.claude/settings.json` más su spec                                                                |
-| —   | Adelgazar `CLAUDE.md`                                          | **Decidido**: PR propia tras fusionar las dos actuales (backlog #32)                                             |
+| —   | Adelgazar `CLAUDE.md`                                          | **Aplicado** el 2026-10-02 (backlog #32)                                                                         |
 
 ### Límites
 
@@ -616,11 +621,10 @@ Las reglas de decisión se fijaron (y se sellaron con un hash) antes de ejecutar
 
 ### Siguiente paso decidido
 
-- **Adelgazar `CLAUDE.md`** (`docs/backlog.md` #32). Es la palanca de tokens más grande: entra en
-  cada sesión y en cada subagente `general-purpose`, y pesa ~57 KB. Se queda en él cada regla con
-  su porqué en una línea; el historial y las mediciones largas pasan a `docs/`, con un enlace. Se
-  hace en una PR propia después de fusionar las de flujos y cancelación: las dos tocan
-  `CLAUDE.md`, y recortarlo en paralelo provocaría conflictos.
+- **Adelgazar `CLAUDE.md`** (`docs/backlog.md` #32): **hecho el 2026-10-02.** Pasó de 64 510 a
+  34 476 bytes (−46,6 %): cada regla conserva su porqué en una cláusula o, si el largo salió, tras
+  un enlace, y el historial y las mediciones se fueron a `docs/` (`toolchain.md`, `architecture.md`, `api-contract.md`,
+  `database.md` y `testing.md`). Por qué no llegó a la mitad: ver el cierre del #32.
 
 ### Propuestas abiertas (decisión del usuario)
 

@@ -1,128 +1,88 @@
 # _nest-base-template
 
-Production-ready NestJS 12 base template. Hexagonal/DDD layout, SWC builds, Pino logging with request-id via CLS, Zod-validated config, self-hosted Scalar API reference over OpenAPI, Terminus health checks.
+Production-ready NestJS 12 base template: hexagonal/DDD, Pino with request-id via CLS, Zod-validated config, self-hosted Scalar docs, Terminus health checks.
+
+History, measurements and worked examples live in `docs/` (backlog #32), which this file overrides.
 
 ## Stack
 
 NestJS 12 · TypeScript 6.0 · Node 24.21.0+ · pnpm 12 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.72
 
-**OpenAPI: dos piezas distintas que el nombre «Swagger» confunde.** `@nestjs/swagger` sigue siendo el **generador** del documento a partir de decoradores; Scalar es solo el **renderizador** que lo consume. Por eso los imports de `@nestjs/swagger` se quedan —es el nombre del paquete upstream— mientras que el vocabulario propio del repo (config, variables de entorno, nombres de archivo) dice `docs`/`openapi`.
+Why: [docs/toolchain.md](docs/toolchain.md).
 
-El bundle de Scalar se sirve desde el propio origen, nunca desde su CDN: el paquete no permite adjuntar un hash `integrity`, así que auto-hospedarlo es la única forma de saber qué JavaScript se ejecuta.
-
-Package manager is **pnpm** — never `npm install` or `yarn`.
-
-The exact version is pinned in `packageManager`. If your global `pnpm` is older, run commands through `corepack pnpm …`, or once `corepack enable` so the pinned version is used automatically. pnpm settings (`overrides`, `allowBuilds`) live in `pnpm-workspace.yaml` — since pnpm 11 the `pnpm` key in `package.json` is ignored **silently**.
-
-**The `js-yaml` CVE override is gone (2026-08-19).** It patched GHSA-pm4m-ph32-ghv5, and it was retired because upstream met its stated exit condition: `@nestjs/swagger@11.4.7` now pins `js-yaml@5.3.0`, fix included. Two things worth carrying forward, both in the file's tombstone comment and in backlog #6: an override **replaces upstream's rule entirely**, so while it stood the tree sat on 5.2.3 and never saw the 5.3.0 swagger asks for; and retiring it is only safe **because `pnpm audit --prod --audit-level=high` runs in CI** — that gate is what caught this CVE in the first place.
-
-**The `typescript` override is scoped to `'@nestjs/cli>typescript'`, and that scope is load-bearing.** `renovate.json` has `pnpm-workspace.yaml` `enabled: false`, so nothing bumps the literal automatically; a _global_ override would win resolution over the `typescript` devDependency in `package.json` and make every future TypeScript PR silently inert. Scoping alone would swap that for two diverging compilers (`nest-cli.json` sets `typeCheck: true`), so `src/__tests__/toolchain-pins.spec.ts` asserts exactly one `typescript` resolves and that it matches the manifest. **Bumping TypeScript means editing both lines.**
-
-**NestJS 12 is ESM-only and this repo stays CJS.** Every `@nestjs/*` 12.x package ships as pure ESM (`@nestjs/throttler` 6.x is still CJS); production loads them through Node's `require(esm)` (no flag needed on Node 24). Jest cannot without `--experimental-vm-modules`, so the `test*` scripts run `node --experimental-vm-modules node_modules/jest/bin/jest.js` and `stryker.config.mjs` passes the same flag via `testRunnerNodeArgs`. **Always run tests through the `pnpm test*` scripts** — a bare `npx jest` dies with `Must use import to load ES Module: …/@nestjs/config/dist/index.js` (measured on Jest 30.5.2). The flag needs Jest ≥ 30.5 (30.4 double-evaluates shared modules in mixed CJS/ESM graphs). Nothing in Jest exercises Node's own `require(esm)` over `dist/` (the `migration:run` step only loads `@nestjs/config`): booting the whole app graph is the job of the «Smoke de arranque» step in `ci.yml`, which boots with `DOCS_ENABLED=true` (the OpenAPI document, the Scalar HTML and its hashed bundle) and asserts that SIGTERM exits **143** with «Graceful shutdown completed» in the log. That last assertion guards the shutdown design: `src/main.ts` is the **only** owner of SIGTERM/SIGINT and **never calls `enableShutdownHooks()`** — its listener re-raises the signal, the process dies without `'exit'` and pino never flushes. The handler does `app.close(signal)` then `process.exit(128 + signal number)`, ignores a second signal, and `useProcessExit` is not an alternative (it turns 143 into 0). History and measurements in backlog #27.
-
-**Zod 4 gotcha:** `.default()` takes the schema's **output** type and short-circuits parsing. When a schema ends in `.transform()`, use `.prefault()` instead — it substitutes an **input** value and still runs the pipeline. See `src/config/env.schema.ts`.
+- **`@nestjs/swagger` generates the OpenAPI document; Scalar only renders it:** its imports keep the upstream name, our own vocabulary (config, env vars, file names) says `docs`/`openapi`.
+- **pnpm only, never `npm install` or `yarn`;** the version is pinned in `packageManager` (older global pnpm: `corepack pnpm …` or `corepack enable`).
+- **pnpm settings (`overrides`, `allowBuilds`) go in `pnpm-workspace.yaml`:** pnpm 11+ silently ignores the `pnpm` key of `package.json`.
+- **An override replaces upstream's rule entirely; retiring a CVE override is only safe because `pnpm audit --prod --audit-level=high` runs in CI** (backlog #6).
+- **The `typescript` override is scoped to `'@nestjs/cli>typescript'`, never global, and a TypeScript bump edits both lines** (override and devDependency): a global one makes TS PRs inert, unequal literals mean two compilers (`toolchain-pins.spec.ts`).
+- **NestJS 12 is ESM-only and this repo stays CJS, so run tests only through the `pnpm test*` scripts:** Jest ≥ 30.5 with `--experimental-vm-modules` — a bare `npx jest` dies with `Must use import to load ES Module` (backlog #27).
+- **`src/main.ts` alone owns SIGTERM/SIGINT and never calls `enableShutdownHooks()`** (its listener re-raises the signal and pino never flushes): it runs `app.close(signal)`, then `process.exit(128 + signal number)`, and ignores a second signal; `useProcessExit` is no alternative (it turns 143 into 0). CI's «Smoke de arranque», not Jest, boots `dist/` with `DOCS_ENABLED=true` and asserts SIGTERM exits 143 with «Graceful shutdown completed».
+- **Zod 4 gotcha:** after `.transform()` use `.prefault()` (an **input** value; the pipeline runs), never `.default()` (the **output** type; it short-circuits) — see `src/config/env.schema.ts`.
 
 ## Commands
 
 ```bash
-pnpm typecheck      # tsc --noEmit
-pnpm lint:check     # eslint, no --fix
-pnpm lint           # eslint --fix
-pnpm format:check   # prettier --check
-pnpm test           # unit, *.spec.ts under src/ (Jest with --experimental-vm-modules — see above)
-pnpm test:e2e       # *.e2e-spec.ts via ./test/jest-e2e.config.mjs, same flag (needs the DB up)
-pnpm test:mutation  # Stryker over domain/ + application/ of every module (CI gate, break: 85)
-pnpm test:mutation:changed [base]   # only what changed since base (default: merge-base with main)
-pnpm build          # nest build (SWC)
-pnpm start:dev      # watch mode
+pnpm typecheck # tsc --noEmit
+pnpm lint:check # eslint, no --fix
+pnpm lint # eslint --fix
+pnpm format:check # prettier --check
+pnpm test # unit, *.spec.ts under src/
+pnpm test:e2e # *.e2e-spec.ts (needs the DB up)
+pnpm test:mutation # Stryker over domain/ + application/ of every module (CI gate, break: 85)
+pnpm test:mutation:changed [base] # only what changed since base (default: merge-base with main)
+pnpm build # nest build (SWC)
+pnpm start:dev # watch mode
 
-pnpm db:up          # docker compose up -d --wait postgres (blocks until healthy)
-pnpm db:down        # stop it
-pnpm db:reset       # drop the volume, start clean and migrate BOTH databases
-pnpm db:migrate:test     # migrate nest_base_template_test — the E2E suite needs it
-pnpm migration:run       # apply pending migrations
-pnpm migration:revert    # roll back the last one
-pnpm migration:generate src/database/migrations/<Name>   # diff entities vs schema
+pnpm db:up # docker compose up -d --wait postgres (blocks until healthy)
+pnpm db:down # stop it
+pnpm db:reset # drop the volume, start clean and migrate BOTH databases
+pnpm db:migrate:test # migrate nest_base_template_test — the E2E suite needs it
+pnpm migration:run # apply pending migrations
+pnpm migration:revert # roll back the last one
+pnpm migration:generate src/database/migrations/<Name> # diff entities vs schema
 ```
 
-**Definition of Done** for any change: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`, all green. The E2E suite needs PostgreSQL running (`pnpm db:up`) and runs against the separate `nest_base_template_test` database, created by `docker/initdb/`.
+**Definition of Done** for any change: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`, all green. E2E needs PostgreSQL (`pnpm db:up`) and runs against the separate `nest_base_template_test` database, created by `docker/initdb/` and forced by `test/setup-env.ts`.
 
-**`docker/initdb/` creates that database but never migrates it** — the TypeORM CLI reads `DB_DATABASE` from the `.env`, which points at the dev database, and `test/setup-env.ts` redirects only inside the Jest process. So the first `pnpm test:e2e` on a fresh clone needs `pnpm db:migrate:test` first, or it dies with `relation "auth_credentials" does not exist` — measured against a freshly created database: `auth.e2e-spec.ts` runs first and its `beforeEach` truncates that table before any other. It reads like a bug in the code and it is a schema nobody migrated. `pnpm db:reset` does both databases and needs nothing extra. Closed as backlog #18 on 2026-08-20; the entry records why the script is a `.mjs` and not a `VAR=value` prefix (Windows, and no `cross-env` in the tree).
+**`docker/initdb/` never migrates that database:** on a fresh clone run `pnpm db:migrate:test` before the first `pnpm test:e2e`, or it dies with `relation "auth_credentials" does not exist` — an unmigrated schema, not a bug (backlog #18). `pnpm db:reset` migrates both.
 
 ## Git policy — never commit on the user's behalf
 
-Agents never run `git commit`, `git add`, `git push`, `git tag`, `git rebase` or any other git
-command that writes history, moves `HEAD` or a ref, touches the index or discards work — **not
-even when asked**: the deny list below blocks them for every agent, so the only way a commit
-happens is the user's own terminal.
-
-When a commit seems appropriate, suggest it and stop:
-
-> _"Te sugiero hacer un commit de los cambios por &lt;razón&gt;. Avísame y lo redacto."_
-
-This applies to subagents too.
-
-**Enforced, not only written (since 2026-09-30).** `.claude/settings.json` denies, to every agent
-(subagents and Workflow agents included), each of those subcommands in three forms —
-`git <sub> *`, `git * <sub> *` and `git * <sub>` — so the bare subcommand and any global option in
-front of it (`-C <dir>`, `-c k=v`, `--no-pager`, `--git-dir=…`) are covered. The third form is
-needed because a trailing ` *` only matches nothing when it is the rule's single wildcard
-(measured with Claude Code 2.1.283; until 2026-10-01 the list had two forms and let
-`git -C <dir> stash`, `git -c k=v commit` and `git branch -q -D x` through).
-`src/__tests__/claude-settings.spec.ts` pins the list and models that semantics. Measured too:
-`cd <dir> && git commit` is blocked (compound commands are checked part by part), and `status`,
-`log`, `diff`, `show`, `rev-parse`, `merge-base` and `reflog` stay allowed. `git branch` and
-`git stash` are denied whole, reads included: use `git rev-parse --abbrev-ref HEAD` and
-`git log -g refs/stash`. A guardrail, not a sandbox — it only sees commands that start with
-`git`, and `git fetch` with a local refspec (`git fetch . a:b`) still moves a ref — so the rule
-above still governs. **The user commits from their own terminal.**
+- **Agents never run `git commit`, `add`, `push`, `tag`, `rebase` or any git command that writes history, moves `HEAD` or a ref, touches the index or discards work — not even when asked, subagents and Workflow agents included.** The user commits from their own terminal.
+- **When a commit seems due, suggest it and stop:** _"Te sugiero hacer un commit de los cambios por &lt;razón&gt;. Avísame y lo redacto."_
+- **Enforced:** `.claude/settings.json` denies each subcommand as `git <sub> *`, `git * <sub> *` and `git * <sub>`, covering global options in front (`claude-settings.spec.ts`; [details](docs/development-workflows.md#10-git-quién-hace-los-commits)); reads such as `status`, `log`, `diff` and `rev-parse` stay allowed.
+- **`git branch` and `git stash` are denied whole, reads included:** use `git rev-parse --abbrev-ref HEAD` and `git log -g refs/stash`. It's a guardrail, not a sandbox (it only sees commands starting with `git`; `git fetch . a:b` still moves a ref): the written rule governs.
 
 ## Formato de respuesta — cómo el usuario quiere que se le responda
 
-Aplica a **todas** las respuestas al usuario en este repo. No aplica al código, a los
-comentarios ni a los mensajes de commit, que siguen las convenciones de sus propias secciones.
+Aplica a **todas** las respuestas al usuario en este repo. No aplica al código, a los comentarios ni a los mensajes de commit, que siguen las convenciones de sus propias secciones.
 
 ### Formato
 
-1. **Secciones numeradas con TÍTULO EN MAYÚSCULAS.** Un tema por sección. Nunca prosa continua
-   mezclando asuntos distintos.
-2. **Empieza por la respuesta directa.** Si la respuesta es «no», que la primera palabra sea
-   «no». El contexto va después.
-3. **Tablas** para comparar opciones, listar estados o inventariar cosas. Se leen más rápido que
-   un párrafo.
-4. **⚠️ marca lo que tiene consecuencia para el usuario**: una decisión que le toca, un riesgo,
-   un cambio incompatible, algo que debe ejecutar. En una frase, sin rodeos.
-5. **Cerrar SIEMPRE con una sección de estado** que responda tres cosas: ¿estás bloqueado?,
-   ¿necesitas algo de mí?, ¿necesitas algo de un tercero? El usuario no debería tener que
-   preguntarlo. _Si solo sobreviviera una regla de esta lista, es esta._
+1. **Secciones numeradas con TÍTULO EN MAYÚSCULAS.** Un tema por sección. Nunca prosa continua mezclando asuntos distintos.
+2. **Empieza por la respuesta directa.** Si la respuesta es «no», que la primera palabra sea «no». El contexto va después.
+3. **Tablas** para comparar opciones, listar estados o inventariar cosas. Se leen más rápido que un párrafo.
+4. **⚠️ marca lo que tiene consecuencia para el usuario**: una decisión que le toca, un riesgo, un cambio incompatible, algo que debe ejecutar. En una frase, sin rodeos.
+5. **Cerrar SIEMPRE con una sección de estado** que responda tres cosas: ¿estás bloqueado?, ¿necesitas algo de mí?, ¿necesitas algo de un tercero? El usuario no debería tener que preguntarlo. _Si solo sobreviviera una regla de esta lista, es esta._
 
 ### Verificación
 
-6. **Verifica antes de afirmar.** Si dices que algo funciona, que un archivo contiene X o que un
-   comando devuelve Y, compruébalo y enseña la salida. Nunca responder de memoria sobre hechos
-   comprobables.
+6. **Verifica antes de afirmar.** Si dices que algo funciona, que un archivo contiene X o que un comando devuelve Y, compruébalo y enseña la salida. Nunca responder de memoria sobre hechos comprobables.
 7. **Si no lo verificaste, dilo.** «No lo he comprobado» es aceptable; afirmarlo como cierto no.
-8. **Distingue «hecho» de «desplegado» / «en efecto».** Terminar de construir algo no es que
-   esté funcionando donde el usuario lo va a usar.
+8. **Distingue «hecho» de «desplegado» / «en efecto».** Terminar de construir algo no es que esté funcionando donde el usuario lo va a usar.
 
 ### Honestidad
 
-9. **Di lo que NO funciona y lo que decidiste no hacer, con el motivo.** Un reporte que solo
-   cuenta los aciertos obliga al usuario a descubrir el resto por su cuenta, normalmente tarde.
-10. **Si te equivocaste, corrígelo en una o dos frases y sigue.** Sin disculpas largas ni
-    autocrítica: el dato correcto, no el arrepentimiento.
-11. **Si lo que se pide está mal planteado, dilo ANTES de construirlo.** Una objeción antes
-    cuesta un mensaje; después cuesta rehacerlo.
+9. **Di lo que NO funciona y lo que decidiste no hacer, con el motivo.** Un reporte que solo cuenta los aciertos obliga al usuario a descubrir el resto por su cuenta, normalmente tarde.
+10. **Si te equivocaste, corrígelo en una o dos frases y sigue.** Sin disculpas largas ni autocrítica: el dato correcto, no el arrepentimiento.
+11. **Si lo que se pide está mal planteado, dilo ANTES de construirlo.** Una objeción antes cuesta un mensaje; después cuesta rehacerlo.
 12. **No adornes.** Si algo es un parche, llámalo parche. Si tiene un límite, nómbralo.
 
 ### Decisiones
 
-13. **Con varias opciones, recomienda una** y explica por qué en una frase. Nunca un menú sin
-    criterio.
-14. **Separa lo que decides tú de lo que decide el usuario.** Negocio, coste y riesgo son suyos;
-    las técnicas rutinarias son tuyas — tómalas y avisa, no preguntes cada una.
-15. **No des por hecho la aprobación.** Si algo es difícil de revertir o sale hacia fuera,
-    confírmalo antes.
+13. **Con varias opciones, recomienda una** y explica por qué en una frase. Nunca un menú sin criterio.
+14. **Separa lo que decides tú de lo que decide el usuario.** Negocio, coste y riesgo son suyos; las técnicas rutinarias son tuyas — tómalas y avisa, no preguntes cada una.
+15. **No des por hecho la aprobación.** Si algo es difícil de revertir o sale hacia fuera, confírmalo antes.
 
 ### Longitud
 
@@ -131,444 +91,166 @@ comentarios ni a los mensajes de commit, que siguen las convenciones de sus prop
 
 ### Respuestas para terceros (cuando aplique)
 
-Cuando la respuesta sea para otro equipo, envuélvela entre `====RESPUESTA PARA <EQUIPO>===` y
-`===FIN RESPUESTA PARA <EQUIPO>===`, y deja fuera de esos marcadores lo que sea solo para el
-usuario.
+Cuando la respuesta sea para otro equipo, envuélvela entre `====RESPUESTA PARA <EQUIPO>===` y `===FIN RESPUESTA PARA <EQUIPO>===`, y deja fuera de esos marcadores lo que sea solo para el usuario.
 
 ## Skills and development flows
 
-Nine skills live in `.claude/skills/`. **Pick the level of the change before touching code**; the
-full guide — task types, steps, what the user does at each one, artefacts, cost and the measured
-evidence — is [`docs/development-workflows.md`](docs/development-workflows.md).
+Nine skills live in `.claude/skills/`. **Pick the level of the change before touching code** (full guide: [`docs/development-workflows.md`](docs/development-workflows.md)).
 
-| Level                              | When                                                                                                                                                                                                                        | Flow                                                                                                                                                                                                         |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Trivial**                        | typo, docs, non-security config, dependency bump, a one-line bug with an obvious test                                                                                                                                       | No skill: the change, its test if it has behaviour, the DoD                                                                                                                                                  |
-| **Express** (default for features) | a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks, at most an additive migration                                                                                                                 | `/express`: ≤ 2 rounds of grouped questions → spec ≤ 150 lines with the case table and the contract → TDD, red by assertion → `pnpm test:mutation:changed` → `adversarial-review` → DoD                      |
-| **Full**                           | a new bounded context; a change across contexts (facades, shared ports); a destructive migration; auth, credentials, tokens or permissions — their config included, even one line; > ~10 tasks; work someone else continues | `/brainstorming` → `writing-plans` (plan WITHOUT production code) → `executing-plans` in a new session, or `subagent-driven-development` only for ~10+ mostly independent tasks → `adversarial-review` → DoD |
-
-Doubt between trivial and express → express. Doubt between express and full → ask the user, with
-your recommendation: the full flow costs several times more (measured: 52.54 USD against 11.82 for
-the same feature) and that is their call.
-
-**Every flow runs two checks**, because each one caught a real defect on 2026-09-30:
-
-- **Every declared response must be producible today** — the contract table names the input and
-  code path behind each status code (see «Endpoint documentation»).
-- **Every guard test must fail without its protection** — concurrency, ownership, authorization,
-  atomicity, anti-enumeration, idempotency: remove the protection for a moment, see it fail by
-  assertion, restore it (see «A test must fail without the fix»).
-
-Each skill's own description says when it applies; they are loaded in every session, so this
-file doesn't repeat them. The three reference skills — `clean-ddd-hexagonal` (its
-`references/NESTJS-MAPPING.md` is the source of truth for code shape), `nestjs-best-practices`
-(45 rule codes) and `javascript-typescript-jest` (mocking by layer, property-based testing,
-Supertest E2E) — are **read, never invoked**, and only when the work needs them: this file is
-enough for conventions (a session with no skills met 100 % of them).
+- **Trivial** — typo, docs, non-security config, dependency bump, a one-line bug with an obvious test → no skill: the change, its test if it has behaviour, the DoD.
+- **Express** (default for features) — a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks, at most an additive migration → `/express`: ≤ 2 rounds of grouped questions → spec ≤ 150 lines with the case table and the contract → TDD, red by assertion → `pnpm test:mutation:changed` → `adversarial-review` → DoD.
+- **Full** — a new bounded context; a change across contexts (facades, shared ports); a destructive migration; auth, credentials, tokens or permissions — their config included, even one line; > ~10 tasks; work someone else continues → `/brainstorming` → `writing-plans` (plan WITHOUT production code) → `executing-plans` in a new session, or `subagent-driven-development` only for ~10+ mostly independent tasks → `adversarial-review` → DoD.
+- **Doubt between trivial and express → express; between express and full → ask the user, with your recommendation:** the full flow costs several times more (52.54 vs 11.82 USD, measured) and that's their call.
+- **Every flow runs two checks** (each caught a real defect): every declared response is producible today, its contract-table row naming the input and code path («Endpoint documentation»), and every guard test fails without its protection («A test must fail without the fix»).
+- **Skill descriptions say when each applies** (they load every session, so not repeated here). The reference skills — `clean-ddd-hexagonal` (its `references/NESTJS-MAPPING.md` is the source of truth for code shape), `nestjs-best-practices`, `javascript-typescript-jest` — are **read, never invoked**, only when needed: this file is enough for conventions.
 
 ## Modelo de colaboración — casos primero, TDD después, mutación como auditor
 
-Esta sección es la definición vigente del modelo. La spec donde nació
-(`2026-08-04-roadmap-and-collaboration-model-design.md`) se quedó en el historial anterior a la
-reconstrucción del 2026-08-08 y no existe en el repo (backlog #29). Tres fases:
+Definición vigente del modelo ([historia](docs/testing.md#modelo-de-colaboración)):
 
-1. **Contrato:** la tabla «Casos acordados» de cada pieza con lógica en `domain/` o
-   `application/` —casos puntuales más filas `P` de propiedad con `fast-check`— vive en la spec
-   exprés o en cada tarea del plan. La propone la IA y el usuario la aprueba en bloque, con
-   preguntas agrupadas.
-2. **Ejecución (IA):** stub del SUT → tests en ROJO 1:1 con la tabla (el texto del `it` es el
-   caso), **fallando por aserción** y no por «Cannot find module» → implementar a verde →
-   refactor. Prohibido implementar sin rojo previo. Un caso nuevo se consulta —agrupado—, nunca
-   se añade en silencio; no hay confirmación rutinaria antes de cada tarea (medido: 3
-   confirmaciones, 0 cambios).
-3. **Validación:** la mutación del código nuevo (`pnpm test:mutation:changed <base>`), la
-   revisión adversarial (`adversarial-review`) y la DoD. El humano coteja tabla ↔ suite verde, el
-   score y el informe de la revisión, sin leer el diff línea a línea. Para medir un módulo
-   entero: `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"`;
-   a secas muta todos. ⚠️ Sin llaves: el CLI de Stryker parte `--mutate` por comas ANTES de
-   expandirlas, así que `{domain,application}` daba dos patrones que no casan con nada, cero
-   mutantes, un score `NaN` que pasa cualquier umbral y salida 0 (medido con Stryker 10).
+1. **Contrato:** la tabla «Casos acordados» de cada pieza con lógica en `domain/` o `application/` —casos puntuales más filas `P` de propiedad con `fast-check`— vive en la spec exprés o en cada tarea del plan; la propone la IA y el usuario la aprueba en bloque, con preguntas agrupadas.
+2. **Ejecución (IA):** stub del SUT → tests en ROJO 1:1 con la tabla (el texto del `it` es el caso), **fallando por aserción** y no por «Cannot find module» → verde → refactor. **Prohibido implementar sin rojo previo.** Un caso nuevo se consulta, agrupado, nunca se añade en silencio; sin confirmación rutinaria antes de cada tarea (medido: no cambió nada).
+3. **Validación:** `pnpm test:mutation:changed <base>`, `adversarial-review` y la DoD. El humano coteja tabla ↔ suite verde, el score y el informe de la revisión, sin leer el diff línea a línea.
 
-**La mutación es gate, no sugerencia** (desde 2026-08-06, backlog #9): `thresholds.break: 85`
-en `stryker.config.mjs` y job `mutation` propio en `ci.yml`. El 85 sale del baseline medido
-—90.14 % global— y el margen está dominado por el peso de cada módulo en mutantes, no por su
-score: el racional completo, con la aritmética, vive en el comentario de cabecera de la config.
-Bajar el score por debajo del umbral rompe la CI: un módulo nuevo sin casos no entra en
-silencio.
-
-Infra, config, wiring y docs quedan exentas de la tabla. El resto de convenciones de testing
-(AAA, 1:1 spec↔archivo, mocking por capa) no cambia: el modelo añade el origen de los casos y
-el auditor, no cómo se escribe un test.
-
-**Referencias históricas en `src/`.** Los comentarios y tests que citan «Tabla D…R», «fila R11»,
-«caso E5» o «spec §N» apuntan a planes y specs de aquel ciclo, perdidos en la misma
-reconstrucción: no los busques. El caso vive en el texto del `it`; de esas tablas, la suite es la
-única fuente que queda.
+- **La mutación es gate, no sugerencia:** `thresholds.break: 85` en `stryker.config.mjs` (racional en su cabecera) y job `mutation` en `ci.yml`; un módulo sin casos no entra en silencio ([historia](docs/testing.md#la-mutación-como-gate)).
+- **Un módulo entero:** `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"`. ⚠️ Sin llaves: `{domain,application}` da cero mutantes, un score `NaN` que pasa cualquier umbral y salida 0.
+- **Infra, config, wiring y docs quedan exentas de la tabla;** el resto de convenciones de testing no cambia.
+- **«Tabla D…R», «fila R11», «caso E5» o «spec §N» en `src/`** citan planes perdidos (backlog #29): no los busques; el caso vive en el texto del `it`.
 
 ## Architecture rules
 
-Every bounded context lives under `src/modules/<context>/` with layers **inside** it — never at the root of `src/`. **`src/modules/users/` is the reference implementation**: copy its shape for any new context. There are three: `users` (profiles), `auth` (credentials and tokens) and `orders`, plus the flat `health`.
+Every bounded context lives under `src/modules/<context>/` with its layers inside, never at the root of `src/`; **`src/modules/users/` is the reference implementation** — copy its shape. Contexts: `users` (profiles), `auth` (credentials, tokens), `orders`, plus the flat `health` ([why](docs/architecture.md)).
 
-```
-src/modules/<context>/
-├── domain/           # zero @nestjs/* imports; entities, VOs, events, ports/, errors/
-├── application/      # @Injectable OK; no ORM or HTTP clients; use-cases/ + the context's facade
-├── infrastructure/   # the only layer touching external libs; http/, persistence/, messaging/
-├── __tests__/        # mirrors the structure above
-└── <context>.module.ts
-```
+Layers: `domain/` (entities, VOs, events, `ports/`, `errors/`; no `@nestjs/*`), `application/` (`@Injectable` OK, no ORM or HTTP clients; `use-cases/` + the facade), `infrastructure/` (the only one touching external libs: `http/`, `persistence/`, `messaging/`), `__tests__/` (mirrors them), `<context>.module.ts`.
 
-- **Dependency rule:** outer → inner only. `domain/` imports nothing from `@nestjs/*`, ORMs, `axios`, `class-validator` decorators, or `pino`.
-- **Controllers are driver adapters** → they live in `infrastructure/http/`, and they call a use case, never a
-  repository: boundaries rule 6 stops `infrastructure/http/` from importing a `domain/ports/*.repository.ts`,
-  anything under `infrastructure/persistence/`, `typeorm` or `@nestjs/typeorm` (since 2026-10-01; before, only a
-  reviewer's checklist said so). The module root still wires port and adapter.
-- **Two routes that can match the same request abort the boot.** `NEST_APP_OPTIONS` in `src/main.ts`, shared with `createTestApp()`, sets `routeConflictPolicy: { duplicate: 'error', shadow: 'error' }`, so every E2E checks it too. `shadow` is symmetric: `users/me` next to `users/:id` fails in **either** order, including the one Express would resolve correctly (`src/__tests__/main.spec.ts` pins both). Lowering `shadow` to `'warn'` is a decision to take knowingly, not a fix.
-- **Ports are `abstract class`, never `type` + `Symbol` token.** A class survives compilation, so one single reference is both the contract's type and its injection token — Nest accepts `Abstract<T>` as an `InjectionToken` and SWC emits it into `design:paramtypes`. The module wires `{ provide: UserRepository, useClass: UserTypeOrmRepository }` and **no consumer needs `@Inject`**. No `Port` suffix: `UserRepository` doesn't collide, TypeORM's `Repository` only shows up inside the adapter with its own import. Three consequences, all load-bearing:
-  - **A port declares only public `abstract` members** — no fields, no `protected`/`private`, no constructor. Two bans, two different causes, both measured with `tsc 6.0.3 --noEmit --strict`. A **field** (public, `protected` or `private`) or a **parameter property** makes the object-literal fakes stop compiling (`TS2741`; there is a real fake in `orders/__tests__/infrastructure/users-customer.directory.spec.ts`). An **empty `protected constructor()` compiles fine** — it is banned for another reason: adapters `implements` and never `extends`, so the port never enters their prototype chain and that constructor never runs. It is dead code promising an initialisation nobody executes, and the doorway parameter properties come in through.
-  - **Adapters `implements`, never `extends`.** `extends` would burn the single inheritance slot and demand an empty `super()` for nothing, and `useClass` works identically either way. `implements` is also the _only_ thing that checks conformity: `ClassProvider` does not relate its two fields (`provide: InjectionToken`, `useClass: Type<T>` with `T = any`), so the module file verifies nothing — `{ provide: Port, useClass: ClassWithoutItsMethods }` compiles.
-  - **Never `import type` a port in a file that has decorators** (use cases, adapters, modules). The reference is elided, the metadata is never emitted, and it fails **at runtime** — `Nest can't resolve dependencies of the CreateUserUseCase (?, PasswordHasher)` — with `lint:check` **and** `typecheck` green. That's why `eslint.config.mjs` bans it under `src/modules/*/{application,infrastructure}/**` in **both** shapes the erasure takes — the `import type { … }` declaration _and_ the mixed `import { VALUE, type Port }` specifier, whose declaration `importKind` is `"value"` and so needs its own selector — from any `ports/` file **or** a foreign `*.module` (which is where `UsersLookup` and `UsersProvisioning`, the only cross-module ports, live). In the test fakes it is the reverse: no decorators means `consistent-type-imports` _demands_ `import type`. The asymmetry is real; the discriminator is "does this file contain a decorator" — with `emitDecoratorMetadata` on, `consistent-type-imports` skips such files entirely.
-- **Inline `type` stays legal for the data that travels with a port** — `UserPage`, `FindUsersCriteria`, `SignedToken`, `TokenClaims`, `DirectoryUser`, `CreateProfileResult`, `UserSummary` are not injectable, so `import { UserRepository, type UserPage } from '…'` is the correct shape. Those seven names are a **closed list inside the lint rule**, because nothing in the import site distinguishes a port from its data: the specifier selector fails closed, so a port marked `type` by accident goes red on its own and a genuinely new data type costs one reviewed line in `eslint.config.mjs`. Three files import _only_ such data from a `ports/` file and can't use the inline form (`no-import-type-side-effects` rejects it): `jwt-auth.guard.ts`, `authenticated-user.dto.ts` and `registered-account-response.dto.ts`. All three carry a justified `eslint-disable-next-line` saying so. The discriminator is real, not a loophole: none of them injects a port.
-- **One use case per file, input included.** `application/use-cases/create-user.use-case.ts` holds `CreateUserUseCase` **and** its `export type CreateUserInput`. There is no `commands/`, no `queries/`, no `handlers/`: a command class whose only job was to carry three positionals into `execute()` bought a file, an import and a `new` per call site, and no invariant — the input is the use case's signature, not a reusable piece. Inputs are plain `type`s, **never** classes with `class-validator`: boundaries rule 2 bans that library from `application/`, and transport validation is the HTTP DTO's job. The controller calls `execute({ email: dto.email, … })`, which also kills the positional-argument bug class.
-  - **The method stays `execute()`** — one public operation, same name in every use case.
-  - **`users.facade.ts` stays loose in `application/`**, outside `use-cases/`: it is the context's public gate for other modules, not an intention of a user of the system. Its surface grows by method, not by file.
-- **Validation** lives in HTTP DTOs, never in domain entities. The domain enforces invariants through constructors and value objects.
-- **Two models, never one.** The domain entity (`user.entity.ts`) is a plain class with invariants; the ORM entity (`user.orm-entity.ts`) carries the TypeORM decorators. A mapper is the only bridge. Don't decorate the domain entity with `@Entity` to save a file — that couples the domain to the database.
-- **Domain errors are not HTTP errors.** The domain throws `UserNotFoundError`; `infrastructure/http/user-domain-exception.filter.ts` decides it's a 404. Never import `HttpException` into `domain/` or `application/`.
+- **Dependency rule — outer → inner only:** `domain/` imports nothing from `@nestjs/*`, ORMs, `axios`, `class-validator` decorators or `pino`.
+- **Controllers are driver adapters in `infrastructure/http/` and call a use case, never a repository:** boundaries rule 6 bars `infrastructure/http/` from `domain/ports/*.repository.ts`, `infrastructure/persistence/**`, `typeorm` and `@nestjs/typeorm`; the module root wires port and adapter.
+- **Two routes that can match one request abort the boot** (`routeConflictPolicy: { duplicate: 'error', shadow: 'error' }` in `NEST_APP_OPTIONS`, shared with `createTestApp()`; `shadow` is symmetric, see `main.spec.ts`): lowering `shadow` to `'warn'` is a knowing decision, not a fix.
+- **Ports are `abstract class`, never `type` + `Symbol`:** one reference is type and injection token (`{ provide: UserRepository, useClass: UserTypeOrmRepository }`, no `@Inject`; no `Port` suffix, TypeORM's `Repository` stays inside the adapter):
+  - **only public `abstract` members** — fields or parameter properties break object-literal fakes (`TS2741`); no `protected`/`private`, no constructor, not even an empty `protected` one (it never runs);
+  - **adapters `implements`, never `extends`** — it's the only conformity check (`useClass` accepts any class);
+  - **never `import type` a port in a file with decorators** — DI then fails at runtime with lint and typecheck green; `eslint.config.mjs` bans both shapes (declaration and inline specifier) from `ports/` and foreign `*.module` files under `src/modules/*/{application,infrastructure}/**`; decorator-free test fakes must `import type`.
+- **Inline `type` is legal for a port's data** — `UserPage`, `FindUsersCriteria`, `SignedToken`, `TokenClaims`, `DirectoryUser`, `CreateProfileResult`, `UserSummary`: a **closed list in the lint rule**, failing closed, that grows by a reviewed line. A file importing only such data that can't go inline (`jwt-auth.guard.ts`, `authenticated-user.dto.ts`, `registered-account-response.dto.ts`) takes a justified `eslint-disable-next-line`, valid while it injects no port.
+- **One use case per file, input included** (`CreateUserUseCase` + `export type CreateUserInput`): no `commands/`, `queries/` or `handlers/` (a command class bought a file and no invariant); the one public method is `execute()`; inputs are plain `type`s, never `class-validator` classes (boundaries rule 2 bans that library from `application/`); controllers call `execute({ … })`.
+- **`users.facade.ts` stays loose in `application/`, outside `use-cases/`:** the context's public gate, not a user intention, it grows by method, not by file.
+- **Validation lives in HTTP DTOs**, never in domain entities, which enforce invariants through constructors and value objects.
+- **Two models, never one:** a plain domain entity, an ORM entity with the decorators, a mapper as the only bridge — never `@Entity` on the domain entity.
+- **Domain errors are not HTTP errors:** the domain throws `UserNotFoundError` and `user-domain-exception.filter.ts` maps it to 404; never `HttpException` in `domain/` or `application/`.
 
 ## Auth
 
-**Its own bounded context** (`src/modules/auth/`) since the cycle-4 refactor, and it **owns the credential**: the password hash lives in `auth_credentials`, its own table, and `users` no longer knows what a password is. HS256 JWT via `@nestjs/jwt`, argon2id via `argon2` with explicit cost params (`ARGON2_PARAMS` in `src/config/auth.config.ts`, one source shared by the hasher and the admin seed).
+**Its own bounded context, owner of the credential** (`auth_credentials`; `users` knows no password). HS256 JWT via `@nestjs/jwt`; argon2id via `argon2`, its costs from one source shared by hasher and seed: `ARGON2_PARAMS` in `src/config/auth.config.ts` ([why](docs/architecture.md#auth)).
 
-The split is what makes the two-context seam real: `users` owns the **profile** (identity, name, role, whether it is active), `auth` owns the **credential** and the token. The dependency runs `auth → users` and only that way — `auth` consumes `UsersLookup` and `UsersProvisioning` through `users.module.ts` like any other module. If `users` ever imported `auth.module` the repo would get its only possible module↔module cycle, which is exactly why `@Public`, `@Auth`, `@CurrentUser` and `AuthenticatedUser` stay in `common/`, where both can see them.
-
-- **Registration is `POST /auth/register`, not `POST /users`.** What is born in a sign-up is an **account** — profile _and_ credential — so the endpoint belongs to the context that owns the credential. `POST /users` no longer exists; `CreateUserUseCase` survives with `{ email, name }` and its only consumer is the facade.
-- **Two writes, no distributed transaction: compensation.** `RegisterAccountUseCase` hashes the password, creates the profile through `UsersProvisioning`, then writes the credential. If the credential write fails it deletes **both** rows — `deleteProfile` first, then `credentials.deleteByUserId` — and re-throws. The profile goes first because it is the priority guarantee: an orphan profile could never log in _and_ would block its own email through the unique index, while an orphan credential is silent garbage that collides with nothing. Deleting the credential too is backlog #14: before cycle 4 the hash was a column of `users` and left with the row; with a separate table and **zero foreign keys in the whole schema** (not reintroduced on purpose — the two contexts may stop sharing a database), a credential whose INSERT committed while the response was lost stayed forever. That path needs a commit the caller never sees, so **no E2E can reach it** without an out-of-band commit (`dblink`): a `RAISE` in any trigger aborts the transaction and takes the row with it. It is covered by R10 in `register-account.use-case.spec.ts` with the fake, which can separate "wrote" from "answered". `auth.e2e-spec.ts` still forces the second write to fail with a `BEFORE INSERT` trigger that raises, and asserts both tables end empty.
-- **`POST /auth/register` reveals whether an email is taken — and that is a written decision** (backlog #15, closed 2026-08-08). The 409 **stays**: without it whoever already has an account cannot tell why the sign-up fails. What was closed is the **timing** leak, which was indefensible because it betrayed the account even to a client ignoring the status code. The password is now hashed **before** the uniqueness check, so both paths pay argon2id: measured over HTTP against real PostgreSQL, 409 vs 201 medians went from 7.52 ms / 91.47 ms (disjoint ranges, 12.2×) to 79.61 ms / 90.82 ms (overlapping, 1.14×). The residual ~11 ms is the extra INSERTs of the success path, not the hash. Row R11 pins it structurally — `hash()` exactly once on both paths — the same way L9 pins `verify()` for login, and the two comments reference each other.
-- **The provisioning gate returns results, never exceptions, for business rejections.** `createProfile` answers `{ ok: false, reason: 'email-taken' | 'invalid-profile' }` because `auth` cannot import `users`' error classes. `invalid-profile` carries the domain message: `@IsEmail` accepts strings `Email.from()` rejects, and `@MinLength(2)` measures the untrimmed name — without that branch those inputs, a 400 today, would have become a 500 the moment the sign-up left `users`.
-- **Global guard, secure by default.** `JwtAuthGuard` (`src/modules/auth/infrastructure/http/jwt-auth.guard.ts`) is registered as `APP_GUARD` from `auth.module`, not `app.module`: boundaries rule 3 forbids the app root from importing a module's internals, and `APP_GUARD` is a multi-provider — registering it from any module makes it global. A new endpoint without `@Public()` requires a valid JWT with no action from its author.
-- **`@Public()`** (`src/common/decorators/public.decorator.ts`) bypasses the guard entirely — used on health, `POST /auth/register` and `POST /auth/login`, none of which can require a token they have no way to obtain yet. Both auth endpoints carry the same 10/min `@Throttle` (declared on the class); `ThrottlerGuard` keys by class **and handler**, so they have separate counters.
-- **`@Auth(...roles)`** (`src/common/decorators/auth.decorator.ts`) is the single roles decorator: `@Auth()` means any authenticated user, `@Auth('admin')` means that role only (403 otherwise). It also attaches the OpenAPI docs the contract guard requires on protected endpoints — bearer + 401, plus 403 when roles are given — so the protection and its documentation can't drift apart.
-- **`@CurrentUser()`** (`src/common/decorators/current-user.decorator.ts`) injects the claims `JwtAuthGuard` attached to `request.user`, typed as `AuthenticatedUser` (`src/common/auth/authenticated-user.ts`) — a loose type shareable across modules without breaching the boundaries matrix; it throws if the route is `@Public()`.
-- **`JWT_SECRET` has no default outside `development`/`test`.** A `refine()` in `env.schema.ts` blocks staging/production from booting without it, so a token can never be signed with the public dev default in a real deployment.
-- **First admin: `pnpm seed:admin`** (`src/database/seeds/seed-admin.ts`). Idempotent — creates the admin if `ADMIN_EMAIL` doesn't exist yet, and if it does, leaves it **operational**: role `admin`, `active = true` and a fresh hash. Reactivating is not a nicety: this seed is the documented rescue when the only admin account gets deactivated by mistake, and `LoginUseCase` rejects an inactive user with the same `InvalidCredentialsError` as a wrong password — so without it the seed would print `promoted` and login would keep answering 401, indistinguishably. It writes **both tables inside one `dataSource.transaction`**, with `ON CONFLICT (user_id) DO UPDATE` on the credential so promoting a pre-existing profile gives it one. Needs `ADMIN_EMAIL` and `ADMIN_PASSWORD` both-or-none, enforced by another `refine()`. Both accept only what `POST /auth/login` accepts (backlog #34): the password limits live in `src/config/password-policy.ts`, `env.schema.ts` checks `ADMIN_*` with the same class-validator functions as `LoginDto`, and no other production file writes 12 or 128 by hand.
-- **Anti-enumeration login.** `LoginUseCase` throws the same `InvalidCredentialsError` for a missing email, a **profile without a credential**, a wrong password and an inactive user, and always calls `hasher.verify()` exactly once — against a pregenerated dummy hash when there's no real credential to check — so the four paths cost the same time. The fourth path is new: with two owners, a profile with no credential is a reachable state. It is a **measured** requirement: a property row in `login.use-case.spec.ts` asserts indistinguishable error _and_ exactly one `verify` across all four.
-- **Normalisation lives in `users`, once.** `findByEmail` runs the email through the same `Email.from` the sign-up uses, and returns `null` (never throws) for a malformed one — so a typo is a 401, not a 400 that would distinguish "badly written" from "unknown". `auth` passes the raw string through.
-- **`AuthenticatedUserDto` is a deliberate twin of `UserResponseDto`.** Neither context can import the other's DTO, and the published contract must not change because login moved module. `authenticated-user.dto.spec.ts` seals the parity by comparing both classes' real `@ApiProperty` metadata, including the `role` enum values that `users` derives from `USER_ROLES` and `auth` writes by hand.
+- **The dependency runs `auth → users` only** (`users.module.ts`'s `UsersLookup` and `UsersProvisioning`); the reverse would be the only possible module cycle, so `@Public`, `@Auth`, `@CurrentUser` and `AuthenticatedUser` live in `common/`.
+- **Registration is `POST /auth/register`, never `POST /users`** (an account: profile and credential); `CreateUserUseCase` (`{ email, name }`) lives on behind the facade.
+- **Two writes, compensated:** `RegisterAccountUseCase` hashes, creates the profile, then writes the credential; if that fails it deletes **both** rows — `deleteProfile` first (an orphan profile would block its email), then `credentials.deleteByUserId` — and re-throws (row R10 of `register-account.use-case.spec.ts` covers the commit-but-lost-response path; `auth.e2e-spec.ts` forces the second write to fail; backlog #14).
+- **Zero foreign keys in the whole schema, never reintroduced:** the contexts may stop sharing a database.
+- **A taken email answers 409 by written decision (an account holder must learn why sign-up fails), but its timing leak is closed:** the password is hashed **before** the uniqueness check, and row R11 of the same spec pins `hash()` once on both paths (backlog #15).
+- **The provisioning gate returns results, never exceptions, for business rejections** (`auth` can't import `users`' errors): `{ ok: false, reason: 'email-taken' | 'invalid-profile' }`, the latter carrying the domain message so it stays a 400.
+- **`JwtAuthGuard` is the global `APP_GUARD`, registered from `auth.module`** (boundaries rule 3): without `@Public()`, an endpoint requires a valid JWT.
+- **`@Public()`** bypasses the guard (health, `POST /auth/register`, `POST /auth/login`; the two auth ones share a class-level 10/min `@Throttle`, counted per handler). **`@Auth(...roles)` is the single roles decorator** (`@Auth()` any authenticated user, `@Auth('admin')` that role, else 403) and attaches the OpenAPI docs the contract guard demands (bearer + 401, 403 with roles). **`@CurrentUser()`** injects the claims as `AuthenticatedUser` (`src/common/auth/authenticated-user.ts`) and throws on a `@Public()` route.
+- **`JWT_SECRET` has no default outside `development`/`test`:** a `refine()` in `env.schema.ts` stops staging/production from booting without it.
+- **`pnpm seed:admin` is idempotent: it creates the admin or leaves an existing one operational** (role `admin`, `active = true`, fresh hash — the rescue for a deactivated only-admin), both tables in one `dataSource.transaction` (`ON CONFLICT (user_id) DO UPDATE`). `ADMIN_EMAIL`/`ADMIN_PASSWORD` are both-or-none and accept only what login accepts; the password limits (12, 128) live only in `src/config/password-policy.ts`, tests aside (backlog #34).
+- **Anti-enumeration login:** one `InvalidCredentialsError` for a missing email, a profile without credential, a wrong password and an inactive user, always with exactly one `hasher.verify()` (a pregenerated dummy hash if needed) so all four take the same time — property row L9 of `login.use-case.spec.ts`.
+- **Email normalisation lives in `users`, once:** `findByEmail` uses `Email.from` and returns `null` for a malformed one (a typo is a 401, not a 400); `auth` passes the raw string.
+- **`AuthenticatedUserDto` is a deliberate twin of `UserResponseDto`** (neither context can import the other's): `authenticated-user.dto.spec.ts` seals their `@ApiProperty` parity.
 
 ## Orders
 
-Second bounded context (`src/modules/orders/`), two use cases: place an order
-(`POST /orders`, `@Auth()` — the first real consumer of `@CurrentUser()`: `customerId` comes
-from the token's `sub`, never from the body) and cancel one (`POST /orders/:id/cancel`,
-`@Auth()`, 200 with the order). It exercises the three seams a single context cannot:
+Place an order (`POST /orders`, `@Auth()`; `customerId` from the token's `sub` via `@CurrentUser()`, never the body) and cancel it (`POST /orders/:id/cancel`, `@Auth()`, 200 with the order) ([why](docs/architecture.md#orders)).
 
-- **Cross-module via the public gate — segregated by intention.** `orders` defines the
-  `CustomerDirectory` port; its adapter injects `UsersLookup`, which `users.module.ts`
-  registers, exports to the DI container and **re-exports as a TS symbol** — the module file
-  is the only legal cross-module surface, and since the gate is an `abstract class` that one
-  re-export publishes token and type at once. There are **two** such gates since backlog #13:
-  `UsersLookup` (`userExists`, `findByEmail`) and `UsersProvisioning` (`createProfile`,
-  `deleteProfile`), one `UsersFacadeImpl` behind both via `useExisting`. The single four-method
-  `UsersFacade` handed `orders` a physical `DELETE` it never asked for, over a schema with zero
-  foreign keys. The boundaries matrix cannot see that — it reasons by path, and this import is
-  exactly the one amendment G2 legalised — so the type is the only control that does, and it
-  does it at compile time: `orders` cannot write `deleteProfile` because what it injects does
-  not declare it. The matrix allows `module-infrastructure`/module-root → foreign
-  `*.module.ts` since the orders amendment (cases G1-G4 in the gate suite); `auth` became the
-  second consumer of that same gate in cycle 4 with `UserDirectory`, and needed **zero** new
-  rules — the wildcards already covered it, verified by re-running the gate suite unchanged.
-  The #13 split needed zero new rules either, for the same reason: it changes the published
-  surface, not the boundaries.
-  A deactivated user keeps a valid JWT until it expires: `orders` re-checks the directory on
-  every placement and every cancellation, and translates `CustomerGoneError` to 403 in its own
-  filter (string-constructed, canonical message).
-- **Domain events.** `Order.place()` emits `OrderPlaced` and `Order.cancel()` emits
-  `OrderCancelled`, both collected; `pullEvents()` drains, and the use case hands the events to
-  the repository **in the same `save(order, events)` call** — the port's signature carries them
-  so atomicity is the adapter's job. The outbox payload is the event spread as-is, so a new
-  field on an event reaches consumers: the adapter E2E pins both payloads with an exact
-  `toEqual`.
-- **Cancellation: idempotent, owner-only, optimistic version.** Two states, `placed` →
-  `cancelled`, no time window. `cancel()` on a cancelled order is a no-op in the domain — 200
-  with the original `cancelledAt`, no second event — and the use case only saves when the
-  aggregate produced events. Another customer's order throws the same `OrderNotFoundError`, with
-  the same message, as a missing one: 404 either way. The owner goes **into the read**
-  (`findByIdAndCustomer`), not into a comparison after it: a foreign row never reaches the
-  fail-closed mapper, whose 500 on a corrupt row would otherwise betray that the order exists.
-  The aggregate carries the `version` it was
-  **read** with (0 = never saved); the adapter INSERTs new rows at 1 and writes the rest with
-  `UPDATE … WHERE version = v`, and 0 affected rows throws `OrderVersionConflictError` inside the
-  transaction, so the outbox rolls back too; an INSERT whose id already exists (`23505`) is the
-  same conflict — and only that code: any other INSERT failure propagates untranslated, which an
-  E2E pins by forcing a `22021`. `CancelOrderUseCase` retries **once**, on that error only: the loser of a
-  double click re-reads a cancelled order and gets 200 with the winner's `cancelledAt`. With two
-  states a second conflict cannot happen — the only write to an existing order is a
-  cancellation — so **the contract publishes no 409**; the filter still maps it, as a defence
-  that a third state would make reachable (and then it gets declared). That needs READ
-  COMMITTED — under REPEATABLE READ or SERIALIZABLE the blocked loser gets a `40001` that nobody
-  retries — so the adapter **asks for it explicitly** (`transaction('READ COMMITTED', …)`)
-  instead of inheriting whatever the server, database or role defaults to. The adapter E2E
-  proves it deterministically: another connection holds the row lock, the save is seen waiting
-  in `pg_blocking_pids`, and only then the rival commits; it repeats the interleaving through a
-  connection whose default is SERIALIZABLE. The mapper **fails closed**: an unknown `status`, a
-  status that disagrees with `cancelled_at`, or a `version` below 1, throws on read. `cancelledAt` is
-  **omitted**, not `null`, on a placed order — a design choice, not a constraint. Measured with
-  the contract guard's Ajv (8.20.0): `nullable: true` next to an explicit `type` does accept
-  `null`; what breaks the build is `nullable` next to a `$ref` with no `type` (a nested DTO),
-  which Ajv refuses to compile. Only there is omitting the key mandatory.
-- **Transactional outbox.** `OrderTypeOrmRepository.save` writes the order and its
-  `orders_outbox` rows inside one `dataSource.transaction`. The relay is a CLI
-  (`pnpm outbox:relay`, `src/database/outbox/` — a module cannot import `database`, same
-  reason the seed lives there): publishes pending rows (today: a structured log) and marks
-  them, at-least-once. When BullMQ lands (Tier 2), only the publisher changes.
+- **Cross-module only through `users.module.ts`'s gates, split by intention** (backlog #13): the `CustomerDirectory` adapter injects `UsersLookup` (`userExists`, `findByEmail`); `UsersProvisioning` (`createProfile`, `deleteProfile`) is another token over `UsersFacadeImpl` (`useExisting`), so the type, not the path-based boundaries, keeps `deleteProfile` out of `orders`.
+- **A deactivated user keeps a valid JWT until it expires:** `orders` re-checks the directory on every placement and cancellation and maps `CustomerGoneError` to 403 in its own filter (string-constructed, canonical message).
+- **Domain events travel with the aggregate:** `place()` emits `OrderPlaced`, `cancel()` `OrderCancelled`; `save(order, events)` gets `pullEvents()` and writes order and outbox atomically; the payload is the event as-is (exact `toEqual`).
+- **Cancellation is idempotent and owner-only:** cancelling a cancelled order is a no-op (200, original `cancelledAt`, no event; save only when events exist), and a foreign order is the same 404, same message, as a missing one, and **the owner goes into the read** (`findByIdAndCustomer`), never a later check: a corrupt foreign row would 500 in the fail-closed mapper and betray the order.
+- **Optimistic version:** the aggregate carries the `version` it was read with (0 = new); INSERT at 1, `UPDATE … WHERE version = v`; 0 rows or an INSERT `23505` (only that code) → `OrderVersionConflictError`, outbox rolled back; `CancelOrderUseCase` retries once, on that error only (the double-click loser gets 200 with the winner's `cancelledAt`). No 409 is published (two states can't conflict twice); the filter maps it as a defence, declared once a third state makes it reachable. **The adapter asks for `READ COMMITTED` explicitly:** under REPEATABLE READ or SERIALIZABLE the loser gets a `40001` nobody retries.
+- **The mapper fails closed** on an unknown `status`, a status contradicting `cancelled_at`, or `version` < 1; **`cancelledAt` is omitted, not `null`, on a placed order** — a choice; omitting a key is mandatory only where `nullable` would sit beside a `$ref` with no `type` (a nested DTO), which Ajv won't compile.
+- **Transactional outbox:** order and `orders_outbox` rows in one `dataSource.transaction`; the relay is a CLI (`pnpm outbox:relay`, `src/database/outbox/`, since modules can't import `database`) that publishes at-least-once.
 
 ## Endpoint documentation — mandatory and verified
 
-**Every new endpoint must be documented in full.** This is not a style preference:
-`src/bootstrap/__tests__/openapi-contract.e2e-spec.ts` walks every operation in the generated
-OpenAPI document and **breaks the build** if anything is missing. It lives in the E2E suite
-because building the document compiles `AppModule`, which needs PostgreSQL — so it runs under
-`pnpm test:e2e`, which CI enforces on every PR. `UsersController` is the reference implementation.
-
-Each operation declares:
-
-| Element           | Requirement                                                                                        |
-| ----------------- | -------------------------------------------------------------------------------------------------- |
-| `@ApiOperation`   | Unique `operationId`, non-empty `summary` **and** `description`                                    |
-| Success responses | `@ApiEnvelope` / `@ApiPaginatedEnvelope` with an `example` of the full body, envelope included     |
-| Standard errors   | `@ApiStandardErrors({ throttled, timeout })` — declares 408, 429 and 500                           |
-| Endpoint errors   | `@ApiConflictResponse`, `@ApiNotFoundResponse`, `@ApiBadRequestResponse`… typed and with `example` |
-| Parameters        | `@ApiParam` / `@ApiQuery` with `description` **and** `example`                                     |
-| Request body      | `@ApiBody` with at least one named example; two when there are interesting edge cases              |
+**Every new endpoint is documented in full:** `openapi-contract.e2e-spec.ts` (E2E: it compiles `AppModule`) walks every operation and **breaks the build** on anything missing; `UsersController` is the reference. Each operation declares `@ApiOperation` (unique `operationId`, non-empty `summary` **and** `description`); success via `@ApiEnvelope`/`@ApiPaginatedEnvelope` with an `example` of the full body, envelope included; `@ApiStandardErrors({ throttled, timeout })` (408, 429, 500); its own errors (`@ApiConflictResponse`, `@ApiNotFoundResponse`, `@ApiBadRequestResponse`…) typed, with `example`; `@ApiParam`/`@ApiQuery` with `description` **and** `example`; `@ApiBody` with one named example at least, two for interesting edge cases.
 
 ### Document what the endpoint really does, not what would be symmetric
 
-The guard is bidirectional on purpose, because a declared-but-impossible response is the same
-defect as an undeclared one: _the published contract describes something the server does not do._
+The guard is bidirectional on purpose, because a declared-but-impossible response is the same defect as an undeclared one: _the published contract describes something the server does not do._ ([cases](docs/api-contract.md#lo-que-el-endpoint-hace-de-verdad))
 
-- **400 only if the operation takes `path`, `query` or `cookie` parameters, or a body.** With no
-  input there is nothing to reject. Documented headers don't count.
-- **`throttled: false` on controllers with `@SkipThrottle()`.** `HealthController` never returns 429.
-- **`timeout: false` on controllers with `@SkipTimeout()`.** `TimeoutInterceptor` is global, so
-  any handler slower than `REQUEST_TIMEOUT_MS` answers 408 — and the operation may still commit
-  after the response is cut, which is why the 408's description says so. `HealthController` is
-  exempt: each check has its own limit (the database ping, 1 s) and fails with a 503 long before.
-  Missing until 2026-10-01: the cancellation's status list claimed to be complete without it.
-- **Every other status is on you: name the path that produces it.** The guard checks 400, 408 and
-  429 both ways and demands 401/403 where `@Auth` attaches them; whether a 404, a 409 or a 403 outside
-  roles is reachable depends on the code. The
-  spec's contract table gives each declared status the input or state and the branch that returns
-  it — no path, no declaration; a defence for a future state is a code comment. Measured on
-  2026-09-30: a 409 no request could produce went through the contract guard and was caught only
-  by the adversarial review.
-- **Bodyless responses** (204, 304) need no example.
-- **Error examples come from `buildErrorExample()`**, never hand-written. It derives `error` from
-  the status, which is where every divergence appeared during the migration: the published
-  examples claimed `UserNotFoundError` while the server sends `Not Found`.
-- **`errorCode` is the error envelope's one optional key.** `AllExceptionsFilter` emits it only
-  when the `HttpException` carries one (Nest 12's `options.errorCode`), and no error of this API
-  does yet, so `buildErrorExample()` leaves it out. The first endpoint that emits one documents it
-  in its own example, and the description of `ErrorResponseDto.errorCode` stops saying "not used
-  yet" — no guard enforces either.
+- **400 only with `path`, `query` or `cookie` parameters, or a body;** documented headers don't count.
+- **`throttled: false` with `@SkipThrottle()`, `timeout: false` with `@SkipTimeout()`:** the global `TimeoutInterceptor` answers 408 past `REQUEST_TIMEOUT_MS` though the operation may still commit (its description says so); `HealthController` skips both.
+- **Every other status names the path that produces it:** the guard checks 400, 408 and 429 both ways and demands 401/403 where `@Auth` adds them; whether a 404, 409 or 403 outside roles is reachable depends on the code, so the spec's contract table gives each declared status its input or state and branch (no path, no declaration; a future-state defence is a code comment).
+- **Bodyless responses (204, 304) need no example; error examples come from `buildErrorExample()`, never by hand** — it derives `error` from the status, where every drift appeared.
+- **`errorCode` is the error envelope's one optional key,** emitted only when the `HttpException` carries one (none does yet, so `buildErrorExample()` omits it); the first endpoint to emit one documents it in its own example and updates the description of `ErrorResponseDto.errorCode` — no guard enforces either.
 
 ### Three checks, and none replaces another
 
-Verified by measurement — deleting one because "another covers it" leaves a hole:
+Deleting one because «another covers it» leaves a hole ([incidents](docs/api-contract.md#tres-comprobaciones)):
 
-1. **example ↔ factory** (`openapi-contract.e2e-spec.ts`) catches hand-written examples that drift
-   from the factory. It is _tautological_ for the factory itself.
-2. **factory ↔ filter** (`error-example.factory.spec.ts`) runs real exceptions through
-   `AllExceptionsFilter`. This is what would catch the factory being wrong.
-3. **example ↔ schema** (Ajv, in the contract guard) is the only one that would have caught the
-   `array of arrays` that made `GET /users` unsatisfiable.
+1. **example ↔ factory** (`openapi-contract.e2e-spec.ts`) catches hand-written examples drifting from the factory; it's tautological for the factory itself.
+2. **factory ↔ filter** (`error-example.factory.spec.ts`) runs real exceptions through `AllExceptionsFilter`: it catches the factory being wrong.
+3. **example ↔ schema** (Ajv, in the contract guard) is the only one that would have caught the `array of arrays` that made `GET /users` unsatisfiable.
 
 ### Maintaining the Scalar bundle
 
-The UI is served from our own origin (`scripts/copy-scalar-asset.mjs` → `public/`), which trades
-the CDN's continuous updates for knowing exactly what JavaScript runs: the package's bundle plus
-**one line of ours** in front of it (see below). **Review `@scalar/api-reference` quarterly.**
-Bumping the version regenerates the content hash automatically; nothing is edited by hand.
-
-**A new CSP violation can only appear when the served JavaScript changes**: on a bump, or on an
-edit to `scripts/scalar-bundle.mjs`. Run this list against `DOCS_ENABLED=true pnpm start:dev` after
-either, with a forced reload and cache disabled — `immutable` plus a year of `max-age` means the
-second visit never touches the network:
-
-| #   | Interaction                                     | What it exercises                                                                      |
-| --- | ----------------------------------------------- | -------------------------------------------------------------------------------------- |
-| 1   | Initial load, both `/api/docs` and `/api/docs/` | Mount order; the no-slash form is the one people type                                  |
-| 2   | Light/dark toggle                               | `style-src` — a broken layout with no JS errors is the tell                            |
-| 3   | Download the document                           | With `documentDownloadType: 'direct'` it must link to `/json`, never `blob:`           |
-| 4   | Expand an endpoint, view code samples           | The syntax highlighter — highlight.js in 1.72.1, no `WebAssembly`; a bump could add it |
-| 5   | Open the API client and send a request          | `connect-src`, and that `proxyUrl` really is empty                                     |
-
-**Read the result in the Issues tab, not the console — and expect zero.** Use a clean profile (a
-guest window): extensions such as Dark Reader repaint the page and fake the step-2 symptom. The
-pass criterion is **zero** entries titled `Content Security Policy…` in DevTools' **Issues** tab
-(or the `N issues` counter in the console toolbar). Issues is the primary check because it is the
-only place a violation the page _catches_ shows up: a `Function('')` or a `WebAssembly` compile
-inside a try/catch leaves nothing in the console (measured on headless Chrome 154, over ten
-violations provoked on a test page). The console is secondary — filter it by `Content Security
-Policy`, **not** `Refused to`: since Chromium main@{#1509550} (September 2025; ≈ Chrome 142 by
-branch position, not confirmed in release notes) messages read `<Action> violates the following
-Content Security Policy directive … The action has been blocked.`, and `Refused to` only matches
-the secondary `Fetch API cannot load …` line. In the network tab filter to anything that is
-**not** the page's own origin.
-
-**Any entry is a finding, even one that breaks nothing.** Relax the CSP only for a step that
-functionally breaks — never `'unsafe-eval'` (`docs-csp.ts` explains why), and `'wasm-unsafe-eval'`
-only if step 4 actually fails. A caught violation that breaks nothing is neutralised at its
-source, as `ZOD_JITLESS_PRELUDE` does, or recorded in `docs/backlog.md` — never left as an
-"expected" entry, because Issues groups entries by type and the next one would hide behind it.
-
-**Zero is reachable only because of that one line of ours.** The Zod 4 that Scalar bundles (4.4.3
-in 1.72.1) probes `Function('')` on every load to decide whether to compile its `z.object` fast
-path. The CSP blocks it — harmless, Zod falls back to interpreted parsing — but Chrome listed it
-in Issues on every load ("Content Security Policy of your site blocks the use of `eval` in
-JavaScript"). `scripts/scalar-bundle.mjs` prepends `ZOD_JITLESS_PRELUDE` —
-`(globalThis.__zod_globalConfig ??= {}).jitless = true;`— so the probe never runs: `jitless` is
-the switch Zod documents for environments that disallow `eval`, and pre-populating that global
-before Zod loads is how Zod's own source says to set it from outside. Two tests keep it honest:
-`src/__tests__/scalar-bundle.spec.ts` gates the **installed** bundle — every eval probe must sit
-behind the `jitless` guard, so a bump that breaks it turns the Renovate PR red instead of the
-violation silently returning — and `openapi.e2e-spec.ts` checks that the bundle actually served
-starts with the prelude.
+- **Served from our own origin, never its CDN** — no `integrity` hash is possible, so it's the only way to know what runs (`scripts/copy-scalar-asset.mjs` → `public/`): upstream's bundle plus **one line of ours in front**, `ZOD_JITLESS_PRELUDE`, which stops Zod's `Function('')` probe (`scalar-bundle.spec.ts`: every eval probe of the installed bundle sits behind the `jitless` guard, so a breaking bump turns the Renovate PR red; `openapi.e2e-spec.ts`: the served bundle starts with it). **Review `@scalar/api-reference` quarterly** (self-hosting gives up the CDN's updates); a bump regenerates the content hash.
+- **After a bump or an edit to `scripts/scalar-bundle.mjs`, run the [CSP checklist](docs/api-contract.md#mantener-el-bundle-de-scalar)** on `DOCS_ENABLED=true pnpm start:dev` (forced reload, cache off) and **expect zero** `Content Security Policy…` entries in DevTools' Issues tab, clean profile: any entry is a finding. Relax the CSP only for a step that functionally breaks — never `'unsafe-eval'` (see `docs-csp.ts`), `'wasm-unsafe-eval'` only if code samples fail; a harmless violation is neutralised at its source or recorded in `docs/backlog.md`, never left «expected» (Issues groups entries by type: the next one would hide behind it).
 
 ## Database
 
-PostgreSQL through TypeORM. Config lives in `src/config/database.config.ts`, wiring in `src/database/`.
+PostgreSQL through TypeORM; config in `src/config/database.config.ts`, wiring in `src/database/` ([details](docs/database.md)).
 
-- **`synchronize` is resolved in code, not taken from the env.** `DB_SYNCHRONIZE` can only ever turn it _off_; turning it _on_ also requires `NODE_ENV=development`. Outside development it is forced to `false` regardless of the `.env`, because `synchronize` can drop columns and data. See `resolveSynchronize()`.
-- **Schema changes go through migrations.** `pnpm migration:generate src/database/migrations/<Name>` after changing an ORM entity, then `pnpm migration:run`. In production `DB_MIGRATIONS_RUN=true` applies them on boot — read the next section before writing one that **drops or renames** anything.
-- **ORM entities are discovered by glob** (`*.orm-entity.ts` anywhere under `src/modules/`), so a new module registers itself with no central list to edit.
-- **TLS:** `DB_SSL=false` locally, `true` against RDS. `DB_SSL_REJECT_UNAUTHORIZED=false` encrypts but does **not** verify the server's identity — prefer pointing `DB_SSL_CA` at the AWS bundle.
-- **Driver errors are translated in the adapter.** `UserTypeOrmRepository.save()` turns PostgreSQL's `23505` into `EmailAlreadyTakenError`, so a concurrent insert surfaces as 409 and not 500. The handler's pre-check is a nicety, not the defence.
+- **`synchronize` is resolved in code:** `DB_SYNCHRONIZE` can only turn it off; on also needs `NODE_ENV=development` (`resolveSynchronize()`), since it can drop columns and data.
+- **Schema changes go through migrations** (`pnpm migration:generate src/database/migrations/<Name>`, then `pnpm migration:run`); `DB_MIGRATIONS_RUN=true` applies them on boot — read «Destructive migrations» before dropping or renaming anything.
+- **ORM entities are found by glob** (`*.orm-entity.ts` under `src/modules/`), with no central list.
+- **TLS:** `DB_SSL=true` against RDS; `DB_SSL_REJECT_UNAUTHORIZED=false` encrypts without verifying the server — prefer `DB_SSL_CA` with the AWS bundle.
+- **Driver errors are translated in the adapter** (users: a concurrent insert's `23505` → `EmailAlreadyTakenError` → 409, not 500); the pre-check is a nicety, not the defence.
 
 ## Destructive migrations: expand/contract
 
-**Any migration that drops or renames a column or a table is split in two — expand and
-contract — with the code deploy in between. Never in the same release.** Additive migrations
-(`CREATE TABLE`, `ADD COLUMN`) need none of this: old code ignores what it doesn't know. Two
-rules still apply to them, and neither shows up in the test suite — both break the deploy:
+**A migration that drops or renames a column or a table is split — expand, code deploy, contract — never in one release.** A template can't publish a rule its only example breaks: the worked example and its history are in [docs/database.md](docs/database.md#expandcontract-el-ejemplo-trabajado).
 
-- **An added `NOT NULL` column carries a `DEFAULT`.** On a table with rows,
-  `ADD COLUMN … NOT NULL` alone fails with `contains null values`; on an empty one it succeeds,
-  and then every `INSERT` from the old replicas, which don't name the column, fails. The E2E
-  database is empty after every `TRUNCATE`, so the suite sees neither.
-  `1790796856575-add-cancellation-to-orders.ts` is the example.
-- **Every `up()` and `down()` starts with `SET LOCAL lock_timeout = '5s'`.** `ALTER TABLE` takes
-  `ACCESS EXCLUSIVE`. With `DB_MIGRATIONS_RUN=true`, an unbounded wait behind any session that
-  holds the table (`idle in transaction`, a long report, `pg_dump`) keeps the new pod from
-  booting and queues every query on that table from the old replicas behind it. With the limit
-  it fails with `55P03` and the boot retries (`@nestjs/typeorm` retries `initialize()` 9 times,
-  3 s apart). Measured on 2026-10-01 against the test database: with another session holding
-  `orders`, `migration:run` aborts with `canceling statement due to lock timeout` after ~5 s
-  instead of waiting for it. `migration:generate` does not write it, so
-  `src/database/__tests__/migration-conventions.spec.ts` fails for a migration that forgets it
-  (the ones before the cancellation predate the rule).
+Additive migrations need none of this, but two rules apply (the suite sees neither; both break the deploy):
 
-| Step         | Contains                                                                                                          | Safe while old replicas serve traffic |
-| ------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| **Expand**   | `CREATE TABLE` / `ADD COLUMN`, indexes, the data copy, and `DROP NOT NULL` on whatever the new code stops writing | Yes — that is the entire point        |
-| _(deploy)_   | The new version rolls out until **no** replica of the old one is left                                             | —                                     |
-| **Contract** | The destructive statement alone: `DROP COLUMN`, `DROP TABLE`, the second half of a rename                         | **No**                                |
+- **An added `NOT NULL` column carries a `DEFAULT`:** else `ADD COLUMN` fails on a table with rows, or old replicas' `INSERT`s fail on an empty one (example: `1790796856575-add-cancellation-to-orders.ts`).
+- **Every `up()` and `down()` starts with `SET LOCAL lock_timeout = '5s'`:** `ALTER TABLE` takes `ACCESS EXCLUSIVE`, and an unbounded wait blocks the new pod and the table ([measured](docs/database.md#el-límite-de-espera-de-los-locks)); `migration-conventions.spec.ts` fails without it (those before `1790796856575` predate the rule).
 
-**Worked example, two real files.** Moving the password hash out of `users` (cycle 4) is
-`src/database/migrations/1786210289581-move-credentials-to-auth-expand.ts` — creates
-`auth_credentials`, its unique index, copies every hash **with the profile's `createdAt`/
-`updatedAt`**, and drops the `NOT NULL` — and
-`src/database/migrations/1786210349581-move-credentials-to-auth-contract.ts`, whose whole `up()`
-is one `ALTER TABLE "users" DROP COLUMN "password_hash"`. It was **one** migration until
-2026-08-08 and was split retroactively (backlog #12): a template cannot publish a rule its only
-example breaks, and the split was free because it had never been deployed anywhere.
+**Expand** (`CREATE TABLE`/`ADD COLUMN`, indexes, the data copy, `DROP NOT NULL` on what new code stops writing — safe with old replicas serving) → **deploy** until no old replica remains → **contract** (the destructive statement alone: `DROP COLUMN`, `DROP TABLE`, a rename's second half — **not** safe with old replicas).
 
-- **The `DROP NOT NULL` in the expand is part of the pattern, not tidying up.** During the
-  window the new code inserts profiles without ever naming `password_hash`, so the column takes
-  no value and `NOT NULL` rejects the row. Verified by measurement, not reasoning: with the
-  constraint put back by hand on the expand-state schema, `POST /auth/register` answers 500 with
-  `null value in column "password_hash" of relation "users" violates not-null constraint`; with
-  it dropped, the 23 tests of `auth.e2e-spec.ts` pass against that same schema. Symmetrically,
-  the old code keeps reading and writing the column, which still holds its data. **A column the
-  new code stops writing must lose its `NOT NULL` in the expand, or the expand is not survivable
-  either.**
-- **The `down()` pair mirrors the split.** Contract's `down()` re-adds the column **nullable**
-  and refills it from the new table; expand's `down()` refills what is still missing, restores
-  the `NOT NULL` and drops the new table. The precondition check that names unrestorable
-  profiles instead of letting PostgreSQL say `contains null values` lives in **expand's**
-  `down()` — because the only one of the two that restores a `NOT NULL` is that one. In
-  contract's `down()` a profile without a credential is simply NULL, which is legal there.
-- **What the pattern does not fix here, said plainly.** During the window an account created by
-  the new code has no `users.password_hash`, so the old code cannot authenticate it (and the
-  reverse for accounts created by old replicas). Closing that needs a dual-write trigger, which
-  is what you add when the window cannot afford lost sign-ups. Here the window is one rollout and
-  the cost is a retry.
-
-**⚠️ `DB_MIGRATIONS_RUN=true` runs pending migrations when the process boots — that is the first
-new pod, with every old replica still serving.** An expand is fine there; a contract in that mode
-drops the column at the worst possible instant and takes the old replicas down. Pick one, and
-write which one you picked in the migration's header:
-
-1. **Ship the contract in a later release** (recommended). Nothing to operate, no human in the
-   loop, and the rollout of the expand release is provably finished before the next one starts.
-2. **Same release with `DB_MIGRATIONS_RUN=false`**, then `pnpm migration:run` by hand once the
-   rollout completes. Cheaper in calendar time, needs somebody at the keyboard at the right
-   moment. A scheduled maintenance window is the same option with the traffic turned off.
-
-**Why a `DROP COLUMN` is worse than it looks: TypeORM enumerates every mapped column in every
-`SELECT` — it never emits `SELECT *`.** Measured here with `DB_LOGGING=true`:
-`SELECT "UserOrmEntity"."id" …, "UserOrmEntity"."updatedAt" … FROM "public"."users"`. So from the
-instant the column disappears, **every read of that table** fails in the old code, not only the
-paths that used it — for `users` that is `POST /auth/login`, `GET /users`, `GET /users/:id`,
-`DELETE /users/:id` and `POST /orders`, which hits the customer directory on every order.
-`INSERT` enumerates too, which is the same fact seen from the other side and the reason the
-expand's `DROP NOT NULL` is mandatory.
+- **A column the new code stops writing loses its `NOT NULL` in the expand,** or the expand isn't survivable either.
+- **The `down()` pair mirrors the split:** contract's re-adds the column nullable and refills it; expand's refills, restores the `NOT NULL`, drops the new table and, being the only one restoring a `NOT NULL`, holds the check naming unrestorable rows.
+- **During the window each version misses what the other writes (new sign-ups can't log in on old replicas); when that's unaffordable, add a dual-write trigger.**
+- ⚠️ **`DB_MIGRATIONS_RUN=true` runs migrations on the first new pod's boot, with old replicas still serving:** fine for an expand, fatal for a contract. Pick one and write it in the migration's header: **(1) contract in a later release** (recommended) or **(2) same release with `DB_MIGRATIONS_RUN=false`** and `pnpm migration:run` by hand after the rollout.
+- **TypeORM names every mapped column in every `SELECT` and `INSERT`, never `SELECT *`:** a dropped column breaks every read of the table in old code ([measured](docs/database.md#por-qué-un-drop-column-rompe-todas-las-lecturas)).
 
 ## Config gotcha worth knowing
 
-Every `registerAs` factory re-parses `process.env`, and `@nestjs/config` only writes back validated values that are `string | number | boolean` — arrays and objects are dropped silently. So **`env.schema.ts` must emit scalars only**; list-shaped variables stay strings and are split in the factory via `splitList()`. A test in `env.schema.spec.ts` guards this. Getting it wrong is invisible: the `.env` value is ignored and the default applies.
+Why: [docs/toolchain.md](docs/toolchain.md#zod-4-y-la-configuración).
 
-Related: Zod's `.default()` only fires on `undefined`, so a variable that is present but empty is **not** the same as an absent one. Numeric fields use `rejectEmpty()` so `PORT=` fails loudly instead of coercing to `0`.
+- **`env.schema.ts` emits scalars only:** every `registerAs` factory re-parses `process.env` and `@nestjs/config` writes back only `string | number | boolean`, silently dropping arrays and objects (the default applies); lists stay strings split with `splitList()` (guarded in `env.schema.spec.ts`).
+- **Present-but-empty is not absent:** `.default()` fires only on `undefined`, so numeric fields use `rejectEmpty()` and `PORT=` fails instead of becoming `0`.
 
 ## Code conventions
 
-- **Code in English, prose in Spanish.** Identifiers, object keys, file and folder names, env variables, config keys, SQL columns, `operationId` and form ids are English; comments, documentation, OpenAPI `summary`/`description`, ESLint rule messages and operator-facing messages are Spanish. `src/__tests__/language-convention.spec.ts` enforces it by asserting on **identifiers, never on strings** — which is why the Spanish `it` titles need no exemption. One written exception: the error messages in `env.schema.ts` and `validate-env.ts` are English because they share a string with Zod's untranslatable defaults.
-- **`type`, never `interface`.** ESLint enforces `@typescript-eslint/consistent-type-definitions: ['error', 'type']`. Skill reference files use `interface` as language-agnostic pseudocode — translate it before writing real code. Ports are the one place that is neither: they're `abstract class`, because they must survive compilation to act as their own DI token (see Architecture rules).
-- **Path aliases:** `@/` → `src/`, plus `@common/`, `@config/`, `@database/`, `@modules/`, `@shared/`, and `@test/` → `test/`. Shared test helpers are imported via `@test/`, not `@/`. Declared in three places that must stay in sync: `tsconfig.json`, `.swcrc` and `jest.config.mjs` — `test/jest-e2e.config.mjs` inherits from the latter instead of keeping its own copy.
-- **Inside a module, import relatively.** `../../domain/user.entity`, not `@modules/users/domain/user.entity` — a relative path survives the module being moved.
-- **No barrels in `src/` — the lint verifies it.** No `index.ts` anywhere: every import targets
-  the concrete file, and across modules only the `*.module.ts` is importable. The 6 boundary
-  rules live in `eslint.boundaries.js` (shared with its suite,
-  `src/__tests__/eslint-boundaries.spec.ts`); their original design spec was lost in the
-  2026-08-08 history rebuild (backlog #29), so those two files are the only source.
-- **Only the root of a `@nestjs/*` package is importable — the lint verifies it.**
-  `no-restricted-imports` in `eslint.config.mjs` bans every subpath (`^@nestjs/[^/]+/`,
-  case-insensitive, `import type` included). Nest 12's `exports` map keeps `./*` and `./internal`
-  resolvable today, but a patch can close them, as `@nestjs/swagger` 11.4.3 did. Metadata keys
-  live copied in `src/common/nest-metadata.constants.ts`; a type the root doesn't export is
-  derived from one that it does (`CorsConfig` in `src/config/cors.config.ts`). The ban also hits
-  the few subpaths a package declares on purpose (`@nestjs/swagger/plugin`): nothing imports one
-  today, and the day something must, it takes a justified `eslint-disable-next-line`. Dynamic
-  `import()` is the one form the rule doesn't see. Spec: `src/__tests__/eslint-config.spec.ts`.
-- **Type-only imports are explicit** — `consistent-type-imports` with inline style: `import { ValidationPipe, type INestApplication }`.
-- **Tests live in a `__tests__/` folder at the root of each module**, replicating the module's internal structure, so moving a module moves its tests with it. Unit specs are `*.spec.ts`, E2E are `*.e2e-spec.ts`, and both ship inside the module. Only shared helpers live outside `src/`, in `test/helpers/` (imported via `@test/`).
-- **`describe` in code, `it` in Spanish.** The root `describe` keeps the real identifier; a nested `describe` is named after the method it groups (`describe('cancel()')`), or is a Spanish phrase when it groups by scenario rather than by method. Every `it` is a Spanish sentence starting with `debería…`. Code, variables and helpers stay in English; comments are Spanish. File-local helpers go at the bottom of the spec, under a `// Helpers` line.
-- **AAA: the three comments in every `it`, always.** `// Arrange`, `// Act` and `// Assert`, each on its own line, even when a phase has no code — with nothing to prepare, `// Arrange` stays, empty. When the action is what the assertion checks (a throw), capture it under `// Act` (`const act = () => OrderAmount.from(-1);`) and assert under `// Assert` (`expect(act).toThrow(InvalidOrderAmountError);`): a combined `// Act + Assert` is not allowed. About 200 legacy tests predate this rule (heuristic count, backlog #30).
-- **One spec per source file (1:1)**, same base name and same relative path inside `__tests__/`. Don't group several SUTs in one file. Ports (`domain/ports/`, abstract classes with no logic) are exempt; errors and events are not — they carry messages and data that Stryker mutates (legacy gaps listed in backlog #30).
-- **Mocking by layer:** no mocks in `domain/`; hand-written port fakes in `application/` (see `__tests__/helpers/in-memory-user.repository.ts`), never `jest.mock`; repositories are tested against real PostgreSQL in the E2E suite. Modules, TypeORM repositories, `data-source.ts`, seeds, the outbox CLI and migrations are excluded from _unit_ coverage on purpose, and `test/jest-e2e.config.mjs` measures them with its own threshold — **except `src/database/migrations/**`, which no suite measures**. That exception is deliberate and now written down: they are one-shot DDL run by the CLI, and the fact that nothing exercises them directly is open debt with its own entry (`docs/backlog.md` #17), not something the E2E config quietly covers. Until 2026-08-19 this sentence claimed the E2E suite measured "exactly those files" while its list held two of the six patterns, so four groups were measured by neither.
-- **Shared fixtures:** module-wide helpers go in `<module>/__tests__/helpers/` (e.g. `user.factory.ts`, `arbitraries.ts`); cross-cutting ones in `test/helpers/` (e.g. `config.factory.ts`), imported via `@test/`. Never copy a builder into several specs.
-- **Property-based testing with `fast-check`** for value objects, pure functions and mapping round-trips. Arbitraries are **constructed**, never `.filter()`-ed out of `fc.string()`.
-- **The E2E suite runs against `nest_base_template_test`**, not the dev database — `test/setup-env.ts` forces `NODE_ENV=test` and the database name before the `AppModule` boots. The `TRUNCATE` in each `beforeEach` is required for the suite to be repeatable.
-- **A test must fail without the fix.** Before trusting a regression test, verify it: several tests here looked like they covered a defect and passed either way (`isHealthPath`'s substring case picked the one URL that dodged the bug; the concurrent-POST test was caught by the pre-check, never reaching the `23505` translation; the first E2E of simultaneous order cancellations stayed green under `REPEATABLE READ`, the regression its own comment said it watched). For a **guard test** — concurrency, ownership, authorization, atomicity, anti-enumeration, idempotency — the check is mandatory: remove the protection for a moment, see it fail by assertion, restore it.
-- Commit messages follow Conventional Commits with a **closed scope list** — see `commitlint.config.cjs` before inventing a scope. Adding a bounded context means adding its scope there.
-- **Pre-commit scans secrets.** lint-staged runs `secretlint` (preset recommend, `enableIDScanRule: true`) over **every** staged file via the catch-all `"*": "secretlint --maskSecrets"` entry — a detected secret blocks the commit before it enters history. Config is `.secretlintrc.json`; its contract lives in `src/__tests__/secretlint.spec.ts` (Tabla S, backlog #6).
+Why: [docs/testing.md](docs/testing.md).
+
+- **Code in English, prose in Spanish:** identifiers, object keys, file/folder names, env vars, config keys, SQL columns, `operationId` and form ids in English; comments, docs, OpenAPI `summary`/`description`, ESLint and operator messages in Spanish (`language-convention.spec.ts` checks identifiers, not strings). Exception: `env.schema.ts`/`validate-env.ts` messages stay English, shared with Zod's.
+- **`type`, never `interface`** (`consistent-type-definitions`); a skill reference's `interface` is pseudocode — translate it. Ports are `abstract class`.
+- **Path aliases** `@/` (→ `src/`), `@common/`, `@config/`, `@database/`, `@modules/`, `@shared/`, `@test/` (→ `test/`; shared test helpers go through it), kept in sync in `tsconfig.json`, `.swcrc` and `jest.config.mjs` (the E2E config inherits it).
+- **Inside a module, import relatively:** it survives the module moving.
+- **No barrels (`index.ts`) in `src/`: every import targets the concrete file, and across modules only `*.module.ts` is importable** — the 6 rules of `eslint.boundaries.js` and its suite `eslint-boundaries.spec.ts` are the only source (backlog #29).
+- **Only the root of a `@nestjs/*` package is importable** (a patch can close subpaths, as `@nestjs/swagger` 11.4.3 did; `no-restricted-imports`, `import type` included): metadata keys are copied in `src/common/nest-metadata.constants.ts`, a missing type derives from an exported one, a deliberate subpath takes a justified `eslint-disable-next-line`; dynamic `import()` escapes it (`eslint-config.spec.ts`).
+- **Type-only imports are explicit, inline** (`consistent-type-imports`): `import { ValidationPipe, type INestApplication }`.
+- **Tests live in the module's `__tests__/`, mirroring it, so moving the module moves them:** unit `*.spec.ts`, E2E `*.e2e-spec.ts`; only shared helpers go in `test/helpers/` (via `@test/`).
+- **`describe` in code, `it` in Spanish:** the root `describe` is the identifier, a nested one the method (`describe('cancel()')`) or a Spanish scenario; each `it` starts with `debería…`; file-local helpers go last, under `// Helpers`.
+- **AAA: `// Arrange`, `// Act` and `// Assert` in every `it`, each on its own line, even if empty;** a throw is captured under `// Act` (`const act = () => …`) and asserted under `// Assert` — never a combined `// Act + Assert` (legacy: backlog #30).
+- **One spec per source file (1:1),** same name and relative path; never several SUTs in one file. Logic-free ports (`domain/ports/`) are exempt; errors and events are not (Stryker mutates their messages and data).
+- **Mocking by layer:** no mocks in `domain/`; hand-written port fakes in `application/`, never `jest.mock`; repositories against real PostgreSQL in E2E. Modules, TypeORM repositories, `data-source.ts`, seeds, the outbox CLI and migrations are out of unit coverage and `jest-e2e.config.mjs` measures them — **except `src/database/migrations/**`, which no suite measures** (backlog #17; [history](docs/testing.md#mocking-por-capa-y-cobertura)).
+- **Shared fixtures:** module-wide in `<module>/__tests__/helpers/`, cross-cutting in `test/helpers/`; never copy a builder into several specs.
+- **Property-based tests with `fast-check`** for VOs, pure functions and mapping round-trips; arbitraries are **constructed**, never `.filter()`-ed from `fc.string()`.
+- **Each E2E `beforeEach` must `TRUNCATE`,** or the suite isn't repeatable (it runs on the test database, see Commands).
+- **A test must fail without the fix.** Verify a regression test before trusting it ([cases](docs/testing.md#un-test-debe-fallar-sin-el-arreglo)); for a **guard test** (concurrency, ownership, authorization, atomicity, anti-enumeration, idempotency) it's mandatory: remove the protection, see it fail by assertion, restore it.
+- **Conventional Commits with a closed scope list** (`commitlint.config.cjs`): a new bounded context adds its scope there.
+- **Pre-commit scans secrets:** `secretlint` checks every staged file (`.secretlintrc.json`, `secretlint.spec.ts`); a detected secret blocks the commit.
 
 ## Deferred work
 
-`docs/backlog.md` holds work that was postponed **with a decision attached**, not forgotten. That
-file is the issue tracker — a role it keeps now that the repo has a remote (`origin`, since August
-2026), because the entries carry reasoning that a GitHub issue title doesn't. Each entry records
-what happens, the approach already chosen, and how you'll know it's done — read the entry before
-reopening the discussion.
-
-It also records what was closed by verifying it, so nobody re-investigates a non-problem.
+`docs/backlog.md` is the issue tracker, even with a remote (an issue title can't carry its reasoning): work postponed **with a decision attached** (what happens, the approach chosen, how you'll know it's done) and what was closed by verifying it. **Read the entry before reopening the discussion.**

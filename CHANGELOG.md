@@ -109,6 +109,26 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **`CLAUDE.md`, de 64 510 a 34 476 bytes: cada regla en una línea, con su porqué y, donde el largo salió, un enlace**
+  (2026-10-02, backlog #32). La historia, las mediciones y los ejemplos trabajados pasan a cinco
+  documentos nuevos en `docs/` —`toolchain.md`, `architecture.md`, `api-contract.md`, `database.md`
+  y `testing.md`—, en español; la política de git completa su historia en
+  `docs/development-workflows.md` §10.
+  - **Las reglas no cambian.** Un cotejo de 389 elementos del antes contra el después las encontró
+    todas; la lista va en la descripción del PR. Se quedan en `CLAUDE.md` los encabezados que
+    otros archivos enlazan o citan.
+  - **Lo que cambia de sitio.** La checklist de CSP del bundle de Scalar vive en
+    `docs/api-contract.md`, y el ejemplo trabajado de expand/contract en `docs/database.md`.
+    README, SECURITY.md, NESTJS-MAPPING y las skills `express` y `subagent-driven-development`
+    apuntan a los sitios nuevos. La tabla de niveles pasa a lista, y la de lo que declara cada operación a
+    un párrafo (la tabla sigue en `docs/api-contract.md`).
+  - **Arreglos de paso.** Tres migraciones citaban «Migraciones destructivas», una sección que no
+    existía. `subagent-driven-development` situaba en `CLAUDE.md` la lista completa del deny, que
+    está en `.claude/settings.json`. NESTJS-MAPPING decía que la regla 2 de boundaries no cubría
+    `application/`, y la cubre desde el 2026-10-01. La regla «el bundle de Scalar se sirve desde el
+    propio origen» estaba duplicada y queda una vez.
+  - ⚠️ **−46,6 %, no −50 %:** el motivo está en el cierre del #32.
+
 - **Tres niveles de flujo de trabajo con IA, elegidos con mediciones** (2026-09-30). La guía
   completa está en `docs/development-workflows.md`, y `CLAUDE.md` («Skills and development flows»)
   lleva la tabla de niveles.

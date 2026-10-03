@@ -28,11 +28,11 @@ type ResponseWithLocals = ServerResponse & { locals?: { cspNonce?: string } };
  * (`let e=Function,…` y después `new e(…)`), que solo se usa si `jitless` es false y la sonda tuvo
  * éxito. `scripts/scalar-bundle.mjs` fija `jitless` antes de que cargue Zod —ver allí—, así que no
  * se ejecuta ninguno de los dos: Zod valida por el camino interpretado, con el mismo resultado y
- * sin la optimización, y la documentación carga con cero violaciones (checklist de `CLAUDE.md`,
- * «Maintaining the Scalar bundle»). Añadir `'unsafe-eval'` no aportaría nada y abriría `eval` y
- * `new Function` a cualquier script de la página. Tampoco crea workers —cero `new Worker` /
- * `serviceWorker` en el bundle y ninguna violación en los cinco pasos de esa checklist—, así que
- * no hace falta `worker-src`.
+ * sin la optimización, y la documentación carga con cero violaciones (checklist de
+ * `docs/api-contract.md`, «Mantener el bundle de Scalar»). Añadir `'unsafe-eval'` no aportaría
+ * nada y abriría `eval` y `new Function` a cualquier script de la página. Tampoco crea
+ * workers —cero `new Worker` / `serviceWorker` en el bundle y ninguna violación en los cinco
+ * pasos de esa checklist—, así que no hace falta `worker-src`.
  */
 export const DOCS_CSP_DIRECTIVES = {
   defaultSrc: ["'none'"],

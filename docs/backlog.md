@@ -450,7 +450,7 @@ compatibilidad que solo el código viejo lee.
    TypeORM que agrava el DROP: enumera las columnas en **cada** `SELECT`, así que se rompe
    TODA lectura de la tabla en el código viejo, no solo la que usaba la columna. Ese dato ya no
    es una cita: está medido con `DB_LOGGING=true` y la consulta real está copiada en la
-   sección.
+   sección (desde el #32, en [`docs/database.md`](./database.md#por-qué-un-drop-column-rompe-todas-las-lecturas)).
 2. **La migración partida en dos**, con timestamps nuevos y consecutivos:
    [`1786210289581-move-credentials-to-auth-expand.ts`](../src/database/migrations/1786210289581-move-credentials-to-auth-expand.ts)
    (CREATE TABLE + índice único + copia de hashes con `createdAt`/`updatedAt` del perfil —el
@@ -1462,6 +1462,33 @@ medición que explica por qué existe una regla, no la regla.
 
 **Cómo se sabrá que está hecho.** `CLAUDE.md` pesa la mitad o menos, y el cotejo de reglas no deja
 ninguna sin su sitio.
+
+**Resuelto (2026-10-02, sin plan propio — reescritura de documentación; rama
+`docs/slim-claude-md`), con una desviación del criterio de tamaño.**
+
+- **Qué entró.** `CLAUDE.md` pasó de 64 510 a 34 476 bytes (574 → 256 líneas). Cada regla conserva
+  el porqué que tenía en el original, en una cláusula o, donde el largo salió, tras un enlace. La historia, las
+  mediciones y los ejemplos trabajados están ahora en cinco documentos nuevos, en español:
+  `docs/toolchain.md`, `docs/architecture.md`, `docs/api-contract.md`, `docs/database.md` y
+  `docs/testing.md`. La historia de la política de git se completó en
+  `docs/development-workflows.md` §10. Siguen en `CLAUDE.md` los encabezados que otros archivos
+  enlazan o citan por su nombre.
+- **El cotejo.** Un inventario del antes de 389 elementos (228 reglas, 108 hechos y 53 de apoyo,
+  más las correcciones de un crítico de completitud) se cotejó elemento a elemento con el
+  después: cuatro cotejadores de reglas, cinco revisores de fidelidad (uno por documento) y un
+  revisor global de enlaces, anclas y citas. La primera pasada dejó 38 reglas debilitadas y una
+  perdida —sobre todo porqués y condiciones que cayeron al condensar—; se corrigieron todas y se
+  volvieron a verificar. La lista cotejada va en la descripción del PR.
+- ⚠️ **No llega a la mitad: −46,6 %, no −50 %.** Para bajar de 32 255 bytes había que quitar porqués
+  o condiciones, y el cotejo mostró que eso cambia reglas. Por ejemplo, sin «for business
+  rejections» la puerta de aprovisionamiento parecía no lanzar nunca, contra lo que hace
+  `users.facade.ts`. Se prefirió la fidelidad al umbral. Si se quiere la mitad, el paso siguiente
+  es sacar a `docs/architecture.md` las invariantes de diseño de `auth` y `orders` (~6,3 KB hoy),
+  dejando en `CLAUDE.md` un puntero. Es una decisión del mantenedor: esas invariantes dejarían de
+  cargarse en cada sesión.
+- **Lo que no se midió.** La premisa «`CLAUDE.md` basta para las convenciones» (una sesión sin
+  skills cumplió el 100 %) se midió el 2026-09-30 con la versión de entonces (55-60 KB); no se ha
+  repetido con esta.
 
 ## 33. Un 408 en `POST /orders` no dice si el pedido se creó, y reintentar puede duplicarlo
 
