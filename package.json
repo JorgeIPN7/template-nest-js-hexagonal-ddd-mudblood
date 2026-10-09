@@ -17,7 +17,7 @@
     "node": "^24.21.0",
     "pnpm": ">=11.0.0"
   },
-  "packageManager": "pnpm@12.9.1",
+  "packageManager": "pnpm@12.10.0",
   "scripts": {
     "build": "nest build",
     "start": "nest start",
