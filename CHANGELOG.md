@@ -109,6 +109,31 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **`CLAUDE.md`, de 64 510 a 35 408 bytes: cada regla en una línea, con su porqué y, donde el largo salió, un enlace**
+  (2026-10-16, backlog #32). La historia, las mediciones y los ejemplos trabajados pasan a cinco
+  documentos nuevos en `docs/` —`toolchain.md`, `architecture.md`, `api-contract.md`, `database.md`
+  y `testing.md`—, en español; la política de git completa su historia en
+  `docs/development-workflows.md` §10.
+  - **Las reglas no cambian.** Un cotejo de 788 elementos, que cubre cada línea del `CLAUDE.md`
+    anterior, las encontró todas después de restaurar 22 matices y reglas que la reescritura había
+    debilitado o dejado solo en `docs/`; la lista va en la descripción del PR. Se quedan en
+    `CLAUDE.md` los encabezados que otros archivos enlazan o citan.
+  - **Lo que cambia de sitio.** La checklist de CSP del bundle de Scalar, con lo que ejercita cada
+    paso, vive en `docs/api-contract.md` (`CLAUDE.md` enumera los cinco pasos en una línea), y el
+    ejemplo trabajado de expand/contract en `docs/database.md`. README, SECURITY.md,
+    NESTJS-MAPPING y las skills `express` y `subagent-driven-development` apuntan a los sitios
+    nuevos. La tabla de niveles pasa a lista, y la de lo que declara cada operación a un párrafo (la
+    tabla sigue en `docs/api-contract.md`).
+  - **Arreglos de paso.** Tres migraciones citaban «Migraciones destructivas», una sección que no
+    existía. `subagent-driven-development` situaba en `CLAUDE.md` la lista completa del deny, que
+    está en `.claude/settings.json`. NESTJS-MAPPING decía que la regla 2 de boundaries no cubría
+    `application/`, y la cubre desde el 2026-10-01. `development-workflows.md` decía que el guard
+    de contrato comprueba en los dos sentidos el 400 y el 429, y también comprueba el 408.
+    «Database» decía que `DB_MIGRATIONS_RUN=true` migra al arrancar «in production»; lo hace fuera
+    de `development` (`resolveMigrationsRun()`). La regla «el bundle de Scalar se sirve desde el
+    propio origen» estaba duplicada y queda una vez.
+  - ⚠️ **−45,1 %, no −50 %:** el motivo está en el cierre del #32.
+
 - **Tres niveles de flujo de trabajo con IA, elegidos con mediciones** (2026-09-30). La guía
   completa está en `docs/development-workflows.md`, y `CLAUDE.md` («Skills and development flows»)
   lleva la tabla de niveles.

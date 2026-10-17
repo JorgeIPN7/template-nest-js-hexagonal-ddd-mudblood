@@ -158,7 +158,7 @@ pnpm build
 No agent runs a git command that writes history, moves `HEAD` or a ref, touches the index or
 discards work — `commit`, `add`, `push`, `stash`, `reset`, `checkout`, `branch`… That covers you,
 the implementers and the reviewer. The project settings deny them, with any global option in
-front (the full list is in `CLAUDE.md`, «Git policy»). An implementer that thinks a commit is due puts a
+front (the list is in `.claude/settings.json`; the policy, in `CLAUDE.md`, «Git policy»). An implementer that thinks a commit is due puts a
 suggestion in its report, and you relay it to the user.
 
 ## Model Selection

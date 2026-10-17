@@ -3,7 +3,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
 /**
  * CONTRACT del par expand/contract que muda la credencial de `users` al bounded context `auth`
  * (ciclo 4 del refactor). Su gemela es `MoveCredentialsToAuthExpand`, que crea
- * `auth_credentials`, copia los hashes y afloja el `NOT NULL`; ver «Migraciones destructivas:
+ * `auth_credentials`, copia los hashes y afloja el `NOT NULL`; ver «Destructive migrations:
  * expand/contract» en `CLAUDE.md` y la entrada #12 del backlog.
  *
  * Una sola sentencia, y esa sentencia es la destructiva. Está sola precisamente para que

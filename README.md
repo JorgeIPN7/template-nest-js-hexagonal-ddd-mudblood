@@ -327,7 +327,7 @@ Para cada módulo que quites:
 3. Borra sus migraciones y las tablas que crearon. Las de `orders` son dos: [`1786076763455-create-orders-and-outbox.ts`](src/database/migrations/1786076763455-create-orders-and-outbox.ts) y [`1790796856575-add-cancellation-to-orders.ts`](src/database/migrations/1790796856575-add-cancellation-to-orders.ts). Con la base todavía sin datos, borra los archivos y corre `pnpm db:reset`. Si ya tiene datos, **no uses `pnpm migration:revert`**: deshace solo la última migración aplicada, y entre las dos de `orders` hay dos de `auth` (`1786210289581` y `1786210349581`) que se desharían por el camino. Borra las tablas a mano (`DROP TABLE orders_outbox, orders;`) y las dos filas de `orders` en la tabla `migrations`, y después los archivos.
 4. Quita su scope del `scope-enum` de [`commitlint.config.cjs`](commitlint.config.cjs).
 5. Si era `orders`, quita también `pnpm outbox:relay` de `package.json` y `src/database/outbox/`.
-6. Revisa las secciones que lo describen en este README y en [`CLAUDE.md`](CLAUDE.md).
+6. Revisa las secciones que lo describen en este README, en [`CLAUDE.md`](CLAUDE.md) y en [`docs/`](docs/) (`architecture.md`, `database.md`, `api-contract.md`, `testing.md`).
 7. **Vuelve a medir la mutación.** `stryker.config.mjs` apunta por globs, así que no hay que editarlo, pero el umbral `break: 85` está calibrado sobre el peso en mutantes de los módulos actuales: quitar uno mueve el score global. Corre `pnpm test:mutation` y ajusta el umbral con el número nuevo, no a ojo.
 8. Definition of Done completo: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`.
 
@@ -442,7 +442,7 @@ src/
         └── users.module.ts     # Composition root: une puerto ↔ adaptador
 ```
 
-**Reglas que no se negocian** (el detalle, con el porqué de cada una, está en [`CLAUDE.md` §Architecture rules](./CLAUDE.md#architecture-rules)):
+**Reglas que no se negocian** (las de capas, puertos y errores están en [`CLAUDE.md` §Architecture rules](./CLAUDE.md#architecture-rules), con su porqué largo en [`docs/architecture.md`](./docs/architecture.md); las de barrels e imports de `@nestjs/*`, en §Code conventions y [`docs/testing.md`](./docs/testing.md)):
 
 - **Dependencias hacia adentro.** `domain/` no importa `@nestjs/*`, TypeORM, `axios`, decoradores de `class-validator` ni `pino`.
 - **Dos modelos, nunca uno.** La entidad de dominio es una clase plana con invariantes; la entidad ORM lleva los decoradores. Un mapper es el único puente.
@@ -504,7 +504,7 @@ pnpm migration:show
 
 Las entidades ORM se descubren por glob (`*.orm-entity.ts` bajo `src/modules/`), así que un módulo nuevo se registra solo. En producción, `DB_MIGRATIONS_RUN=true` aplica las pendientes al arrancar.
 
-> **⚠️ Si la migración DROPEA o RENOMBRA algo, no vale con generarla y correrla.** Se parte en dos —expand y contract— con el despliegue del código en medio, y `DB_MIGRATIONS_RUN=true` deja de ser seguro para la mitad destructiva. La regla completa, con el ejemplo trabajado de `MoveCredentialsToAuthExpand` / `MoveCredentialsToAuthContract`, vive en [`CLAUDE.md` §«Destructive migrations»](./CLAUDE.md#destructive-migrations-expandcontract).
+> **⚠️ Si la migración DROPEA o RENOMBRA algo, no vale con generarla y correrla.** Se parte en dos —expand y contract— con el despliegue del código en medio, y `DB_MIGRATIONS_RUN=true` deja de ser seguro para la mitad destructiva. La regla vive en [`CLAUDE.md` §«Destructive migrations»](./CLAUDE.md#destructive-migrations-expandcontract), y el ejemplo trabajado de `MoveCredentialsToAuthExpand` / `MoveCredentialsToAuthContract`, en [`docs/database.md`](./docs/database.md#expandcontract-el-ejemplo-trabajado).
 
 ### Conexión y TLS (RDS)
 
@@ -673,7 +673,7 @@ Y tres configuraciones que valen su peso en oro, todas en `src/common/logger/pin
 
 **El bundle se sirve desde nuestro propio origen, nunca desde el CDN de Scalar**: el paquete no permite adjuntar un hash `integrity`, así que auto-hospedarlo es la única forma de saber qué JavaScript se ejecuta. `scripts/copy-scalar-asset.mjs` lo copia a `public/` con un hash de contenido en el nombre y una sola línea nuestra delante —`ZOD_JITLESS_PRELUDE`, en `scripts/scalar-bundle.mjs`, que evita que el Zod empaquetado en Scalar provoque una violación de CSP en cada carga—, y los hooks `prebuild`, `prestart:dev`, `pretest:e2e` y `pretest:e2e:ci` lo ejecutan solos. Los cuatro nombres van explícitos porque los hooks de pnpm se resuelven **por nombre exacto**.
 
-Tres capas antes de que nadie vea las docs: `DOCS_ENABLED` apagado por defecto, Basic Auth opcional, y una CSP propia y restrictiva (`default-src 'none'`) acotada a esa ruta, con nonce por petición. **Al subir la versión del bundle**, la lista de comprobación manual de CSP está en [`CLAUDE.md`](./CLAUDE.md#maintaining-the-scalar-bundle) — es el único momento en que puede aparecer una violación nueva.
+Tres capas antes de que nadie vea las docs: `DOCS_ENABLED` apagado por defecto, Basic Auth opcional, y una CSP propia y restrictiva (`default-src 'none'`) acotada a esa ruta, con nonce por petición. **Al subir la versión del bundle o editar `scripts/scalar-bundle.mjs`**, la lista de comprobación manual de CSP está en [`docs/api-contract.md`](./docs/api-contract.md#mantener-el-bundle-de-scalar) — es el único momento en que puede aparecer una violación nueva.
 
 ### Terminus — dos preguntas distintas, dos sondas distintas
 
@@ -785,7 +785,7 @@ Los `/health` están exentos del throttler (`@SkipThrottle`) y del `TransformInt
 - Tras un proxy, configura `TRUST_PROXY` para que `ThrottlerGuard` discrimine clientes reales y `req.ip` apunte al cliente.
 - El header `x-request-id` se respeta si viene del cliente; si no, se genera un UUID v4, se refleja en la respuesta y se propaga vía `nestjs-cls`.
 - **⚠️ El rate limiter guarda su estado en un `Map` en memoria del proceso.** Con N réplicas el límite efectivo es N × `THROTTLER_LIMIT`. Cerrarlo requiere Redis, y está registrado en `docs/backlog.md` con el trigger ya decidido.
-- **⚠️ Una migración que dropea o renombra algo NO se despliega con `DB_MIGRATIONS_RUN=true` en un despliegue rodante**: corre al arrancar el primer pod nuevo, mientras las réplicas viejas siguen sirviendo, y TypeORM enumera las columnas en cada `SELECT` —así que un `DROP COLUMN` tumba **toda** lectura de esa tabla, no solo la que usaba la columna. El patrón obligatorio (expand → despliegue → contract), las dos salidas operativas y el ejemplo trabajado están en [`CLAUDE.md`](./CLAUDE.md#destructive-migrations-expandcontract).
+- **⚠️ Una migración que dropea o renombra algo NO se despliega con `DB_MIGRATIONS_RUN=true` en un despliegue rodante**: corre al arrancar el primer pod nuevo, mientras las réplicas viejas siguen sirviendo, y TypeORM enumera las columnas en cada `SELECT` —así que un `DROP COLUMN` tumba **toda** lectura de esa tabla, no solo la que usaba la columna. El patrón obligatorio (expand → despliegue → contract) y las dos salidas operativas están en [`CLAUDE.md`](./CLAUDE.md#destructive-migrations-expandcontract); el ejemplo trabajado, en [`docs/database.md`](./docs/database.md#expandcontract-el-ejemplo-trabajado).
 
 ---
 
