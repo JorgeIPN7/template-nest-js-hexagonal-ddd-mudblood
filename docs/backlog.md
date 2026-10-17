@@ -450,7 +450,7 @@ compatibilidad que solo el código viejo lee.
    TypeORM que agrava el DROP: enumera las columnas en **cada** `SELECT`, así que se rompe
    TODA lectura de la tabla en el código viejo, no solo la que usaba la columna. Ese dato ya no
    es una cita: está medido con `DB_LOGGING=true` y la consulta real está copiada en la
-   sección.
+   sección (desde el #32, en [`docs/database.md`](./database.md#por-qué-un-drop-column-rompe-todas-las-lecturas)).
 2. **La migración partida en dos**, con timestamps nuevos y consecutivos:
    [`1786210289581-move-credentials-to-auth-expand.ts`](../src/database/migrations/1786210289581-move-credentials-to-auth-expand.ts)
    (CREATE TABLE + índice único + copia de hashes con `createdAt`/`updatedAt` del perfil —el
@@ -1462,6 +1462,48 @@ medición que explica por qué existe una regla, no la regla.
 
 **Cómo se sabrá que está hecho.** `CLAUDE.md` pesa la mitad o menos, y el cotejo de reglas no deja
 ninguna sin su sitio.
+
+**Resuelto (2026-10-16, sin plan propio — reescritura de documentación; rama
+`docs/slim-claude-md-v2`), con una desviación del criterio de tamaño.** La reescritura es del
+2026-10-02, en `docs/slim-claude-md`, una rama que nunca llegó a PR. Se rescató sobre `main` sin
+conflictos: en esas dos semanas `main` solo recibió bumps de Renovate, y ninguno tocaba
+`CLAUDE.md` ni `docs/`.
+
+- **Qué entró.** `CLAUDE.md` pasó de 64 510 a 35 408 bytes (574 → 256 líneas). Cada regla conserva
+  el porqué que tenía en el original, en una cláusula o, donde el largo salió, tras un enlace. La historia, las
+  mediciones y los ejemplos trabajados están ahora en cinco documentos nuevos, en español:
+  `docs/toolchain.md`, `docs/architecture.md`, `docs/api-contract.md`, `docs/database.md` y
+  `docs/testing.md`. La historia de la política de git se completó en
+  `docs/development-workflows.md` §10. Siguen en `CLAUDE.md` los encabezados que otros archivos
+  enlazan o citan por su nombre.
+- **El cotejo, dos veces.** El de la reescritura (2026-10-02) inventarió 389 elementos del antes
+  (228 reglas, 108 hechos y 53 de apoyo, más las correcciones de un crítico de completitud) y los
+  cotejó uno a uno con el después: cuatro cotejadores de reglas, cinco revisores de fidelidad (uno
+  por documento) y un revisor global de enlaces, anclas y citas. Su primera pasada dejó 38 reglas
+  debilitadas y una perdida —sobre todo porqués y condiciones que cayeron al condensar—, y se
+  corrigieron todas. Aquella lista no se conservó, porque la rama nunca tuvo PR, así que al
+  rescatarla (2026-10-16) el cotejo se rehízo desde cero:
+  - siete cotejadores, uno por bloque de secciones, sobre 788 elementos (281 reglas, 234 hechos,
+    139 porqués, 53 de historia, 32 ejemplos y 49 punteros);
+  - una comprobación mecánica de que cada línea no vacía del antes cae en algún elemento, y otra
+    de que cada cita de evidencia aparece tal cual en su archivo (785 de 785);
+  - 23 hallazgos: 22 se corrigieron —14 matices perdidos o debilitados y 8 reglas que solo vivían
+    en `docs/`, entre ellas los cinco pasos de la checklist de CSP—, y uno es una poda deliberada:
+    lo que cubre `javascript-typescript-jest` ya lo dice su descripción, que se carga en cada
+    sesión.
+
+  La lista cotejada va en la descripción del PR.
+
+- ⚠️ **No llega a la mitad: −45,1 %, no −50 %.** Para bajar de 32 255 bytes había que quitar porqués
+  o condiciones, y el cotejo mostró que eso cambia reglas. Por ejemplo, sin «for business
+  rejections» la puerta de aprovisionamiento parecía no lanzar nunca, contra lo que hace
+  `users.facade.ts`. Se prefirió la fidelidad al umbral, y el cotejo del rescate añadió 932 bytes
+  por la misma razón. La mitad pediría sacar a `docs/architecture.md` las invariantes de diseño de
+  `auth` y `orders` (~6,4 KB hoy) y dejar en `CLAUDE.md` un puntero; el mantenedor lo descartó el
+  2026-10-16, porque esas invariantes dejarían de cargarse en cada sesión.
+- **Lo que no se midió.** La premisa «`CLAUDE.md` basta para las convenciones» (una sesión sin
+  skills cumplió el 100 %) se midió el 2026-09-30 con la versión de entonces (54 545 bytes en
+  `5263e50`, el commit base del experimento); no se ha repetido con esta.
 
 ## 33. Un 408 en `POST /orders` no dice si el pedido se creó, y reintentar puede duplicarlo
 

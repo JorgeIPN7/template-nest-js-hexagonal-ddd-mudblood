@@ -14,7 +14,7 @@ por tarea y la lectura de las skills de referencia. La evidencia y el resto de f
 
 ## 0. ¿Es el nivel correcto?
 
-Clasifica la petición antes de nada (tabla de niveles en `CLAUDE.md`, «Skills and development
+Clasifica la petición antes de nada (niveles en `CLAUDE.md`, «Skills and development
 flows»), **en este orden**: el riesgo se mira antes que el tamaño, porque un cambio de seguridad de
 una línea sigue siendo un cambio de seguridad.
 

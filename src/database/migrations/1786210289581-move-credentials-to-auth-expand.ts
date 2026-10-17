@@ -6,7 +6,7 @@ const UNRESTORABLE_IN_MESSAGE = 10;
 /**
  * EXPAND del par expand/contract que muda la credencial de `users` al bounded context `auth`
  * (ciclo 4 del refactor). Su gemela es `MoveCredentialsToAuthContract`, que es la que suelta
- * la columna; ver «Migraciones destructivas: expand/contract» en `CLAUDE.md` y la entrada #12
+ * la columna; ver «Destructive migrations: expand/contract» en `CLAUDE.md` y la entrada #12
  * del backlog para el porqué del par.
  *
  * Aquí NO se suelta nada. Los tres pasos —crear, copiar, aflojar— dejan el esquema en un
