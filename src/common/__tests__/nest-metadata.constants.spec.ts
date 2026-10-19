@@ -1,6 +1,10 @@
-import { Req, Sse } from '@nestjs/common';
+import { Catch, Req, Sse } from '@nestjs/common';
 
-import { ROUTE_ARGS_METADATA, SSE_METADATA } from '../nest-metadata.constants';
+import {
+  FILTER_CATCH_EXCEPTIONS,
+  ROUTE_ARGS_METADATA,
+  SSE_METADATA,
+} from '../nest-metadata.constants';
 
 /**
  * Ancla los literales copiados de las internals de Nest a los decoradores públicos que los
@@ -8,7 +12,7 @@ import { ROUTE_ARGS_METADATA, SSE_METADATA } from '../nest-metadata.constants';
  * clave, este spec se pone rojo, mientras que el `reflector.get()` de los interceptores se
  * limitaría a devolver `undefined` sin quejarse.
  *
- * La derivación tiene que salir del API público (`@Sse`, `@Req`), nunca de
+ * La derivación tiene que salir del API público (`@Sse`, `@Req`, `@Catch`), nunca de
  * `@nestjs/common/constants`: comparar el literal contra el mismo sitio del que se copió sería
  * tautológico y volvería a meter el import profundo, esta vez en la suite.
  */
@@ -46,6 +50,19 @@ describe('nest metadata keys', () => {
 
       // Assert
       expect(Reflect.getMetadataKeys(Probe, 'handle')).toContain(ROUTE_ARGS_METADATA);
+    });
+  });
+
+  describe('FILTER_CATCH_EXCEPTIONS', () => {
+    it('debería ser la clave bajo la que @Catch() guarda sus excepciones', () => {
+      // Arrange
+      class Probe {}
+
+      // Act
+      Catch(RangeError)(Probe);
+
+      // Assert
+      expect(Reflect.getOwnMetadata(FILTER_CATCH_EXCEPTIONS, Probe)).toEqual([RangeError]);
     });
   });
 });

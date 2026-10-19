@@ -14,6 +14,7 @@ import { Public } from '@common/decorators/public.decorator';
 import { ApiEnvelope } from '@common/dto/api-envelope.dto';
 import { buildErrorExample } from '@common/dto/error-example.factory';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '@common/dto/error-response.dto';
+import { buildRequestMetaExample } from '@common/dto/example-meta.factory';
 import { PASSWORD_LENGTH } from '@config/password-policy';
 
 import { LoginUseCase } from '../../application/use-cases/login.use-case';
@@ -28,13 +29,6 @@ import { RegisteredAccountResponseDto } from './dto/registered-account-response.
 const LOGIN_PATH = '/api/v1/auth/login';
 const REGISTER_PATH = '/api/v1/auth/register';
 
-/** Lo que `TransformInterceptor` añade a toda respuesta de éxito. */
-const requestMeta = (path: string) => ({
-  timestamp: '2026-08-01T10:15:00.000Z',
-  path,
-  requestId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
-});
-
 const ACCOUNT_EXAMPLE = {
   id: '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012',
   email: 'maria.gonzalez@empresa.com.mx',
@@ -44,10 +38,6 @@ const ACCOUNT_EXAMPLE = {
   createdAt: '2026-08-01T10:15:00.000Z',
   updatedAt: '2026-08-01T10:15:00.000Z',
 } as const;
-
-/** Los ejemplos de error salen SIEMPRE de la factoría: `error` se deriva del status. */
-const errorExample = (statusCode: number, message: string, path: string) =>
-  buildErrorExample(statusCode, { path, message });
 
 /**
  * Adaptador de entrada (driver) del bounded context. No verifica credenciales ni crea nada:
@@ -119,26 +109,24 @@ export class AuthController {
     example: {
       success: true,
       data: { user: ACCOUNT_EXAMPLE },
-      request: requestMeta(REGISTER_PATH),
+      request: buildRequestMetaExample(REGISTER_PATH),
     },
   })
   @ApiConflictResponse({
     description: 'El email ya está registrado.',
     type: ErrorResponseDto,
-    example: errorExample(
-      409,
-      'Email maria.gonzalez@empresa.com.mx is already registered',
-      REGISTER_PATH,
-    ),
+    example: buildErrorExample(409, {
+      path: REGISTER_PATH,
+      message: 'Email maria.gonzalez@empresa.com.mx is already registered',
+    }),
   })
   @ApiBadRequestResponse({
     description: 'El cuerpo no supera la validación de entrada.',
     type: ValidationErrorResponseDto,
-    example: errorExample(
-      400,
-      'email must be a valid address, name must be longer than or equal to 2 characters',
-      REGISTER_PATH,
-    ),
+    example: buildErrorExample(400, {
+      path: REGISTER_PATH,
+      message: 'email must be a valid address, name must be longer than or equal to 2 characters',
+    }),
   })
   @ApiStandardErrors()
   async register(@Body() dto: RegisterAccountDto): Promise<RegisteredAccountResponseDto> {
@@ -188,25 +176,25 @@ export class AuthController {
         expiresInSeconds: 3600,
         user: ACCOUNT_EXAMPLE,
       },
-      request: requestMeta(LOGIN_PATH),
+      request: buildRequestMetaExample(LOGIN_PATH),
     },
   })
   @ApiUnauthorizedResponse({
     description: 'Credenciales inválidas.',
     type: ErrorResponseDto,
-    example: errorExample(401, 'Invalid credentials', LOGIN_PATH),
+    example: buildErrorExample(401, { path: LOGIN_PATH, message: 'Invalid credentials' }),
   })
   // Mismo criterio que `UsersController`: el 400 se declara aquí con el mensaje real del
   // DTO, no con el ejemplo genérico de `ApiStandardErrors({ validation: true })`.
   @ApiBadRequestResponse({
     description: 'El cuerpo no supera la validación de entrada.',
     type: ValidationErrorResponseDto,
-    example: errorExample(
-      400,
-      'email must be a valid address, password must be longer than or equal to ' +
+    example: buildErrorExample(400, {
+      path: LOGIN_PATH,
+      message:
+        'email must be a valid address, password must be longer than or equal to ' +
         `${PASSWORD_LENGTH.min} characters`,
-      LOGIN_PATH,
-    ),
+    }),
   })
   @ApiStandardErrors()
   async login(@Body() dto: LoginDto): Promise<LoginResponseDto> {

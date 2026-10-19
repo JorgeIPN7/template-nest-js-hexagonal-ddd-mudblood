@@ -14,7 +14,7 @@
  *
  * NestJS 12 publicó ese mapa y la predicción se cumplió solo a medias. Medido sobre
  * `@nestjs/common@12.1.0`: el mapa es `{".", "./internal", "./*.js", "./*": "./*.js"}`, y el
- * comodín mantiene resoluble `@nestjs/common/constants`, con las mismas dos claves. Pero sigue
+ * comodín mantiene resoluble `@nestjs/common/constants`, con las mismas claves. Pero sigue
  * sin ser API: lo interno declarado vive ahora en `./internal`, y las subrutas se pueden cerrar
  * en cualquier versión: `@nestjs/swagger` lo hizo en 11.4.3, un PATCH, al publicar un mapa sin
  * comodín (`ERR_PACKAGE_PATH_NOT_EXPORTED` al pedir `@nestjs/swagger/dist/constants.js`). La
@@ -42,3 +42,12 @@ export const SSE_METADATA = '__sse__';
 
 /** Escrita por los decoradores de parámetro (`@Req()`, `@Body()`, …) sobre la clase. */
 export const ROUTE_ARGS_METADATA = '__routeArguments__';
+
+/**
+ * Escrita por `@Catch(...)` sobre la clase del filtro: la lista de excepciones que atrapa, la que
+ * Nest lee para elegir el filtro. La lee `domain-exception.filter.spec.ts`, que comprueba que la
+ * base de los filtros de dominio no lleva `@Catch` y que una subclase con `@Catch(<raíz>)` expone
+ * exactamente esa raíz. Que cada filtro de contexto lleve su `@Catch` no lo vigila ese spec sino la
+ * clave `filter` del test de contrato de módulo.
+ */
+export const FILTER_CATCH_EXCEPTIONS = '__filterCatchExceptions__';

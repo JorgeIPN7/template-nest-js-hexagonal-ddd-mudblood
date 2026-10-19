@@ -262,6 +262,30 @@ describe('Auth (e2e)', () => {
       );
       expect(counts[0]).toEqual({ users: 1, credentials: 1 });
     });
+
+    // El perfil que ya tiene ese email guarda un id que no es v4, escrito por SQL externo: la
+    // comprobación previa del alta lo lee, el mapper falla cerrado y la fachada lo relanza porque
+    // no es un rechazo de negocio. Antes era un 400 `invalid-profile` con el id de la otra cuenta.
+    it('debería responder 500 sin escribir credencial cuando el perfil existente con ese email está corrupto', async () => {
+      // Arrange
+      await dataSource.query(
+        "INSERT INTO users (id, email, name) VALUES ('3f2504e0-4f89-11d3-9a0c-0305e82c3301', 'perfil.corrupto@example.com', 'Perfil Corrupto')",
+      );
+
+      // Act
+      const response = await postRegister({
+        email: 'perfil.corrupto@example.com',
+        name: 'Otra Persona',
+        password: DEFAULT_PASSWORD,
+      });
+
+      // Assert
+      expect(response.status).toBe(500);
+      const counts = await dataSource.query<{ count: number }[]>(
+        'SELECT COUNT(*)::int AS count FROM auth_credentials',
+      );
+      expect(counts[0]?.count).toBe(0);
+    });
   });
 
   /**

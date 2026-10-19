@@ -101,8 +101,8 @@ export default tseslint.config(
       //
       // Si la constante se RENOMBRA en vez de desaparecer, en runtime nada lanza:
       // `reflector.get(undefined, …)` devuelve `undefined` y el interceptor deja de detectar SSE.
-      // La única señal es el TS2305 de `typecheck` (medido con un paquete de prueba). Las dos
-      // claves que hacían falta viven copiadas y ancladas al decorador público que las escribe en
+      // La única señal es el TS2305 de `typecheck` (medido con un paquete de prueba). Las
+      // claves que hacen falta viven copiadas y ancladas al decorador público que las escribe en
       // `src/common/nest-metadata.constants.ts`. Un tipo que la raíz no exporta se deriva de uno
       // que sí, como hace `src/config/cors.config.ts`.
       //
