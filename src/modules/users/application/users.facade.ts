@@ -143,7 +143,8 @@ export class UsersFacadeImpl implements UsersLookup, UsersProvisioning {
       if (error instanceof UserDomainError) {
         return { ok: false, reason: 'invalid-profile', message: error.message };
       }
-      // Un fallo de infraestructura (la base caída) NO es un rechazo de negocio: sube.
+      // Un fallo de infraestructura (la base caída, o una fila corrupta que `failClosed`
+      // convierte en `Error`) NO es un rechazo de negocio: sube.
       throw error;
     }
   }

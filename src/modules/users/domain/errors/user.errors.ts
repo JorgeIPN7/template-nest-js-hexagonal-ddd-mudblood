@@ -1,13 +1,12 @@
+import { DomainError } from '@shared/domain/domain-error';
+
 /**
- * Errores de dominio: son de negocio, no de transporte. No heredan de `HttpException`
- * ni conocen códigos HTTP — traducirlos a una respuesta es tarea del adaptador HTTP.
+ * Raíz de los errores de dominio de `users`: la que atrapa el `@Catch` de su filtro. Sin
+ * constructor propio: el protegido y el `name` de la clase concreta los pone `DomainError`, la
+ * base del kernel. Son errores de negocio, no de transporte: traducirlos a una respuesta es tarea
+ * del adaptador HTTP.
  */
-export abstract class UserDomainError extends Error {
-  protected constructor(message: string) {
-    super(message);
-    this.name = new.target.name;
-  }
-}
+export abstract class UserDomainError extends DomainError {}
 
 export class InvalidEmailError extends UserDomainError {
   constructor(readonly value: string) {

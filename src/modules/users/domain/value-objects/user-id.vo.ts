@@ -1,22 +1,20 @@
-import { randomUUID } from 'node:crypto';
-
-import { ValueObject } from '@shared/domain/value-object.base';
+import { UuidIdentifier } from '@shared/domain/uuid-identifier.base';
 
 import { InvalidUserIdError } from '../errors/user.errors';
 
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 /**
- * Identidad del agregado. Es un value object para que un `string` cualquiera no pueda
- * pasar por un id de usuario: el tipo obliga a construirlo por `from()` o `generate()`.
+ * Identidad del agregado. Es un value object para que un `string` cualquiera no pueda pasar por
+ * un id de usuario: el tipo obliga a construirlo por `from()` o `generate()`. La regex del uuid
+ * v4, el `randomUUID()`, la normalización a minúsculas y la marca nominal, que impide pasar un id
+ * de otra clase donde va este, los pone `UuidIdentifier`.
  */
-export class UserId extends ValueObject<string> {
+export class UserId extends UuidIdentifier<'UserId'> {
   static generate(): UserId {
-    return new UserId(randomUUID());
+    return new UserId(UuidIdentifier.newUuid());
   }
 
   static from(value: string): UserId {
-    if (!UUID_V4.test(value)) {
+    if (!UuidIdentifier.isUuidV4(value)) {
       throw new InvalidUserIdError(value);
     }
     return new UserId(value);

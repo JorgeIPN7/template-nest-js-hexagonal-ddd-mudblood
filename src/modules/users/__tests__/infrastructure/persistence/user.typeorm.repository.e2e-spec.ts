@@ -126,6 +126,31 @@ describe('UserTypeOrmRepository (e2e)', () => {
       );
       expect(rows[0]?.role).toBe('admin');
     });
+
+    /**
+     * El dominio es el dueño de `updatedAt`: el UPDATE escribe el valor de la entidad, nunca la
+     * hora de la base. El `rename` va con el MISMO instante con que nació el usuario, a propósito:
+     * con otro, `updatedAt` entraría en el diff y TypeORM escribiría el valor del dominio también
+     * con `@UpdateDateColumn`, así que el test no vería la regresión. El nombre prueba que hubo
+     * UPDATE.
+     */
+    it('debería guardar el updatedAt que fija el dominio aunque el UPDATE cambie otras columnas', async () => {
+      // Arrange
+      const user = buildUser('duena.fecha@example.com');
+      const bornAt = user.updatedAt;
+      await repository.save(user);
+      user.rename('Nombre Cambiado', bornAt);
+
+      // Act
+      await repository.save(user);
+
+      // Assert
+      const rows = await dataSource.query<{ name: string; updatedAt: Date }[]>(
+        'SELECT name, "updatedAt" FROM users WHERE id = $1',
+        [user.id.value],
+      );
+      expect(rows).toEqual([{ name: 'Nombre Cambiado', updatedAt: bornAt }]);
+    });
   });
 
   describe('findByEmail()', () => {

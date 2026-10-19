@@ -1,5 +1,12 @@
 import fc from 'fast-check';
 
+import { captureError } from '@test/helpers/capture-error';
+
+import {
+  InvalidEmailError,
+  InvalidUserIdError,
+  UserDomainError,
+} from '../../../domain/errors/user.errors';
 import { Email } from '../../../domain/value-objects/email.vo';
 import { User } from '../../../domain/entities/user.entity';
 import { UserId } from '../../../domain/value-objects/user-id.vo';
@@ -94,12 +101,46 @@ describe('UserMapper', () => {
       expect(UserMapper.toPersistence(user).email).not.toBe(row.email);
     });
 
-    it('debería rechazar una fila cuyo email no es válido', () => {
+    // Una fila corrupta es un fallo del servidor, no una entrada inválida del cliente: si el
+    // error de dominio saliera tal cual, el filtro de `users` respondería 400 con el dato dentro.
+    it('debería fallar cerrado ante una fila cuyo email el dominio rechaza', () => {
       // Arrange
       const row = buildRow({ email: 'sin-arroba' });
 
-      // Act + Assert
-      expect(() => UserMapper.toDomain(row)).toThrow();
+      // Act
+      const error = captureError(() => UserMapper.toDomain(row));
+
+      // Assert
+      expect(error.message).toBe(
+        `El usuario ${row.id} tiene datos que el dominio rechaza: "sin-arroba" is not a valid email address`,
+      );
+      expect(error).not.toBeInstanceOf(UserDomainError);
+      expect(error.cause).toBeInstanceOf(InvalidEmailError);
+    });
+
+    it('debería fallar cerrado ante una fila cuyo id no es un UUID v4', () => {
+      // Arrange: un UUID de versión 1, que la columna `uuid` admite y `UserId` no.
+      const row = buildRow({ id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301' });
+
+      // Act
+      const error = captureError(() => UserMapper.toDomain(row));
+
+      // Assert
+      expect(error.message).toBe(
+        'El usuario 3f2504e0-4f89-11d3-9a0c-0305e82c3301 tiene datos que el dominio rechaza: "3f2504e0-4f89-11d3-9a0c-0305e82c3301" is not a valid user id',
+      );
+      expect(error.cause).toBeInstanceOf(InvalidUserIdError);
+    });
+
+    it('debería relanzar intacto un error que no es de dominio', () => {
+      // Arrange: sin email, `Email.from` revienta con un TypeError al recortarlo.
+      const row = buildRow({ email: undefined });
+
+      // Act
+      const error = captureError(() => UserMapper.toDomain(row));
+
+      // Assert
+      expect(error).toBeInstanceOf(TypeError);
     });
   });
 

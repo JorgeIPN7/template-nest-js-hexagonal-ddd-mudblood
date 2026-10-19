@@ -1,3 +1,5 @@
+import { captureRejection } from '@test/helpers/capture-error';
+
 import { UsersFacadeImpl } from '../../application/users.facade';
 import { CreateUserUseCase } from '../../application/use-cases/create-user.use-case';
 import type { User } from '../../domain/entities/user.entity';
@@ -28,6 +30,7 @@ import { buildInactiveUser, buildUser, buildUserWithEmail } from '../helpers/use
  * | F13 | findByEmail    | Email malformado                         | `null` sin lanzar                                   |
  * | F14 | deleteProfile  | Id existente                             | Borra la fila                                       |
  * | F15 | deleteProfile  | Id inexistente o malformado              | No lanza y no borra nada                            |
+ * | F16 | createProfile  | Búsqueda previa con error no de dominio  | Lo relanza intacto, nunca `invalid-profile`         |
  */
 describe('UsersFacadeImpl', () => {
   describe('userExists()', () => {
@@ -181,6 +184,23 @@ describe('UsersFacadeImpl', () => {
       expect(user).not.toHaveProperty('toSnapshot');
       expect(user).not.toHaveProperty('passwordHash');
     });
+
+    // Es lo que hace que una fila corrupta dé un 500 del alta y no un `invalid-profile` con el
+    // dato de otra cuenta: el mapper la convierte en un `Error` plano, que no es de dominio.
+    it('debería propagar intacto un error que no es de dominio al crear el perfil, sin convertirlo en invalid-profile', async () => {
+      // Arrange
+      const failure = new Error('fila corrupta');
+      const repository = new FailingLookupUserRepository(failure);
+      const facade = new UsersFacadeImpl(repository, new CreateUserUseCase(repository));
+
+      // Act
+      const error = await captureRejection(
+        facade.createProfile({ email: 'perfil.nuevo@example.com', name: 'Perfil Nuevo' }),
+      );
+
+      // Assert
+      expect(error).toBe(failure);
+    });
   });
 
   describe('findByEmail()', () => {
@@ -257,3 +277,14 @@ const build = (seed: User[] = []) => {
   const repository = new InMemoryUserRepository(seed);
   return { repository, facade: new UsersFacadeImpl(repository, new CreateUserUseCase(repository)) };
 };
+
+/** Un repositorio cuya búsqueda por email falla como ante una fila corrupta: con un `Error` plano. */
+class FailingLookupUserRepository extends InMemoryUserRepository {
+  constructor(private readonly failure: Error) {
+    super();
+  }
+
+  findByEmail(): Promise<User | null> {
+    return Promise.reject(this.failure);
+  }
+}
