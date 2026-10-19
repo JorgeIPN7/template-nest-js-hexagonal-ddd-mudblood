@@ -2,8 +2,9 @@
 
 Este documento guarda el porqué, las mediciones, los ejemplos y la historia de las reglas de tres
 secciones de `CLAUDE.md`: [«Architecture rules»][claude-arch], [«Auth»][claude-auth] y
-[«Orders»][claude-orders]. La regla vigente está en [`CLAUDE.md`][claude]: si este documento y
-`CLAUDE.md` discrepan, gana `CLAUDE.md`.
+[«Orders»][claude-orders]. Guarda también la guía para
+[extraer un módulo a un servicio](#extraer-un-módulo-a-un-servicio). La regla vigente está en
+[`CLAUDE.md`][claude]: si este documento y `CLAUDE.md` discrepan, gana `CLAUDE.md`.
 
 ## Rutas que colisionan
 
@@ -135,12 +136,106 @@ HTTP.
 
 - **Validación.** El dominio impone sus invariantes mediante constructores y value objects.
 - **Dos modelos.** La entidad de dominio ([`user.entity.ts`][user-entity]) es una clase plana
-  con invariantes; la entidad ORM ([`user.orm-entity.ts`][user-orm-entity]) lleva los
-  decoradores de TypeORM. Un mapper es el único puente. No se decora la entidad de dominio con
-  `@Entity` para ahorrarse un archivo: eso acopla el dominio a la base de datos.
+  con invariantes, que extiende `Entity<UserId>` del kernel y sigue sin decoradores; la entidad
+  ORM ([`user.orm-entity.ts`][user-orm-entity]) lleva los decoradores de TypeORM. Un mapper es
+  el único puente. No se decora la entidad de dominio con `@Entity` para ahorrarse un archivo:
+  eso acopla el dominio a la base de datos.
 - **Errores de dominio.** El dominio lanza `UserNotFoundError`, y
-  [`infrastructure/http/user-domain-exception.filter.ts`][user-exception-filter] decide que es
-  un 404. `HttpException` no se importa nunca en `domain/` ni en `application/`.
+  [`infrastructure/http/users-domain-exception.filter.ts`][users-exception-filter] decide que es
+  un 404. Es una subclase de [`DomainExceptionFilter`][domain-exception-filter] que solo declara
+  su `@Catch(UserDomainError)` y su tabla `mappings`; lo que la tabla no mapea es el 400 de la
+  base. `HttpException` no se importa nunca en `domain/` ni en `application/`.
+
+## El contrato de módulo
+
+Regla ([CLAUDE.md, «Architecture rules»][claude-arch]): todo contexto hereda del kernel y cumple
+el contrato de módulo, y [`module-contract.spec.ts`][module-contract-spec] lo verifica en todo
+`src/modules/*` salvo la lista cerrada `FLAT_MODULES` (`health`). El objetivo es que un módulo
+nuevo sea fácil de crear y uno existente, fácil de reemplazar: los tres contextos tienen la misma
+forma, así que lo que se aprende en uno vale en los demás.
+
+### Las tres piezas
+
+- **El kernel**, [`src/shared/domain/`][shared-domain]: `DomainError` (constructor protegido y
+  `name` de la clase concreta), `Entity<TId>` (`id`, `createdAt`, `updatedAt`, `touch(now)` e
+  igualdad por clase e id), `AggregateRoot<TId, TEvent>` (una `Entity` que recolecta eventos),
+  `ValueObject<T>` y `UuidIdentifier<TBrand>` (un id uuid v4 con marca nominal).
+- **Las bases de `common/`**: [`DomainExceptionFilter`][domain-exception-filter], una tabla de
+  mapeo sobre la que cada contexto pone su `@Catch`; [`failClosed`][fail-closed], que convierte
+  en un 500 la fila corrupta que un mapper no puede reconstruir; y `buildRequestMetaExample`, la
+  fuente única de los literales de los ejemplos OpenAPI.
+- **El test**: [`module-contract.spec.ts`][module-contract-spec] y su checker
+  [`module-contract-checker.ts`][module-contract-checker], una función pura sobre
+  `{ ruta → fuente }` que usa la API de TypeScript sin type-check. Las bases se resuelven por los
+  imports de cada archivo: las del kernel tienen que venir de `@shared/domain/*` y la del filtro
+  de `@common/*`, así que un `class DomainError extends Error {}` escrito a mano no lo engaña.
+
+**El kernel vive en `src/shared/domain/`** porque es el único elemento de la matriz de fronteras
+que pueden importar las tres capas de un módulo. Un `src/core/` caería en el elemento `app`, que
+ningún módulo puede importar, y habría que abrir la matriz. **`common/` no importa el kernel**:
+la matriz solo le deja importar `common` y `config`. Por eso `DomainExceptionFilter` es genérico
+sobre `Error` y no sobre `DomainError`, y `failClosed` recibe un predicado (`isDomainError`) en
+vez de una clase; un tipo `abstract new (...)` rechazaría además las clases con constructor
+protegido (`TS2345`).
+
+### El porqué de cada clave
+
+| Clave                 | Por qué                                                                                                                                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `structure`           | Sin el module file o sin alguna de las cuatro carpetas, el contexto no se copia ni se reemplaza por capas. Las demás claves asumen las carpetas, así que un contexto que falla esta no recibe el resto                                   |
+| `errors`              | Una sola raíz abstracta sobre `DomainError` es lo que atrapa el `@Catch` del filtro: un error que no descienda de ella escaparía al filtro y llegaría como 500                                                                           |
+| `filter`              | El filtro se busca por su nombre y lleva `@Catch(<raíz>)` con un solo argumento: sin él, o con `@Catch()`, lo atrapa todo y en las rutas de su controller convierte en 400 el 401 del guard JWT, el 403 de roles, el 408 y el 429        |
+| `controller-filter`   | Un controller sin `@UseFilters(<filtro del contexto>)` deja pasar los errores de dominio al filtro global, que los responde como 500                                                                                                     |
+| `entities`            | El constructor `private` obliga a pasar por la factoría de creación o por `rehydrate`; `rehydrate` y `toSnapshot()` son los dos lados del mapper. La base no puede exigirlos porque un tipo no puede exigir un miembro `static`          |
+| `value-objects`       | Sin constructor público, el único camino es `from()`, que valida. La marca de un `UuidIdentifier` es el nombre de su clase: un id que copiara la marca de otro volvería a ser intercambiable con él                                      |
+| `use-cases`           | Un solo `execute(input: <X>Input)` por archivo, con los nombres emparejados, es la forma que esperan controllers y tests. Una dependencia pública del constructor sería una segunda superficie hacia el repositorio, fuera de la regla 6 |
+| `suffixes`            | Las demás claves encuentran cada pieza por su sufijo (`.entity.ts`, `.vo.ts`, `.errors.ts`, `.use-case.ts`): un archivo sin él quedaría fuera de toda comprobación                                                                       |
+| `orm-relations`       | Un decorador de relación generaría una clave foránea en la siguiente migración y ataría el contexto a la tabla de otro, y los contextos tienen que poder dejar de compartir base                                                         |
+| `orm-managed-columns` | El dominio es el dueño de las fechas y de la versión: un `UpdateDateColumn` taparía un `touch()` olvidado, y un `VersionColumn` incrementaría la versión sin comprobar nada                                                              |
+
+### Lo que el análisis sintáctico no ve
+
+El checker lee el código sin compilarlo. Lo que sigue queda a cargo de los tests de cada contexto
+y de la revisión:
+
+- **los tipos**: comprueba que una clase extienda el nombre importado de la ruta correcta, no el
+  tipo que resulta;
+- **que una entidad redeclare `id`, `createdAt` o `updatedAt` como parameter property**: un campo
+  redeclarado no compila (`TS2612`, `TS2610` o `TS2415`), pero la parameter property compila sin
+  aviso con TS 6.0.3 y deja dos fuentes de verdad;
+- **que se llame a `touch(now)`**, y que sea después de la guarda de no-op: lo fijan los specs de
+  cada entidad;
+- **que los mappers usen `failClosed`**. `auth` no lo usa a propósito: su filtro ya convierte
+  `InvalidCredentialIdError` en un 500 con el cuerpo genérico, y con `failClosed` el mensaje se
+  vería en el cuerpo en development y test;
+- **la semántica de la tabla del filtro**: qué error va a qué status y en qué orden (gana la
+  primera coincidencia) lo fijan los specs de cada filtro;
+- **y dos límites del propio contrato**: la exención es de todo o nada (`FLAT_MODULES`), y
+  `filter` exige un filtro incluso a un contexto sin controllers.
+
+### Cómo se prueba
+
+En tres capas, descritas en
+[`docs/testing.md`](testing.md#guardas-de-arquitectura-detector-árbol-y-rotura-puntual):
+
+- **el detector**: un contexto sintético `billing` que cumple el contrato, y una fila por regla
+  que rompe solo esa regla y compara con igualdad exacta, así que una regla que se disparara de
+  más también la pone en rojo;
+- **el árbol**: el repo real, con `toEqual([])`, más una fila de no vacuidad que exige al menos
+  un contexto descubierto sin nombrar los de ejemplo;
+- **la rotura puntual**: romper un módulo real a mano y ver la fila árbol en rojo demuestra que
+  lee el repo de verdad.
+
+### La historia
+
+Al escribir el test, el contrato fallaba en diez líneas: tres raíces de errores sobre `Error`,
+tres filtros (uno, el de `users`, por el nombre del archivo), dos entidades (`User` y
+`Credential`) y dos entidades ORM con `CreateDateColumn`/`UpdateDateColumn`. La fila árbol nació
+comparando con igualdad exacta contra una constante, `PENDING_VIOLATIONS`, con esas diez líneas:
+la suite no se quedó en rojo mientras se arreglaban, y una violación arreglada sin quitarla de la
+lista también la ponía en rojo. Cada contexto (`users`, `orders` y `auth`, por ese orden) empezó
+quitando sus líneas de la lista, con la fila en rojo por aserción, y terminó en verde. Con `auth`
+la lista quedó vacía, la fila pasó a `toEqual([])` y la constante desapareció.
 
 ## Auth
 
@@ -414,7 +509,8 @@ esperando en `pg_blocking_pids` y solo entonces el rival hace commit; repite el 
 través de una conexión cuyo valor por defecto es SERIALIZABLE.
 
 **El mapper falla cerrado.** Un `status` desconocido, un status que no concuerda con
-`cancelled_at` o una `version` menor que 1 lanzan al leer.
+`cancelled_at` o una `version` menor que 1 lanzan al leer. Lo hace con
+[`failClosed`][fail-closed], como `users`, y conserva su mensaje exacto.
 
 **`cancelledAt` se omite.** En un pedido `placed`, `cancelledAt` se **omite**, no vale `null`:
 una elección de diseño, no una restricción. Medido con el Ajv del guard de contrato (8.20.0):
@@ -432,6 +528,25 @@ puede importar `database`, la misma razón por la que el seed vive ahí): public
 pendientes (hoy, un log estructurado) y las marca, con semántica at-least-once (al menos una vez).
 Cuando llegue BullMQ (Tier 2), solo cambia el publicador.
 
+## Extraer un módulo a un servicio
+
+El contrato de módulo deja preparada la costura para sacar un contexto a un servicio aparte. El
+camino tiene cinco pasos:
+
+1. **La puerta ajena se sustituye por un adaptador HTTP o RPC** detrás del puerto que el
+   consumidor ya tiene (`CustomerDirectory` en `orders`, `UserDirectory` en `auth`), sin tocar
+   su dominio ni su aplicación. Los ids ajenos ya viajan como `string`, porque ningún módulo puede
+   importar el id de otro.
+2. **Las tablas se van con el módulo.** No hay claves foráneas, y está verificado: lo comprueban
+   `migration-conventions.spec.ts` en las migraciones y la clave `orm-relations` del contrato en
+   las entidades ORM, que ya están separadas por módulo. Las migraciones se separan.
+3. **El relay del outbox pasa a publicar en un broker**, en lugar del log estructurado de hoy.
+4. **Con HS256, cada servicio necesitaría el secreto** para verificar los tokens. Pasar a
+   RS256/JWKS, para que solo `auth` firme, es otro cambio.
+5. **`common/` pasa a ser un paquete compartido**, con las bases que hoy importan los contextos.
+
+Nada de esto está hecho: es la guía para cuando haga falta, no una tarea pendiente.
+
 [claude]: ../CLAUDE.md
 [claude-arch]: ../CLAUDE.md#architecture-rules
 [claude-auth]: ../CLAUDE.md#auth
@@ -447,7 +562,12 @@ Cuando llegue BullMQ (Tier 2), solo cambia el publicador.
 [users-facade]: ../src/modules/users/application/users.facade.ts
 [user-entity]: ../src/modules/users/domain/entities/user.entity.ts
 [user-orm-entity]: ../src/modules/users/infrastructure/persistence/user.orm-entity.ts
-[user-exception-filter]: ../src/modules/users/infrastructure/http/user-domain-exception.filter.ts
+[users-exception-filter]: ../src/modules/users/infrastructure/http/users-domain-exception.filter.ts
+[domain-exception-filter]: ../src/common/filters/domain-exception.filter.ts
+[fail-closed]: ../src/common/persistence/fail-closed.ts
+[shared-domain]: ../src/shared/domain/
+[module-contract-spec]: ../src/__tests__/module-contract.spec.ts
+[module-contract-checker]: ../src/__tests__/helpers/module-contract-checker.ts
 [auth-dir]: ../src/modules/auth/
 [auth-config]: ../src/config/auth.config.ts
 [users-module]: ../src/modules/users/users.module.ts

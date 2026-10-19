@@ -34,6 +34,52 @@ PostgreSQL a través de TypeORM: la configuración vive en
   convierte el `23505` de PostgreSQL en `EmailAlreadyTakenError`, así que una inserción
   concurrente sale como 409 y no como 500. La comprobación previa del handler es una cortesía, no
   la defensa.
+- **Cero claves foráneas, y está verificado.** Los contextos tienen que poder dejar de compartir
+  base, así que ninguna tabla referencia a otra.
+  [`migration-conventions.spec.ts`](../src/database/__tests__/migration-conventions.spec.ts)
+  (`describe('sin claves foráneas')`) recorre todas las migraciones y busca `FOREIGN KEY` o
+  `REFERENCES` en los literales SQL, aunque estén partidos en dos líneas, y `createForeignKey`,
+  `TableForeignKey` o `foreignKeys:` en la API de esquema. Los comentarios de TypeScript no
+  cuentan, pero un comentario SQL dentro de una consulta sí: falla en cerrado. En las entidades
+  ORM lo prohíbe la clave `orm-relations` del test de contrato de módulo, que veta los
+  decoradores de relación (`ManyToOne`, `JoinColumn`…).
+
+### El dominio es el dueño de las fechas
+
+Regla (`CLAUDE.md`, «Database»): una columna de fecha es
+`@Column({ type: 'timestamptz', default: () => 'now()' })`, y ninguna entidad ORM usa
+`CreateDateColumn`, `UpdateDateColumn`, `DeleteDateColumn` ni `VersionColumn`, las columnas que
+TypeORM rellena por su cuenta. La skill de referencia `nestjs-best-practices` enseña
+`@CreateDateColumn`; aquí manda la regla de `CLAUDE.md`.
+
+- **Por qué.** El dominio sella `createdAt` al crear y mueve `updatedAt` con `touch(now)` en cada
+  método de intención. Con un `UpdateDateColumn`, si el dominio no movió la fecha pero sí otra
+  columna, TypeORM añade `"updatedAt" = CURRENT_TIMESTAMP` a todo UPDATE (TypeORM 1.1.2,
+  `query-builder/UpdateQueryBuilder.js:442-445`), y eso taparía un `touch()` olvidado: la fecha
+  se movería igual y ningún test lo vería. Un `VersionColumn` tiene el mismo defecto con la
+  versión: la incrementaría sin comprobar nada.
+- **El cambio no genera diferencias de esquema.** Para PostgreSQL, el `DEFAULT now()` de
+  `@CreateDateColumn` y el de `@Column({ default: () => 'now()' })` se comparan igual
+  (`driver/postgres/PostgresDriver.js:914-958`), y `pnpm migration:generate … --check` lo
+  confirmó antes y después de cambiar las entidades.
+- **Sus guardas.** La clave `orm-managed-columns` del test de contrato veta los cuatro
+  decoradores; el E2E del repositorio de `users` renombra un usuario con su propio instante de
+  creación y comprueba que el UPDATE guarda ese `updatedAt` y no la hora de la base; y el paso «Schema drift» de la CI rompe el build si
+  las entidades y el esquema migrado dejan de coincidir.
+
+### Nombres de columna
+
+Hoy conviven dos convenciones, y ninguna está mal en sí misma:
+
+- `users` y `auth_credentials` usan camelCase entre comillas (`"createdAt"`, `"updatedAt"`):
+  no hay `NamingStrategy`, así que TypeORM usa el nombre de la propiedad tal cual
+  ([`1786210289581-move-credentials-to-auth-expand.ts`](../src/database/migrations/1786210289581-move-credentials-to-auth-expand.ts)
+  lo explica en su cabecera).
+- `orders` y `orders_outbox` usan snake_case (`created_at`, `customer_id`), con `name:`
+  explícito en cada `@Column`.
+
+Unificarlo es la entrada #39 del [backlog](backlog.md): los renombrados son destructivos, así que
+irían en expand/contract.
 
 ## Expand/contract: el ejemplo trabajado
 
@@ -63,6 +109,24 @@ reales:
 Fue **una sola** migración hasta el 2026-08-08 y se partió a posteriori (backlog #12): un
 template no puede publicar una regla que su único ejemplo incumple, y partirla salió gratis
 porque nunca se había desplegado en ningún sitio.
+
+**La misma excepción, una segunda vez:
+[`1786076763455-create-orders-and-outbox.ts`](../src/database/migrations/1786076763455-create-orders-and-outbox.ts)
+se reescribió el 2026-10-17** en lugar de añadir un par expand/contract.
+
+- **Qué cambió.** `placed_at` pasó a `created_at` y `updated_at`, las dos
+  `timestamptz NOT NULL DEFAULT now()`: las fechas que el kernel da a toda entidad. `placed_at`
+  siempre valía lo mismo que la creación, porque colocar un pedido es crearlo.
+- **Por qué se pudo.** El template no está desplegado en ningún sitio, la misma razón que
+  permitió partir la de credenciales.
+- **Qué cuesta.** Toda base existente necesita `pnpm db:reset`, que borra los datos locales y
+  migra las dos bases, y después `pnpm seed:admin` si hace falta el admin. Sin el reset, TypeORM
+  da la migración por aplicada y toda consulta de `orders` falla con un error de columna
+  inexistente (`42703`) sobre `created_at`; el texto exacto depende de la sentencia, porque
+  TypeORM pone alias a las columnas en los `SELECT`.
+- **Dónde consta.** La cabecera de la migración dice que se reescribió y por qué, y remite aquí.
+- **El límite.** En cuanto el template esté desplegado en cualquier sitio, se acaban las
+  reescrituras: toda migración ya aplicada se cambia con expand/contract.
 
 ### El `DROP NOT NULL` del expand es parte del patrón
 

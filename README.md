@@ -300,6 +300,8 @@ Merece la pena leerlo: casi todos los tropiezos de la primera vez están aquí.
 
 **`relation "auth_credentials" does not exist` en `pnpm test:e2e`** — Falta `pnpm db:migrate:test`. Es la base de tests, no la de desarrollo, y no es un fallo del código: nadie le aplicó las migraciones. Lo mismo si aparece tras generar una migración nueva.
 
+**Error de columna inexistente (`42703`) que nombra `created_at` en una consulta de `orders`** — Tu base tiene la versión anterior de la migración `1786076763455`, que se reescribió (ver [`docs/database.md`](docs/database.md)). El texto exacto depende de la sentencia, porque TypeORM pone alias a las columnas en los `SELECT`. Se arregla con `pnpm db:reset`, que **borra los datos locales**, y después `pnpm seed:admin` si necesitas el admin.
+
 **`husky - .git can't be found`** — Descargaste el proyecto como ZIP. La instalación termina bien, pero los hooks de Git no quedan instalados: los commits no se validarán.
 
 **Los logs salen como JSON en una sola línea** — Es el comportamiento por defecto. Pon `LOG_PRETTY=true` en tu `.env` para leerlos cómodamente en desarrollo.
@@ -329,7 +331,8 @@ Para cada módulo que quites:
 5. Si era `orders`, quita también `pnpm outbox:relay` de `package.json` y `src/database/outbox/`.
 6. Revisa las secciones que lo describen en este README, en [`CLAUDE.md`](CLAUDE.md) y en [`docs/`](docs/) (`architecture.md`, `database.md`, `api-contract.md`, `testing.md`).
 7. **Vuelve a medir la mutación.** `stryker.config.mjs` apunta por globs, así que no hay que editarlo, pero el umbral `break: 85` está calibrado sobre el peso en mutantes de los módulos actuales: quitar uno mueve el score global. Corre `pnpm test:mutation` y ajusta el umbral con el número nuevo, no a ojo.
-8. Definition of Done completo: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`.
+8. **El test de contrato de módulo no se edita.** `src/__tests__/module-contract.spec.ts` descubre todo `src/modules/*` salvo la lista cerrada `FLAT_MODULES` (`health`). Si quitas los tres contextos, su fila de descubrimiento se pone roja hasta que exista uno propio, y lo mismo la fila «debería tener al menos una migración que revisar» de `src/database/__tests__/migration-conventions.spec.ts`, porque el paso 3 borra todas las migraciones; un módulo plano nuevo entra en `FLAT_MODULES` con su porqué.
+9. Definition of Done completo: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`.
 
 <!-- template-only:end -->
 
@@ -419,9 +422,10 @@ src/
 ├── main.ts                     # Bootstrap: helmet, compression, CORS, pipes, filtros, docs, shutdown
 ├── app.module.ts               # Módulo raíz
 ├── bootstrap/openapi.ts        # Documento OpenAPI + montaje de Scalar
-├── common/                     # Cross-cutting: decorators, dto, filters, interceptors, logger
+├── common/                     # Cross-cutting: decorators, dto, filters (y su base DomainExceptionFilter), interceptors, logger, persistence (failClosed)
 ├── config/                     # Namespaces tipados validados con Zod (app, cors, database, log, …)
 ├── database/                   # DataSource, opciones de TypeORM, migraciones, seeds y outbox
+├── shared/domain/              # Kernel: DomainError, Entity, AggregateRoot, UuidIdentifier, ValueObject
 └── modules/
     ├── health/                 # /health, /health/liveness, /health/readiness
     ├── auth/                   # Credenciales y tokens: /auth/register, /auth/login
@@ -437,7 +441,7 @@ src/
         │   └── users.facade.ts # Puerta pública del contexto (no es un caso de uso)
         ├── infrastructure/     # Única capa que toca librerías externas
         │   ├── persistence/    # orm-entity, mapper, repositorio TypeORM
-        │   └── http/           # controller, dto, filtro de errores de dominio
+        │   └── http/           # controller, dto, users-domain-exception.filter.ts
         ├── __tests__/          # Réplica exacta de la estructura de arriba
         └── users.module.ts     # Composition root: une puerto ↔ adaptador
 ```
@@ -448,7 +452,7 @@ src/
 - **Dos modelos, nunca uno.** La entidad de dominio es una clase plana con invariantes; la entidad ORM lleva los decoradores. Un mapper es el único puente.
 - **Los puertos son `abstract class`**, no `type` + token `Symbol`: una clase sobrevive a la compilación, así que la MISMA referencia es el contrato y el token de inyección, y ningún consumidor necesita `@Inject`. El adaptador hace `implements`, nunca `extends`.
 - **⚠️ Nunca `import type` un puerto en un archivo con decoradores.** La referencia se borra del emit y Nest falla **en runtime** con `lint:check` y `typecheck` en verde. `eslint.config.mjs` lo prohíbe bajo `application/` e `infrastructure/`.
-- **Los errores de dominio no son errores HTTP.** El dominio lanza `UserNotFoundError`; un filtro decide que eso es un 404. Traducir los errores del driver también es del adaptador: el `23505` de PostgreSQL se convierte en `EmailAlreadyTakenError`, para que una colisión concurrente salga como 409 y no 500.
+- **Los errores de dominio no son errores HTTP.** El dominio lanza `UserNotFoundError`; el filtro del contexto decide que eso es un 404. Hay uno por contexto (`users-domain-exception.filter.ts`), una subclase de la base `DomainExceptionFilter` que solo declara su tabla de mapeo. Traducir los errores del driver también es del adaptador: el `23505` de PostgreSQL se convierte en `EmailAlreadyTakenError`, para que una colisión concurrente salga como 409 y no 500.
 - **La validación de entrada vive en los DTOs HTTP**, no en las entidades.
 - **Sin barreles.** No hay `index.ts` en `src/`: cada import apunta al archivo concreto y, entre módulos, solo el `*.module.ts` es importable. Las 6 reglas de frontera viven en `eslint.boundaries.js` y tienen su propia suite; la 6 impide que un adaptador HTTP toque el repositorio.
 - **De un paquete `@nestjs/*` solo se importa la raíz.** El mapa `exports` de Nest 12 deja resolubles hoy subrutas como `@nestjs/common/constants.js` o `@nestjs/common/internal`, pero un patch puede cerrarlas (`@nestjs/swagger` lo hizo en 11.4.3). `eslint.config.mjs` prohíbe toda subruta, `import type` incluido. Las claves de metadatos viven copiadas en `src/common/nest-metadata.constants.ts`, y un tipo que la raíz no exporta se deriva de uno que sí, como `CorsConfig`.
@@ -469,7 +473,7 @@ La dirección es siempre de una vía: `auth → users`, `orders → users`. Si `
 | `@shared/*`   | `src/shared/*`   |
 | `@test/*`     | `test/*`         |
 
-Declarados en `tsconfig.json`, `.swcrc` y `jest.config.mjs`. La config E2E hereda de esta última, así que **solo hay tres sitios que mantener en sincronía**, no cuatro.
+Declarados en `tsconfig.json`, `.swcrc`, `jest.config.mjs` y `scripts/mutation-targets.mjs`, con el que `pnpm test:mutation:changed` resuelve qué specs importan un helper. La config E2E hereda de `jest.config.mjs`, así que **hay cuatro sitios que mantener en sincronía**.
 
 **Dentro de un módulo, importa con rutas relativas** (`../../domain/user.entity`), no con alias: así el módulo se puede mover completo sin tocar imports.
 
@@ -711,6 +715,7 @@ Cada punto es un fallo que ya ocurrió aquí y que ya no puede volver a ocurrir.
 - **Los secretos no llegan a los logs:** `redact` tapa `authorization`, `cookie`, `*.password`, `*.token`, `*.apiKey` antes de escribir.
 - **La CSP también corre en desarrollo**, así que lo que rompa, rompe en local y no al desplegar.
 - **`styleSrc` lleva `'unsafe-inline'` sin nonce, a propósito.** En CSP Level 3 un nonce hace que `'unsafe-inline'` se **ignore**, y Scalar emite atributos `style="…"` que ningún nonce autoriza: "arreglarlo" por simetría daría una página sin errores de JS y con el layout destrozado.
+- **Una fila corrupta ya no publica su valor en un 400.** Un dato que el dominio rechaza al leerlo es un fallo del servidor, no una entrada inválida: el mapper lo convierte en un 500 con `failClosed`, y en producción el cuerpo es el genérico.
 
 **Operación**
 
@@ -718,6 +723,7 @@ Cada punto es un fallo que ya ocurrió aquí y que ya no puede volver a ocurrir.
 - **Los health checks no ensucian los logs** ni consumen cuota del rate limiter, y **`isHealthPath` no muerde `/api/healthcare`**: compara segmentos completos, no substrings.
 - **Los errores del driver se traducen en el adaptador:** el `23505` sale como 409, no como 500.
 - **Cada endpoint está documentado, y el build lo verifica.** `openapi-contract.e2e-spec.ts` recorre el documento OpenAPI y rompe el build si falta un `operationId`, una `description`, un ejemplo o un código de error. **También al revés**: declarar un 400 en un endpoint que no acepta ni parámetros ni body falla igual. Las reglas exactas están en [`CLAUDE.md`](./CLAUDE.md#endpoint-documentation--mandatory-and-verified); `UsersController` es la implementación de referencia.
+- **Cada contexto tiene la misma forma, y un test lo verifica.** `module-contract.spec.ts` comprueba en todo `src/modules/*` que hereda del kernel de `src/shared/domain/`, que su filtro extiende la base común y que sus entidades ORM no tienen relaciones ni fechas que rellene TypeORM. Un módulo nuevo entra solo: no hay que registrarlo en ningún sitio.
 
 ---
 

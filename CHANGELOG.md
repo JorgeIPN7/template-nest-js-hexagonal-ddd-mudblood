@@ -109,6 +109,50 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **Contrato base de módulo: un kernel compartido y un test que verifica la forma de cada
+  contexto** (2026-10-19). `users`, `orders` y `auth` heredan de las mismas bases, para que un
+  módulo nuevo sea fácil de crear y uno existente, fácil de reemplazar.
+  - **Lo que entra.** El kernel de `src/shared/domain/` gana `DomainError`, `Entity<TId>` (`id`,
+    `createdAt`, `updatedAt` y `touch(now)`) y `UuidIdentifier<TBrand>`, un id con marca nominal;
+    `AggregateRoot<TId, TEvent>` pasa a extender `Entity`. `src/common/` gana
+    `DomainExceptionFilter` (cada contexto declara solo su tabla de mapeo y su `@Catch`),
+    `failClosed` para los mappers y la fuente única de los literales de los ejemplos OpenAPI
+    (`buildRequestMetaExample`). Los tres contextos pasan al contrato; el filtro de `users` se
+    renombra a `users-domain-exception.filter.ts` (`UsersDomainExceptionFilter`), y `auth` gana
+    `CredentialId` e `InvalidCredentialIdError`.
+  - **Las guardas.** `src/__tests__/module-contract.spec.ts` verifica diez claves en todo
+    `src/modules/*` salvo `health`; `migration-conventions.spec.ts` exige cero claves foráneas
+    en las migraciones, y la CI gana el paso «Schema drift», que rompe el build si las entidades
+    y el esquema migrado no coinciden.
+  - **⚠️ Cambio incompatible en la API de `orders`.** `POST /orders` (201) y
+    `POST /orders/:id/cancel` (200) publican `createdAt` y `updatedAt` en lugar de `placedAt`:
+    colocar un pedido es crearlo, así que `placedAt` siempre valía lo mismo que la creación. Hoy
+    no lo consume nadie.
+  - **⚠️ Toda base existente necesita `pnpm db:reset` y después `pnpm seed:admin`.** La migración
+    `1786076763455-create-orders-and-outbox.ts` se reescribió (`created_at` y `updated_at` en
+    lugar de `placed_at`), porque el template no está desplegado en ningún sitio. Sin el reset,
+    TypeORM la da por aplicada y las consultas de `orders` fallan con un error de columna
+    inexistente (`42703`) sobre `created_at`.
+  - **Las filas corruptas de `users` pasan de 400 a 500**, en `GET /users`, `GET /users/:id` y
+    `DELETE /users/:id` y en la comprobación previa de `POST /auth/register`. Antes el 400
+    publicaba el valor corrupto; ahora es un fallo del servidor con el cuerpo genérico en
+    producción. Ningún cliente puede provocarlo ni dependía del 400.
+  - **El login con una credencial cuyo id no es un uuid v4 pasa de 200/401 a un 500 saneado.**
+    Solo se alcanza con SQL externo: todo id que escribe el sistema es v4 (el alta, el seed y la
+    migración de credenciales). Una carga externa con ids de otra versión (v1, v7) deja esas
+    cuentas sin poder entrar hasta renovarles el id; `pnpm seed:admin` lo hace con el del admin,
+    y para el resto basta `UPDATE auth_credentials SET id = gen_random_uuid()` sobre esas filas,
+    porque nada referencia ese id.
+  - **`pnpm seed:admin` renueva también el id de la credencial del admin** con uno v4 en cada
+    promoción, lo que rescata una credencial con un id que el login rechaza. Es seguro: nada
+    referencia ese id.
+  - **El ejemplo OpenAPI del `timestamp` de `RequestMetaDto`** usa el literal común. Es el único
+    literal de ejemplo que cambia; aparte, los esquemas y ejemplos de `orders` cambian por el
+    punto de la API de arriba.
+  - **Lo que queda fuera**, con su decisión en el backlog: `errorCode` (#37), el generador
+    `pnpm module:new` (#38) y unificar los nombres de columna (#39).
+  - Spec en `docs/specs/2026-10-17-module-contract-kernel-design.md`; plan en
+    `docs/plans/2026-10-17-module-contract-kernel.md`.
 - **`CLAUDE.md`, de 64 510 a 35 408 bytes: cada regla en una línea, con su porqué y, donde el largo salió, un enlace**
   (2026-10-16, backlog #32). La historia, las mediciones y los ejemplos trabajados pasan a cinco
   documentos nuevos en `docs/` —`toolchain.md`, `architecture.md`, `api-contract.md`, `database.md`

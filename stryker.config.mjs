@@ -209,6 +209,59 @@
  * El umbral se queda en `break: 85`: hacen falta ≥284 detectados (85 % de 333), así que caben 38
  * kills perdidos antes del rojo. Subirlo sigue aplazado hasta que los 11 supervivientes tengan casos
  * aprobados.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Remedición del 2026-10-19 (contrato base de módulo: el kernel gana `DomainError`, `Entity` y
+ * `UuidIdentifier`, y `users`, `orders` y `auth` pasan al contrato). Cambia el código que muta el
+ * scope en los cuatro módulos, que es el evento que esta cabecera manda remedir. Medido con
+ * `pnpm test:mutation --concurrency 6` y la máquina sin otra carga: con la concurrencia por
+ * defecto (11 workers de ~1,8 GB) la corrida se quedó sin memoria y no terminó. Copiado de la
+ * salida de Stryker: **99.15 %** global — 346 killed, 6 timeout, 3 survived, 0 sin cobertura,
+ * 5 error (352/355).
+ *
+ *     auth     100.00 %   57/57     ( 57 válidos, 16.1 % del censo)
+ *     users     99.33 %  149/150    (150 válidos, 42.3 %)
+ *     orders    97.78 %   88/90     ( 90 válidos, 25.4 %)
+ *     shared   100.00 %   58/58     ( 58 válidos, 16.3 %)
+ *
+ * Los supervivientes bajan de 11 a 3:
+ *
+ * - `users.facade.ts` pasa de 5 a 0. Uno ya había muerto antes de esta remedición (la primera
+ *   pasada de `test:mutation:changed` de hoy daba 4); por el diff, lo mata el caso de la Task 7
+ *   que fija que una búsqueda previa con un error que no es de dominio se relanza. Otro lo mata un
+ *   caso nuevo: un email malformado no llega a consultar el repositorio, cuyo fake en memoria
+ *   tapaba el `catch` vacío. Los otros tres son equivalentes y van marcados con `Stryker disable`: el `if (true)` de los dos
+ *   `catch` (`Email.from` y `UserId.from` solo lanzan su propio error) y el `catch` vacío de
+ *   `parseUserId`, que devuelve `undefined` y sus llamadores tratan como `null`. La directiva
+ *   excluye también el `if (false)` de esas dos líneas, que sí muere: por eso hay 2 válidos menos
+ *   de los que quita la equivalencia.
+ * - `user-id.vo.ts` pasa de 2 a 0: la regex se fue a `uuid-identifier.base.ts`, donde los casos
+ *   del kernel matan sus anclas.
+ * - `user.errors.ts` (1) y `order.errors.ts` (1) pasan a 0: sus specs fijan ya cada mensaje.
+ * - Siguen `order-concept.vo.ts` 1 (`> 140` → `>= 140`) y `order-amount.vo.ts` 1 (el tope).
+ * - **Aparece `email.vo.ts` 1**, el `$` de la regex: ningún caso fijo lleva texto válido seguido
+ *   de algo más (`user@example.com@otro`). El 2026-10-01 estaba muerto. Hipótesis, sin medir: lo
+ *   mataba por azar una fila de propiedad, y las propiedades nuevas de este cambio desplazaron la
+ *   secuencia de la semilla fija (`test/stryker-setup.ts`). Este cambio no tocó ese archivo.
+ *
+ * El censo crece en 22 válidos (333 → 355). Por módulo, los conteos están medidos y el reparto
+ * sale de leer el diff, no de comparar mutante a mutante: `shared` gana 35 con las tres bases
+ * nuevas; `users` pierde 13 y `orders` 10, porque la regex y el `randomUUID()` de `UserId` y
+ * `OrderId` pasan a `UuidIdentifier`, el `this.name = new.target.name` de sus raíces pasa a
+ * `DomainError`, `placedAt` desaparece y la fachada deja 5 ignorados; `auth` gana 10 con
+ * `CredentialId` e `InvalidCredentialIdError`. Los timeouts bajan de 34 a 6 por la concurrencia
+ * menor: es la familia sensible a la carga de arriba.
+ *
+ * El umbral se queda en `break: 85`: hacen falta ≥302 detectados (85 % de 355), así que caben 50
+ * kills perdidos antes del rojo. Para tumbar el global él solo:
+ *
+ * - `users` tendría que caer de 99.33 % a ~65 %;
+ * - `orders`, de 97.78 % a ~41 %;
+ * - `shared`, a ~12 %;
+ * - `auth`, a ~11 %.
+ *
+ * Subirlo sigue aplazado hasta que los 3 supervivientes tengan casos aprobados.
  */
 import unitJestConfig from './jest.config.mjs';
 

@@ -810,7 +810,8 @@ type `shared` en dos y añadió la policy `shared-domain → shared-domain` —n
 `aggregate-root.ts` importa `value-object.base.ts`— pero no reabrió `shared → shared-domain`. La
 policy `from: shared` sigue permitiendo solo `to: shared`, y como `shared-domain` se clasifica
 ANTES, un archivo de `src/shared/` que importara del kernel caería en `default: 'disallow'`. Impacto
-hoy: **cero**. `src/shared/` no contiene nada fuera de `domain/` salvo un `.gitkeep`. Y el día que
+hoy: **cero**. `src/shared/` solo contiene `domain/` y su `__tests__/` (comprobado el 2026-10-19:
+no hay ningún `.gitkeep`). Y el día que
 alguien añada algo, el fallo es ruidoso —lint rojo con el mensaje de frontera violada—, no
 silencioso. Tampoco hay caso en la suite: los cuatro casos de la Tabla K cubren
 `domain → shared-domain`, `shared-domain → shared-domain` y las dos prohibiciones, ninguno el origen
@@ -824,8 +825,12 @@ mientras que los builtins llegan como `origin: 'core'` y los cubre la policy bas
 bloque. **No es una regresión:** el hueco es idéntico en `module-domain` y ya existía antes del
 refactor; la enmienda replicó la lista tal cual, que era lo correcto —divergir habría creado dos
 definiciones de pureza—. El delta honesto es el **radio**: una fuga en el kernel contamina los tres
-contextos a la vez, no uno. Compensado porque el kernel son dos archivos y ningún import nuevo entra
-ahí sin que alguien lo escriba a mano.
+contextos a la vez, no uno. Compensado porque el kernel es pequeño y ningún import nuevo entra
+ahí sin que alguien lo escriba a mano. **Actualización del 2026-10-19:** el contrato de módulo
+llevó el kernel de dos archivos a cinco (`DomainError`, `Entity`, `UuidIdentifier`, más
+`AggregateRoot` y `ValueObject`), y uno importa un builtin: `node:crypto`, en
+`uuid-identifier.base.ts`, para `randomUUID()`. La futura lista blanca tendrá que permitirlo. La
+decisión no cambia.
 
 **Criterio ya decidido.** (a) se arregla **en el mismo cambio que añada el primer archivo a
 `src/shared/` fuera de `domain/`**, con su caso en `eslint-boundaries.spec.ts` — no antes: una
@@ -1396,6 +1401,14 @@ el código anterior no cumple del todo. Conteos heurísticos sobre `bc66bce`:
   paso por tests de la cancelación que publican su mensaje: `InvalidOrderIdError` (el del filter) e
   `InvalidOrderAmountError` (el del mapper que falla cerrado). Siguen vivos, medido con Stryker ese
   día, los mensajes de `InvalidOrderConceptError` (línea 21) y `CustomerGoneError` (línea 34).
+  **Actualización del 2026-10-19:** el contrato de módulo creó
+  `users/__tests__/domain/errors/user.errors.spec.ts` y
+  `auth/__tests__/domain/errors/auth.errors.spec.ts`. De las 4 specs que faltaban queda
+  `order-placed.event.ts`, fuera de aquel alcance. Con los dos mensajes que fijó la Task 12 de ese plan
+  (`InvalidOrderConceptError` y `CustomerGoneError`), cada error de los tres archivos tiene un
+  `it` que fija su mensaje, y el censo de ese día (cabecera de `stryker.config.mjs`) no deja
+  ningún superviviente en ellos. La línea «De paso» de abajo sigue vigente: el `.filter()` está
+  hoy en `user-id.vo.spec.ts:140`.
 - **`describe` anidado con el nombre del método**: la regla se alineó con lo que ya hacía la suite
   (95 de 139 anidados), así que no deja deuda.
 
@@ -1425,12 +1438,13 @@ cancelación, no por la deuda pagada.)
 **Qué pasa.** `Order.cancel(now)` sella `cancelledAt` con el reloj de la réplica que atiende la
 cancelación, y el relay (`src/database/outbox/relay-orders-outbox.ts`) publica los pendientes con
 `ORDER BY occurred_at`. Si la réplica que colocó el pedido tiene el reloj adelantado respecto a
-la que lo cancela, y la cancelación llega dentro de ese margen, queda `cancelledAt < placedAt` y
+la que lo cancela, y la cancelación llega dentro de ese margen, queda `cancelledAt < createdAt` y
 el relay publica `OrderCancelled` antes que `OrderPlaced`. Lo encontró la segunda revisión
 adversarial de la cancelación (M4, 2026-09-30). Hoy no hace daño: el outbox no tiene consumidores.
 
-**Criterio ya decidido.** No se toca el dominio: forzar `cancelledAt = max(now, placedAt)`
-falsearía el instante de negocio para arreglar un problema de entrega. Cuando llegue el primer
+**Criterio ya decidido.** No se toca el dominio: forzar `cancelledAt = max(now, createdAt)`
+falsearía el instante de negocio para arreglar un problema de entrega. El mismo criterio vale
+para `updatedAt`: `touch(now)` la fija exactamente en `now`, aunque retroceda. Cuando llegue el primer
 consumidor de `OrderCancelled` (o el publisher de BullMQ del Tier 2), el orden de publicación deja
 de depender de relojes:
 
@@ -1653,6 +1667,60 @@ nadie usa y deja el `$` igual de inutilizable. Como un derivado puede estar usan
 **Cómo se sabrá que está hecho.** Un test carga el mismo `.env` con el cargador de la app y con el
 de `data-source.ts` y obtiene los mismos valores para uno que lleva `$`, y la advertencia del `$`
 desaparece de la cabecera de `.env.example`, del README y de `SECURITY.md`.
+
+---
+
+## 37. Ningún error emite todavía un `errorCode` semántico
+
+**Qué pasa.** El sobre de error admite una clave opcional, `errorCode`, que Nest 12 rellena
+cuando la `HttpException` la lleva (`docs/api-contract.md`, «`errorCode` es la única clave
+opcional del sobre de error»). Ningún error de esta API la lleva: un cliente que quiera
+distinguir dos 409 tiene que leer `message`, que es prosa. El contrato de módulo
+(`docs/specs/2026-10-17-module-contract-kernel-design.md`, B8) lo dejó fuera a propósito, para no
+mezclar un cambio de contrato público con un refactor.
+
+**Criterio propuesto, pendiente de decisión.** El código viaja en la tabla de mapeo del filtro de
+cada contexto (`mappings`, sobre `DomainExceptionFilter`): la entrada que traduce un error a su
+`HttpException` le pone también el `errorCode`. Así el dominio sigue sin conocer HTTP, y cada
+código vive junto al status que lo acompaña. Falta decidir el formato de los códigos y si se
+emiten para todos los errores o solo para los que un cliente necesita distinguir.
+
+**Cómo se sabrá que está hecho.** Un error mapeado emite su `errorCode`, el ejemplo de su
+endpoint lo publica y pasa las tres comprobaciones del contrato OpenAPI, y la descripción de
+`ErrorResponseDto.errorCode` deja de decir que no se usa todavía.
+
+---
+
+## 38. El generador de módulos `pnpm module:new`
+
+**Qué pasa.** Crear un bounded context nuevo es copiar a mano la forma de `users` y `orders`,
+siguiendo `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md`. El contrato de
+módulo dejó esa forma escrita y verificada, pero no la genera.
+
+**Criterio ya decidido** (B7 de la spec del contrato de módulo). El generador es un sub-proyecto
+aparte, posterior al contrato. Sus plantillas son NESTJS-MAPPING, que es la fuente de verdad del
+código, y su guarda es `src/__tests__/module-contract.spec.ts`: un módulo generado tiene que
+pasarlo sin tocar el test.
+
+**Cómo se sabrá que está hecho.** Un módulo recién generado pasa `pnpm typecheck`,
+`pnpm lint:check`, el test de contrato y sus propios specs sin editarlo.
+
+---
+
+## 39. Dos convenciones de nombres de columna en el mismo esquema
+
+**Qué pasa.** `users` y `auth_credentials` usan camelCase entre comillas (`"createdAt"`,
+`"updatedAt"`), porque no hay `NamingStrategy` y TypeORM usa el nombre de la propiedad tal cual.
+`orders` y `orders_outbox` usan snake_case (`created_at`, `customer_id`) con `name:` en cada
+`@Column`. Funciona, pero quien escribe SQL a mano o una migración tiene que recordar en qué
+tabla está (`docs/database.md`, «Nombres de columna»).
+
+**Criterio propuesto, pendiente de decisión.** Una sola convención para todo el esquema, con o
+sin `NamingStrategy`. Los renombrados de columna son destructivos, así que van en
+expand/contract (`CLAUDE.md`, «Destructive migrations»), una tabla por par de migraciones.
+
+**Cómo se sabrá que está hecho.** La convención está escrita en «Database» de `CLAUDE.md`,
+`pnpm migration:generate … --check` sale limpio y el paso «Schema drift» de la CI está en verde.
 
 ---
 

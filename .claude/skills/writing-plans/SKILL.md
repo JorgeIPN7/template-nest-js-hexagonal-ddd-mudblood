@@ -141,8 +141,8 @@ the express run declared a 409 that no request could produce, and only the final
 `src/modules/billing/domain/entities/invoice.entity.ts`
 
 ```ts
-export class Invoice extends AggregateRoot<InvoiceIssued> {
-  static draft(params: { id: InvoiceId; amount: InvoiceAmount }): Invoice;
+export class Invoice extends AggregateRoot<InvoiceId, InvoiceIssued> {
+  static draft(params: { id: InvoiceId; amount: InvoiceAmount; now: Date }): Invoice;
   issue(now: Date): void; // lanza InvoiceNotDraftError si no está en borrador
 }
 ```
