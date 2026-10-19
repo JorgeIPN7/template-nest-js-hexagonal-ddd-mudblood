@@ -173,6 +173,16 @@ jobs:
         env:
           DB_DATABASE: nest_base_template_test
 
+      # Deriva de esquema: compara las entidades ORM con el esquema que acaban de construir las
+      # migraciones y sale con 1, imprimiendo el SQL que faltaría, si no coinciden. `--check` no
+      # escribe ningún archivo; un fallo de conexión también sale con 1, y el log lo distingue.
+      # Apunta a la base de E2E porque es la única que migra este job: la base del `env:` del job
+      # no la migra nadie y daría todas las tablas por ausentes.
+      - name: Schema drift
+        run: pnpm migration:generate src/database/migrations/DriftCheck --check
+        env:
+          DB_DATABASE: nest_base_template_test
+
       - name: E2E tests
         run: pnpm test:e2e:ci
 
