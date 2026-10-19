@@ -11,11 +11,12 @@ import {
   DEFAULT_AMOUNT_CENTS,
   DEFAULT_CONCEPT,
   DEFAULT_CUSTOMER_ID as CUSTOMER_ID,
-  DEFAULT_PLACED_AT,
+  DEFAULT_CREATED_AT,
   buildPlacedOrder,
   rehydrateOrder,
 } from '../../helpers/order.factory';
 
+const T_PLACE = new Date('2026-08-05T14:20:00.000Z');
 const CANCELLED_AT = new Date('2026-08-06T10:45:00.000Z');
 const LATER = new Date('2026-08-07T08:00:00.000Z');
 
@@ -31,7 +32,7 @@ describe('Order', () => {
 
       // Assert: el payload lleva los datos primitivos que irán tal cual al outbox.
       expect(events).toEqual([
-        new OrderPlaced(id.value, CUSTOMER_ID, DEFAULT_AMOUNT_CENTS, DEFAULT_PLACED_AT),
+        new OrderPlaced(id.value, CUSTOMER_ID, DEFAULT_AMOUNT_CENTS, DEFAULT_CREATED_AT),
       ]);
     });
 
@@ -58,6 +59,17 @@ describe('Order', () => {
       expect(order.status).toBe('placed');
       expect(order.cancelledAt).toBeNull();
       expect(order.version).toBe(0);
+    });
+
+    it('debería sellar createdAt y updatedAt con el instante de la colocación', () => {
+      // Arrange
+
+      // Act
+      const order = buildPlacedOrder({ now: T_PLACE });
+
+      // Assert
+      expect(order.createdAt).toEqual(T_PLACE);
+      expect(order.updatedAt).toEqual(T_PLACE);
     });
   });
 
@@ -87,9 +99,42 @@ describe('Order', () => {
       expect(order.pullEvents()).toEqual([new OrderCancelled(id.value, CUSTOMER_ID, CANCELLED_AT)]);
     });
 
-    it('debería dejar intacto un pedido ya cancelado, con su fecha de cancelación original y sin emitir evento', () => {
+    it('debería mover updatedAt al instante de la cancelación sin tocar createdAt', () => {
       // Arrange
-      const order = rehydrateOrder({ status: 'cancelled', cancelledAt: CANCELLED_AT, version: 3 });
+      const order = buildPlacedOrder();
+
+      // Act
+      order.cancel(CANCELLED_AT);
+
+      // Assert
+      expect(order.updatedAt).toEqual(CANCELLED_AT);
+      expect(order.createdAt).toEqual(DEFAULT_CREATED_AT);
+    });
+
+    fcTest.prop([fc.tuple(timestampArb, timestampArb)])(
+      'debería fijar updatedAt exactamente en el instante de la cancelación aunque sea anterior a la colocación',
+      ([placement, cancellation]) => {
+        // Arrange
+        const order = buildPlacedOrder({ now: placement });
+
+        // Act
+        order.cancel(cancellation);
+
+        // Assert: sin corregir el reloj, en cualquier orden entre las dos fechas (backlog #31).
+        expect(order.updatedAt).toEqual(cancellation);
+        expect(order.cancelledAt).toEqual(cancellation);
+        expect(order.createdAt).toEqual(placement);
+      },
+    );
+
+    it('debería dejar intacto un pedido ya cancelado, con su fecha de cancelación y su updatedAt originales y sin emitir evento', () => {
+      // Arrange
+      const order = rehydrateOrder({
+        status: 'cancelled',
+        cancelledAt: CANCELLED_AT,
+        updatedAt: CANCELLED_AT,
+        version: 3,
+      });
 
       // Act
       order.cancel(LATER);
@@ -97,11 +142,12 @@ describe('Order', () => {
       // Assert
       expect(order.status).toBe('cancelled');
       expect(order.cancelledAt).toEqual(CANCELLED_AT);
+      expect(order.updatedAt).toEqual(CANCELLED_AT);
       expect(order.pullEvents()).toEqual([]);
     });
 
     fcTest.prop([fc.array(timestampArb, { minLength: 1, maxLength: 10 })])(
-      'debería emitir un único OrderCancelled y conservar la primera fecha por muchas veces que se cancele',
+      'debería emitir un único OrderCancelled y conservar la primera fecha, también en updatedAt, por muchas veces que se cancele',
       (instants) => {
         // Arrange
         const order = buildPlacedOrder();
@@ -118,6 +164,7 @@ describe('Order', () => {
         expect(events[0]).toBeInstanceOf(OrderCancelled);
         expect(events[0]?.occurredAt).toEqual(instants[0]);
         expect(order.cancelledAt).toEqual(instants[0]);
+        expect(order.updatedAt).toEqual(instants[0]);
       },
     );
   });
@@ -132,7 +179,8 @@ describe('Order', () => {
         customerId: CUSTOMER_ID,
         concept: OrderConcept.from(DEFAULT_CONCEPT),
         amount: OrderAmount.from(DEFAULT_AMOUNT_CENTS),
-        placedAt: DEFAULT_PLACED_AT,
+        createdAt: DEFAULT_CREATED_AT,
+        updatedAt: DEFAULT_CREATED_AT,
         status: 'placed',
         cancelledAt: null,
         version: 1,
@@ -142,7 +190,7 @@ describe('Order', () => {
       expect(order.pullEvents()).toEqual([]);
     });
 
-    it('debería reconstruir un pedido cancelado con su estado, su fecha de cancelación y su versión, sin emitir eventos', () => {
+    it('debería reconstruir un pedido cancelado con su estado, sus fechas y su versión, sin emitir eventos', () => {
       // Arrange
       const id = OrderId.generate();
 
@@ -151,6 +199,7 @@ describe('Order', () => {
         id,
         status: 'cancelled',
         cancelledAt: CANCELLED_AT,
+        updatedAt: CANCELLED_AT,
         version: 3,
       });
 
@@ -160,7 +209,8 @@ describe('Order', () => {
         customerId: CUSTOMER_ID,
         concept: DEFAULT_CONCEPT,
         amountCents: DEFAULT_AMOUNT_CENTS,
-        placedAt: DEFAULT_PLACED_AT,
+        createdAt: DEFAULT_CREATED_AT,
+        updatedAt: CANCELLED_AT,
         status: 'cancelled',
         cancelledAt: CANCELLED_AT,
         version: 3,

@@ -5,9 +5,14 @@ import { FakeCustomerDirectory } from '../../helpers/fake-customer.directory';
 import { InMemoryOrderRepository } from '../../helpers/in-memory-order.repository';
 
 const CUSTOMER_ID = '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012';
+const NOW = new Date('2026-09-30T12:00:00.000Z');
 
 describe('PlaceOrderUseCase', () => {
   describe('execute()', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     it('debería colocar la orden cuando el cliente existe', async () => {
       // Arrange
       const { useCase, repository } = buildUseCase([CUSTOMER_ID]);
@@ -23,7 +28,7 @@ describe('PlaceOrderUseCase', () => {
       expect(repository.saveCalls).toHaveLength(1);
       expect(repository.saveCalls[0]?.order).toBe(order);
       expect(repository.saveCalls[0]?.events).toEqual([
-        new OrderPlaced(order.id.value, CUSTOMER_ID, 149_900, order.placedAt),
+        new OrderPlaced(order.id.value, CUSTOMER_ID, 149_900, order.createdAt),
       ]);
     });
 
@@ -61,7 +66,8 @@ describe('PlaceOrderUseCase', () => {
     });
 
     it('debería devolver la orden colocada', async () => {
-      // Arrange
+      // Arrange: reloj fijo, para exigir el instante exacto y no solo «una Date».
+      jest.useFakeTimers({ now: NOW });
       const { useCase } = buildUseCase([CUSTOMER_ID]);
 
       // Act
@@ -77,7 +83,8 @@ describe('PlaceOrderUseCase', () => {
       expect(snapshot.customerId).toBe(CUSTOMER_ID);
       expect(snapshot.concept).toBe('Suscripción anual');
       expect(snapshot.amountCents).toBe(149_900);
-      expect(snapshot.placedAt).toBeInstanceOf(Date);
+      expect(snapshot.createdAt).toEqual(NOW);
+      expect(snapshot.updatedAt).toEqual(NOW);
     });
 
     it('debería consultar el directorio antes de guardar', async () => {

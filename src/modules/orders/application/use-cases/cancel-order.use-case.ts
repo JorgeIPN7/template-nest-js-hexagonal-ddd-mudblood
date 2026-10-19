@@ -49,19 +49,20 @@ export class CancelOrderUseCase {
 
     const orderId = OrderId.from(input.orderId);
     try {
-      return await this.cancelOnce(orderId, input.customerId);
+      return await this.cancelOnce(orderId, input);
     } catch (error) {
       if (error instanceof OrderVersionConflictError) {
-        return this.cancelOnce(orderId, input.customerId);
+        return this.cancelOnce(orderId, input);
       }
       throw error;
     }
   }
 
-  private async cancelOnce(orderId: OrderId, customerId: string): Promise<Order> {
-    const order = await this.orders.findByIdAndCustomer(orderId, customerId);
+  private async cancelOnce(orderId: OrderId, input: CancelOrderInput): Promise<Order> {
+    const order = await this.orders.findByIdAndCustomer(orderId, input.customerId);
     if (!order) {
-      throw new OrderNotFoundError(orderId.value);
+      // El id tal como llegó y no el normalizado: el 404 repite lo que pidió el cliente.
+      throw new OrderNotFoundError(input.orderId);
     }
 
     order.cancel(new Date());

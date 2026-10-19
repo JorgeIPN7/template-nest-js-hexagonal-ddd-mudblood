@@ -16,7 +16,7 @@ import { OutboxMessageOrmEntity } from '../../../infrastructure/persistence/outb
 import {
   DEFAULT_AMOUNT_CENTS,
   DEFAULT_CUSTOMER_ID,
-  DEFAULT_PLACED_AT,
+  DEFAULT_CREATED_AT,
   buildPlacedOrder,
 } from '../../helpers/order.factory';
 
@@ -25,6 +25,7 @@ const CANCELLED_AT = new Date('2026-09-30T08:00:00.000Z');
 const LATER = new Date('2026-09-30T08:00:05.000Z');
 
 type OrderRow = { status: string; cancelled_at: Date | null; version: number };
+type OrderDates = { created_at: Date; updated_at: Date };
 
 /**
  * Contra PostgreSQL real: lo que se verifica es la TRANSACCIÓN — mockear el ORM aquí
@@ -98,7 +99,7 @@ describe('OrderTypeOrmRepository (e2e)', () => {
         orderId: order.id.value,
         customerId: DEFAULT_CUSTOMER_ID,
         amountCents: DEFAULT_AMOUNT_CENTS,
-        occurredAt: DEFAULT_PLACED_AT.toISOString(),
+        occurredAt: DEFAULT_CREATED_AT.toISOString(),
       });
       expect(outboxRows[0]?.processed_at).toBeNull();
     });
@@ -145,6 +146,34 @@ describe('OrderTypeOrmRepository (e2e)', () => {
 
       // Assert
       expect(await readOrderRows()).toEqual([{ status: 'placed', cancelled_at: null, version: 1 }]);
+    });
+
+    it('debería insertar createdAt y updatedAt con el instante de la colocación y no con la hora de la base', async () => {
+      // Arrange
+      const order = buildPlacedOrder();
+
+      // Act
+      await repository.save(order, order.pullEvents());
+
+      // Assert
+      expect(await readOrderDates()).toEqual([
+        { created_at: DEFAULT_CREATED_AT, updated_at: DEFAULT_CREATED_AT },
+      ]);
+    });
+
+    it('debería guardar updatedAt con el instante de la cancelación sin tocar createdAt', async () => {
+      // Arrange
+      const placed = await savePlacedOrder();
+      const order = await loadOrder(placed.id);
+      order.cancel(CANCELLED_AT);
+
+      // Act
+      await repository.save(order, order.pullEvents());
+
+      // Assert
+      expect(await readOrderDates()).toEqual([
+        { created_at: DEFAULT_CREATED_AT, updated_at: CANCELLED_AT },
+      ]);
     });
 
     it('debería guardar la cancelación y su OrderCancelled en la misma transacción, subiendo la versión', async () => {
@@ -307,7 +336,7 @@ describe('OrderTypeOrmRepository (e2e)', () => {
       expect(found?.toSnapshot()).toEqual({ ...order.toSnapshot(), version: 1 });
     });
 
-    it('debería reconstruir un pedido cancelado con su estado, su fecha y su versión', async () => {
+    it('debería reconstruir un pedido cancelado con su estado, sus fechas y su versión', async () => {
       // Arrange
       const placed = await savePlacedOrder();
       const order = await loadOrder(placed.id);
@@ -320,6 +349,8 @@ describe('OrderTypeOrmRepository (e2e)', () => {
       // Assert
       expect(found?.status).toBe('cancelled');
       expect(found?.cancelledAt).toEqual(CANCELLED_AT);
+      expect(found?.createdAt).toEqual(DEFAULT_CREATED_AT);
+      expect(found?.updatedAt).toEqual(CANCELLED_AT);
       expect(found?.version).toBe(2);
     });
 
@@ -364,6 +395,11 @@ describe('OrderTypeOrmRepository (e2e)', () => {
 
   const readOrderRows = () =>
     dataSource.query<OrderRow[]>('SELECT status, cancelled_at, version FROM orders');
+
+  // Aparte de `readOrderRows()`: las filas de concurrencia la comparan con `toEqual`, y el rival
+  // de SQL crudo de `cancelWithoutCommitting()` no escribe `updated_at`.
+  const readOrderDates = () =>
+    dataSource.query<OrderDates[]>('SELECT created_at, updated_at FROM orders');
 
   const savePlacedOrder = async (): Promise<Order> => {
     const order = buildPlacedOrder();

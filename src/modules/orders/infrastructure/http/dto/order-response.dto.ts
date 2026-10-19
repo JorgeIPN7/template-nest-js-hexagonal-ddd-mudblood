@@ -27,12 +27,22 @@ export class OrderResponseDto {
   // `type: String` + `format` explícitos como red de seguridad, mismo razonamiento
   // medido que documenta `user-response.dto.ts`.
   @ApiProperty({
-    description: 'Momento en que se colocó la orden, en UTC.',
+    description: 'Momento en que se colocó el pedido, en UTC.',
     example: '2026-08-01T10:15:00.000Z',
     type: String,
     format: 'date-time',
   })
-  placedAt!: Date;
+  createdAt!: Date;
+
+  @ApiProperty({
+    description:
+      'Última modificación, en UTC: al colocarlo coincide con `createdAt` y al cancelarlo, ' +
+      'con `cancelledAt`.',
+    example: '2026-08-01T10:15:00.000Z',
+    type: String,
+    format: 'date-time',
+  })
+  updatedAt!: Date;
 
   @ApiProperty({
     description: 'Estado del pedido. Un pedido `cancelled` no vuelve a `placed`.',
@@ -64,7 +74,8 @@ export class OrderResponseDto {
     dto.customerId = snapshot.customerId;
     dto.concept = snapshot.concept;
     dto.amountCents = snapshot.amountCents;
-    dto.placedAt = snapshot.placedAt;
+    dto.createdAt = snapshot.createdAt;
+    dto.updatedAt = snapshot.updatedAt;
     dto.status = snapshot.status;
     if (snapshot.cancelledAt !== null) {
       dto.cancelledAt = snapshot.cancelledAt;

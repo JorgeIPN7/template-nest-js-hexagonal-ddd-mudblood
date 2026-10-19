@@ -1,4 +1,4 @@
-import { declaredResponses } from '@common/__tests__/helpers/swagger-metadata';
+import { declaredResponse, declaredResponses } from '@common/__tests__/helpers/swagger-metadata';
 
 import { CancelOrderUseCase } from '../../../application/use-cases/cancel-order.use-case';
 import { PlaceOrderUseCase } from '../../../application/use-cases/place-order.use-case';
@@ -11,7 +11,7 @@ const CUSTOMER_ID = '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012';
 const OTHER_CUSTOMER_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const CLAIMS = { sub: CUSTOMER_ID, email: 'maria.gonzalez@empresa.com.mx', role: 'user' };
 const OTHER_CLAIMS = { sub: OTHER_CUSTOMER_ID, email: 'otra@empresa.com.mx', role: 'user' };
-const PLACED_AT = new Date('2026-09-30T09:00:00.000Z');
+const CREATED_AT = new Date('2026-09-30T09:00:00.000Z');
 const CANCELLED_AT = new Date('2026-09-30T09:05:00.000Z');
 
 describe('OrdersController', () => {
@@ -48,10 +48,11 @@ describe('OrdersController', () => {
       expect(Object.keys(result).sort()).toEqual([
         'amountCents',
         'concept',
+        'createdAt',
         'customerId',
         'id',
-        'placedAt',
         'status',
+        'updatedAt',
       ]);
     });
   });
@@ -75,10 +76,10 @@ describe('OrdersController', () => {
       expect(declared.sort()).toEqual(reachable);
     });
 
-    it('debería cancelar el pedido del cliente del token y devolverlo con su fecha de cancelación', async () => {
-      // Arrange: dos instantes distintos, para que un DTO que publicara `placedAt` como
-      // `cancelledAt` no pasara; con uno solo, las dos fechas coincidirían.
-      jest.useFakeTimers({ now: PLACED_AT });
+    it('debería cancelar el pedido del cliente del token y devolverlo con createdAt de la colocación y updatedAt y cancelledAt de la cancelación', async () => {
+      // Arrange: dos instantes distintos, para que un DTO que publicara `createdAt` como
+      // `cancelledAt` o `updatedAt` no pasara; con uno solo, las fechas coincidirían.
+      jest.useFakeTimers({ now: CREATED_AT });
       const controller = buildController();
       const placed = await controller.place({ concept: 'Plan Pro', amountCents: 100 }, CLAIMS);
       jest.setSystemTime(CANCELLED_AT);
@@ -89,7 +90,8 @@ describe('OrdersController', () => {
       // Assert
       expect(result.id).toBe(placed.id);
       expect(result.status).toBe('cancelled');
-      expect(result.placedAt).toEqual(PLACED_AT);
+      expect(result.createdAt).toEqual(CREATED_AT);
+      expect(result.updatedAt).toEqual(CANCELLED_AT);
       expect(result.cancelledAt).toEqual(CANCELLED_AT);
     });
 
@@ -106,11 +108,27 @@ describe('OrdersController', () => {
         'amountCents',
         'cancelledAt',
         'concept',
+        'createdAt',
         'customerId',
         'id',
-        'placedAt',
         'status',
+        'updatedAt',
       ]);
+    });
+
+    // Ajv no ve esta diferencia, porque las tres son el mismo tipo: la ve este test.
+    it('debería publicar en el ejemplo del 200 de la cancelación un updatedAt igual a cancelledAt y distinto de createdAt', () => {
+      // Arrange
+      const example = declaredResponse(OrdersController, 'cancel', 200)?.example as
+        { data?: Record<string, unknown> } | undefined;
+
+      // Act
+      const data = example?.data;
+
+      // Assert
+      expect(data?.updatedAt).toEqual(expect.any(String));
+      expect(data?.updatedAt).toBe(data?.cancelledAt);
+      expect(data?.updatedAt).not.toBe(data?.createdAt);
     });
 
     it('debería cancelar a nombre del sub del token: el pedido de otro no existe para él', async () => {

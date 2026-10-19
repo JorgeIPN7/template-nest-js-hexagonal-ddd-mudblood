@@ -36,15 +36,23 @@ const ORDER_EXAMPLE = {
   customerId: '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012',
   concept: 'Suscripción anual plan Pro',
   amountCents: 149_900,
-  placedAt: '2026-08-01T10:15:00.000Z',
+  createdAt: '2026-08-01T10:15:00.000Z',
+  updatedAt: '2026-08-01T10:15:00.000Z',
   status: 'placed',
 } as const;
 
-/** `cancelledAt` solo aparece aquí: un pedido colocado no lleva la clave (ver el DTO). */
+const CANCELLED_AT_EXAMPLE = '2026-08-01T12:30:00.000Z';
+
+/**
+ * `cancelledAt` solo aparece aquí: un pedido colocado no lleva la clave (ver el DTO).
+ * `updatedAt` avanza con la misma constante: `Order.cancel()` lo sella con el instante de la
+ * cancelación. Dejarlo igual a `createdAt` describiría una cancelación que no tocó la fila.
+ */
 const CANCELLED_ORDER_EXAMPLE = {
   ...ORDER_EXAMPLE,
   status: 'cancelled',
-  cancelledAt: '2026-08-01T12:30:00.000Z',
+  updatedAt: CANCELLED_AT_EXAMPLE,
+  cancelledAt: CANCELLED_AT_EXAMPLE,
 } as const;
 
 /**
@@ -133,10 +141,11 @@ export class OrdersController {
     operationId: 'cancelOrder',
     summary: 'Cancela un pedido del usuario autenticado',
     description:
-      'Pasa un pedido colocado a `cancelled`, sella `cancelledAt` y persiste el evento ' +
-      'OrderCancelled en la misma transacción (outbox). Es idempotente: cancelar un pedido ya ' +
-      'cancelado devuelve 200 con el pedido tal cual, su `cancelledAt` original y sin un segundo ' +
-      'evento. El pedido de otro cliente responde 404, idéntico al de un pedido inexistente. ' +
+      'Pasa un pedido colocado a `cancelled`, sella `cancelledAt` y `updatedAt` con el instante ' +
+      'de la cancelación y persiste el evento OrderCancelled en la misma transacción (outbox). ' +
+      'Es idempotente: cancelar un pedido ya cancelado devuelve 200 con el pedido tal cual, su ' +
+      '`cancelledAt` y su `updatedAt` originales y sin un segundo evento. El pedido de otro ' +
+      'cliente responde 404, idéntico al de un pedido inexistente. ' +
       'Como en la colocación, se re-verifica que el usuario del token siga existiendo y activo.',
   })
   @ApiParam({

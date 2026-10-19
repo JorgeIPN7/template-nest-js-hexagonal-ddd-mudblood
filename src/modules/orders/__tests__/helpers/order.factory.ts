@@ -15,7 +15,7 @@ import type { OrderStatus } from '../../domain/value-objects/order-status';
 export const DEFAULT_CUSTOMER_ID = '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012';
 export const DEFAULT_CONCEPT = 'Suscripción anual plan Pro';
 export const DEFAULT_AMOUNT_CENTS = 149_900;
-export const DEFAULT_PLACED_AT = new Date('2026-08-06T09:30:00.000Z');
+export const DEFAULT_CREATED_AT = new Date('2026-08-06T09:30:00.000Z');
 
 type PlaceOrderOverrides = {
   id?: OrderId;
@@ -29,7 +29,7 @@ export const buildPlacedOrder = ({
   id = OrderId.generate(),
   customerId = DEFAULT_CUSTOMER_ID,
   concept = DEFAULT_CONCEPT,
-  now = DEFAULT_PLACED_AT,
+  now = DEFAULT_CREATED_AT,
 }: PlaceOrderOverrides = {}): Order =>
   Order.place({
     id,
@@ -44,15 +44,20 @@ type RehydrateOrderOverrides = {
   customerId?: string;
   status?: OrderStatus;
   cancelledAt?: Date | null;
+  updatedAt?: Date;
   version?: number;
 };
 
-/** Pedido leído de persistencia, sin eventos. Por defecto, colocado y en la versión 1. */
+/**
+ * Pedido leído de persistencia, sin eventos. Por defecto, colocado en `DEFAULT_CREATED_AT`, sin
+ * tocar desde entonces y en la versión 1.
+ */
 export const rehydrateOrder = ({
   id = OrderId.generate(),
   customerId = DEFAULT_CUSTOMER_ID,
   status = 'placed',
   cancelledAt = null,
+  updatedAt = DEFAULT_CREATED_AT,
   version = 1,
 }: RehydrateOrderOverrides = {}): Order =>
   Order.rehydrate({
@@ -60,7 +65,8 @@ export const rehydrateOrder = ({
     customerId,
     concept: OrderConcept.from(DEFAULT_CONCEPT),
     amount: OrderAmount.from(DEFAULT_AMOUNT_CENTS),
-    placedAt: DEFAULT_PLACED_AT,
+    createdAt: DEFAULT_CREATED_AT,
+    updatedAt,
     status,
     cancelledAt,
     version,

@@ -171,21 +171,32 @@ describe('Orders (e2e)', () => {
       expect(counts[0]).toEqual({ orders: 0, outbox: 0 });
     });
 
-    it('debería devolver el pedido colocado con status placed y sin cancelledAt', async () => {
+    it('debería devolver el pedido colocado con status placed, createdAt igual a updatedAt y sin cancelledAt', async () => {
       // Arrange
 
       // Act
       const response = await postOrder(userToken, { concept: 'Plan Pro', amountCents: 100 });
 
-      // Assert
+      // Assert: las siete claves exactas, sin `version` ni `cancelledAt`.
+      const data = response.body.data as Record<string, unknown>;
       expect(response.status).toBe(201);
-      expect(response.body.data.status).toBe('placed');
-      expect(response.body.data).not.toHaveProperty('cancelledAt');
+      expect(Object.keys(data).sort()).toEqual([
+        'amountCents',
+        'concept',
+        'createdAt',
+        'customerId',
+        'id',
+        'status',
+        'updatedAt',
+      ]);
+      expect(data.status).toBe('placed');
+      expect(data.updatedAt).toBe(data.createdAt);
+      expect(new Date(data.createdAt as string).toISOString()).toBe(data.createdAt);
     });
   });
 
   describe('POST /orders/:id/cancel', () => {
-    it('debería cancelar el pedido y devolver 200 con el envelope y el pedido cancelado', async () => {
+    it('debería cancelar el pedido y devolver 200 con el envelope y el pedido cancelado, con updatedAt igual a cancelledAt', async () => {
       // Arrange
       const orderId = await placeOrderFor(userToken);
 
@@ -199,9 +210,11 @@ describe('Orders (e2e)', () => {
       expect(response.body.data.customerId).toBe(customerId);
       expect(response.body.data.status).toBe('cancelled');
       expect(response.body.data.cancelledAt).toEqual(expect.any(String));
+      expect(response.body.data.updatedAt).toBe(response.body.data.cancelledAt);
+      expect(response.body.data.createdAt).toEqual(expect.any(String));
     });
 
-    it('debería persistir la cancelación y su evento OrderCancelled en el outbox', async () => {
+    it('debería persistir la cancelación, su updated_at y su evento OrderCancelled en el outbox', async () => {
       // Arrange
       const orderId = await placeOrderFor(userToken);
 
@@ -209,11 +222,12 @@ describe('Orders (e2e)', () => {
       const response = await cancelOrder(userToken, orderId);
 
       // Assert: filas crudas de las dos tablas.
-      const orderRows = await dataSource.query<{ status: string; cancelled_at: Date }[]>(
-        'SELECT status, cancelled_at FROM orders',
-      );
+      const cancelledAt = new Date(response.body.data.cancelledAt as string);
+      const orderRows = await dataSource.query<
+        { status: string; cancelled_at: Date; updated_at: Date }[]
+      >('SELECT status, cancelled_at, updated_at FROM orders');
       expect(orderRows).toEqual([
-        { status: 'cancelled', cancelled_at: new Date(response.body.data.cancelledAt as string) },
+        { status: 'cancelled', cancelled_at: cancelledAt, updated_at: cancelledAt },
       ]);
       const outboxRows = await dataSource.query<{ payload: Record<string, unknown> }[]>(
         `SELECT payload FROM orders_outbox WHERE event_type = 'OrderCancelled'`,

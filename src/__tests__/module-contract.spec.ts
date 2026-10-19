@@ -20,9 +20,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const PENDING_VIOLATIONS: readonly string[] = [
   'entities src/modules/auth/domain/entities/credential.entity.ts',
   'errors src/modules/auth/domain/errors/auth.errors.ts',
-  'errors src/modules/orders/domain/errors/order.errors.ts',
   'filter src/modules/auth/infrastructure/http/auth-domain-exception.filter.ts',
-  'filter src/modules/orders/infrastructure/http/orders-domain-exception.filter.ts',
   'orm-managed-columns src/modules/auth/infrastructure/persistence/credential.orm-entity.ts',
 ];
 

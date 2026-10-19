@@ -1,6 +1,25 @@
-import { OrderNotFoundError, OrderVersionConflictError } from '../../../domain/errors/order.errors';
+import { DomainError } from '@shared/domain/domain-error';
+
+import {
+  OrderDomainError,
+  OrderNotFoundError,
+  OrderVersionConflictError,
+} from '../../../domain/errors/order.errors';
 
 const ORDER_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+describe('OrderDomainError', () => {
+  it('debería hacer de todo error de orders un DomainError del kernel', () => {
+    // Arrange
+
+    // Act
+    const error = new OrderNotFoundError(ORDER_ID);
+
+    // Assert
+    expect(error).toBeInstanceOf(OrderDomainError);
+    expect(error).toBeInstanceOf(DomainError);
+  });
+});
 
 describe('OrderNotFoundError', () => {
   it('debería identificar en su mensaje el pedido que no se encontró', () => {
