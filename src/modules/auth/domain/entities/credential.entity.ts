@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import { Entity, type BaseEntityProps } from '@shared/domain/entity.base';
 
+import { CredentialId } from '../value-objects/credential-id.vo';
 import type { PasswordHash } from '../value-objects/password-hash.vo';
 
 export type CredentialSnapshot = {
@@ -22,42 +23,47 @@ export type CredentialSnapshot = {
  * La única invariante real del agregado la lleva `PasswordHash` (forma PHC de argon2id), y
  * por eso vive en el VO y no aquí: lo que hay que impedir es persistir un password en claro,
  * no que la credencial cambie de estado — hoy no tiene transiciones (no hay caso de uso de
- * cambio de contraseña). Cuando lo haya, `changePassword(hash, now)` es su sitio.
+ * cambio de contraseña). Cuando lo haya, `changePassword(hash, now)` es su sitio, y llamará a
+ * `touch(now)`.
+ *
+ * `id` (un `CredentialId`), `createdAt` y `updatedAt` vienen de `Entity` y no se redeclaran aquí.
  */
-export class Credential {
+export class Credential extends Entity<CredentialId> {
   private constructor(
-    readonly id: string,
+    base: BaseEntityProps<CredentialId>,
     readonly userId: string,
     readonly passwordHash: PasswordHash,
-    readonly createdAt: Date,
-    readonly updatedAt: Date,
-  ) {}
+  ) {
+    super(base);
+  }
 
-  /** Alta de la credencial. El id lo genera el propio agregado: no hay VO de identidad. */
+  /** Alta de la credencial. El id lo acuña el propio agregado con `CredentialId.generate()`. */
   static create(params: { userId: string; passwordHash: PasswordHash; now: Date }): Credential {
-    return new Credential(randomUUID(), params.userId, params.passwordHash, params.now, params.now);
+    return new Credential(
+      { id: CredentialId.generate(), createdAt: params.now, updatedAt: params.now },
+      params.userId,
+      params.passwordHash,
+    );
   }
 
   /** Reconstituye el agregado desde persistencia sin volver a aplicar reglas de creación. */
   static rehydrate(params: {
-    id: string;
+    id: CredentialId;
     userId: string;
     passwordHash: PasswordHash;
     createdAt: Date;
     updatedAt: Date;
   }): Credential {
     return new Credential(
-      params.id,
+      { id: params.id, createdAt: params.createdAt, updatedAt: params.updatedAt },
       params.userId,
       params.passwordHash,
-      params.createdAt,
-      params.updatedAt,
     );
   }
 
   toSnapshot(): CredentialSnapshot {
     return {
-      id: this.id,
+      id: this.id.value,
       userId: this.userId,
       passwordHash: this.passwordHash.value,
       createdAt: this.createdAt,

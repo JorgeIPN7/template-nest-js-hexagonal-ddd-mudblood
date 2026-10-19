@@ -1,4 +1,5 @@
 import { Credential } from '../../../domain/entities/credential.entity';
+import { CredentialId } from '../../../domain/value-objects/credential-id.vo';
 import { PasswordHash } from '../../../domain/value-objects/password-hash.vo';
 
 const NOW = new Date('2026-08-07T10:00:00.000Z');
@@ -33,16 +34,19 @@ describe('Credential', () => {
       expect(credential.passwordHash).toBe(HASH);
     });
 
-    // No hay VO de identidad: el id lo acuña el propio agregado. Si dejara de hacerlo, dos
+    // El id lo acuña el propio agregado con `CredentialId.generate()`. Si dejara de hacerlo, dos
     // credenciales compartirían PK y la segunda pisaría a la primera al guardarse.
-    it('debería acuñar un identificador propio y distinto en cada alta', () => {
+    it('debería acuñar un CredentialId propio y distinto en cada alta', () => {
+      // Arrange
+
       // Act
       const first = Credential.create({ userId: USER_ID, passwordHash: HASH, now: NOW });
       const second = Credential.create({ userId: USER_ID, passwordHash: HASH, now: NOW });
 
       // Assert
-      expect(first.id).toEqual(expect.any(String));
-      expect(first.id).not.toBe(second.id);
+      expect(first.id).toBeInstanceOf(CredentialId);
+      expect(second.id).toBeInstanceOf(CredentialId);
+      expect(first.id.equals(second.id)).toBe(false);
     });
   });
 
@@ -50,7 +54,7 @@ describe('Credential', () => {
     it('debería reconstruir el agregado conservando su id y sus marcas de tiempo', () => {
       // Arrange
       const params = {
-        id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+        id: CredentialId.from('7c9e6679-7425-40de-944b-e07fc1f90ae7'),
         userId: USER_ID,
         passwordHash: HASH,
         createdAt: NOW,
@@ -61,7 +65,7 @@ describe('Credential', () => {
       const credential = Credential.rehydrate(params);
 
       // Assert
-      expect(credential.id).toBe(params.id);
+      expect(credential.id.value).toBe('7c9e6679-7425-40de-944b-e07fc1f90ae7');
       expect(credential.createdAt).toEqual(NOW);
       expect(credential.updatedAt).toEqual(LATER);
     });
@@ -77,7 +81,7 @@ describe('Credential', () => {
 
       // Assert
       expect(snapshot).toEqual({
-        id: credential.id,
+        id: credential.id.value,
         userId: USER_ID,
         passwordHash: HASH.value,
         createdAt: NOW,
@@ -92,6 +96,7 @@ describe('Credential', () => {
       // Act
       const revived = Credential.rehydrate({
         ...original.toSnapshot(),
+        id: CredentialId.from(original.toSnapshot().id),
         passwordHash: PasswordHash.from(original.toSnapshot().passwordHash),
       });
 

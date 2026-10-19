@@ -14,8 +14,8 @@ const ADMIN_NAME = 'Administrator';
 
 /**
  * Idempotente: crea el admin si no existe, o lo deja operativo si existe — rol `admin`,
- * `active = true` y hash refrescado. Recibe el DataSource por parámetro (testabilidad — el
- * E2E le pasa el suyo).
+ * `active = true`, hash refrescado e id de credencial renovado (ver `upsertCredential`). Recibe
+ * el DataSource por parámetro (testabilidad — el E2E le pasa el suyo).
  *
  * **Dos tablas y una transacción, desde el ciclo 4.** El perfil vive en `users` y la
  * credencial en `auth_credentials`, así que el seed escribe en ambas dentro de
@@ -86,6 +86,13 @@ export async function seedAdmin(dataSource: DataSource): Promise<'created' | 'pr
  * `ON CONFLICT (user_id)` se apoya en `idx_auth_credentials_user_id`, el índice ÚNICO de la
  * migración: si el usuario ya tenía credencial se refresca su hash en vez de duplicar la
  * fila, que es lo que hace idempotente al seed también en su mitad de auth.
+ *
+ * El `DO UPDATE` renueva también el id, con el `randomUUID()` del `VALUES`, siempre un v4. Es
+ * el rescate de una credencial cuyo id no es v4 (solo la deja un SQL externo): el mapper de
+ * `auth` la rechaza y el login responde 500, así que sin renovarlo el seed diría `promoted` con
+ * el admin aún fuera. Se renueva en cada promoción y no solo cuando es inválido, porque nada
+ * referencia ese id: no hay claves foráneas y el JWT lleva el del usuario. Un `CASE` que solo lo
+ * cambiara si no es v4 metería en el SQL una copia de la regla del dominio.
  */
 const upsertCredential = async (
   manager: EntityManager,
@@ -95,8 +102,8 @@ const upsertCredential = async (
   await manager.query(
     `INSERT INTO auth_credentials (id, user_id, password_hash, "createdAt", "updatedAt")
      VALUES ($1, $2, $3, now(), now())
-     ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
-       "updatedAt" = now()`,
+     ON CONFLICT (user_id) DO UPDATE SET id = EXCLUDED.id,
+       password_hash = EXCLUDED.password_hash, "updatedAt" = now()`,
     [randomUUID(), userId, passwordHash],
   );
 };

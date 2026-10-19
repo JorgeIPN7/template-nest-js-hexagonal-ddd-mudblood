@@ -12,19 +12,6 @@ import {
 const ROOT = path.resolve(__dirname, '../..');
 
 /**
- * Trinquete: las violaciones que el repo todavía tiene mientras sus contextos se llevan al
- * contrato, uno por uno. La fila del árbol las compara con igualdad exacta, así que arreglar una
- * sin quitarla de aquí, o quitarla sin arreglarla, pone la fila en rojo. Cuando la lista quede
- * vacía, la fila pasará a `toEqual([])` y esta constante desaparecerá.
- */
-const PENDING_VIOLATIONS: readonly string[] = [
-  'entities src/modules/auth/domain/entities/credential.entity.ts',
-  'errors src/modules/auth/domain/errors/auth.errors.ts',
-  'filter src/modules/auth/infrastructure/http/auth-domain-exception.filter.ts',
-  'orm-managed-columns src/modules/auth/infrastructure/persistence/credential.orm-entity.ts',
-];
-
-/**
  * Gate del contrato base de módulo: todo bounded context de `src/modules/` hereda del kernel
  * (`src/shared/domain/`), reutiliza las bases de `src/common/` y tiene la misma forma, para que un
  * módulo nuevo sea fácil de crear y uno existente, fácil de reemplazar. El checker es sintáctico,
@@ -959,13 +946,13 @@ describe('module contract gate', () => {
       expect(contexts.filter((name) => FLAT_MODULES.includes(name))).toEqual([]);
     });
 
-    it('debería cumplir el contrato en todos los contextos salvo las violaciones pendientes', () => {
+    it('debería cumplir el contrato en todos los contextos del repo', () => {
       // Arrange
       const sources = readModuleSources(ROOT);
       // Act
       const violations = checkModuleContract(sources);
       // Assert
-      expect(render(violations)).toEqual(PENDING_VIOLATIONS);
+      expect(render(violations)).toEqual([]);
     });
   });
 });
