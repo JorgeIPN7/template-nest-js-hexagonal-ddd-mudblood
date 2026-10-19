@@ -157,6 +157,13 @@ export class UsersFacadeImpl implements UsersLookup, UsersProvisioning {
       // Un email malformado no existe, no es un 500: mismo criterio que `userExists` con un
       // id corrupto. Para el login eso significa 401 (vía dummy hash), no 400 — que es lo
       // correcto: un 400 distinguiría «email mal escrito» de «email desconocido».
+      //
+      // El `if (true)` de Stryker es equivalente: con un `string`, que es lo que admite la firma,
+      // `Email.from` solo lanza `InvalidEmailError` (con `undefined` lanzaría un `TypeError`). El
+      // `disable` deja fuera también el `if (false)`, que no lo es: lo matan las dos filas del
+      // email malformado de `users.facade.spec.ts`, que siguen ejecutándose aunque Stryker no lo
+      // cuente.
+      // Stryker disable next-line ConditionalExpression: if (true) es equivalente, ver arriba
       if (error instanceof InvalidEmailError) {
         return null;
       }
@@ -177,15 +184,22 @@ export class UsersFacadeImpl implements UsersLookup, UsersProvisioning {
   /** `null` cuando el id no tiene forma de `UserId`; el resto de errores suben. */
   private parseUserId(id: string): UserId | null {
     try {
+      // Un rango y no `next-line`, porque el bloque del `catch` no tiene un nodo propio delante:
+      // solo deja fuera ese bloque, y el `restore` llega antes que cualquier otro.
+      // Stryker disable BlockStatement: un catch vacío da undefined, que `!userId` trata como null
       return UserId.from(id);
     } catch (error) {
+      // Stryker restore BlockStatement
+      // Stryker disable next-line ConditionalExpression: UserId.from solo lanza InvalidUserIdError
       if (error instanceof InvalidUserIdError) {
         return null;
       }
       // Inalcanzable con el `UserId.from()` actual (solo lanza InvalidUserIdError): se
       // mantiene por defensa ante un error de otro tipo que `from()` pueda lanzar en el
-      // futuro. El auditor de mutación la firmará como equivalente — no es cobertura
-      // perdida, es un caso sin generador hoy.
+      // futuro. Por eso el `if (true)` de Stryker es equivalente, y está marcado: no es
+      // cobertura perdida, es un caso sin generador hoy. El `disable` deja fuera también el
+      // `if (false)`, que no lo es: lo matan las filas del id malformado de `userExists` y de
+      // `deleteProfile`, que siguen ejecutándose aunque Stryker no lo cuente.
       throw error;
     }
   }

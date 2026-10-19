@@ -24,8 +24,8 @@ import { UsersUserDirectory } from './infrastructure/users-user.directory';
 
 /**
  * Composition root del bounded context. `UsersModule` se importa por su module file —la única
- * puerta cross-módulo (regla 3 + enmienda G1)— y de él solo se consume `UsersFacade`,
- * inyectada en el adapter del directorio.
+ * puerta cross-módulo (regla 3 + enmienda G1)— y de él solo se consumen `UsersLookup` y
+ * `UsersProvisioning`, inyectadas en el adapter del directorio (`UsersUserDirectory`).
  *
  * La dirección es de una sola vía y así debe quedarse: `auth → users`, nunca al revés. Si
  * `users` importara `auth.module` (por ejemplo para el guard) nacería el único ciclo

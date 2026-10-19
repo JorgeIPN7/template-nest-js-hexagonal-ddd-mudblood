@@ -3,6 +3,7 @@ import { captureRejection } from '@test/helpers/capture-error';
 import { UsersFacadeImpl } from '../../application/users.facade';
 import { CreateUserUseCase } from '../../application/use-cases/create-user.use-case';
 import type { User } from '../../domain/entities/user.entity';
+import type { Email } from '../../domain/value-objects/email.vo';
 import { UserId } from '../../domain/value-objects/user-id.vo';
 import { InMemoryUserRepository } from '../helpers/in-memory-user.repository';
 import { buildInactiveUser, buildUser, buildUserWithEmail } from '../helpers/user.factory';
@@ -31,6 +32,7 @@ import { buildInactiveUser, buildUser, buildUserWithEmail } from '../helpers/use
  * | F14 | deleteProfile  | Id existente                             | Borra la fila                                       |
  * | F15 | deleteProfile  | Id inexistente o malformado              | No lanza y no borra nada                            |
  * | F16 | createProfile  | Búsqueda previa con error no de dominio  | Lo relanza intacto, nunca `invalid-profile`         |
+ * | F17 | findByEmail    | Email malformado                         | `null` sin consultar el repositorio                 |
  */
 describe('UsersFacadeImpl', () => {
   describe('userExists()', () => {
@@ -240,6 +242,24 @@ describe('UsersFacadeImpl', () => {
       // Assert
       expect(result).toBeNull();
     });
+
+    // El fake en memoria responde `null` también a una consulta con el email `undefined`, así que
+    // la fila anterior no ve si la fachada llega a consultar; el repositorio TypeORM, sí: lanzaría
+    // al leer `email.value`, y el login respondería 500 en vez de 401.
+    it('debería devolver null ante un email malformado sin consultar el repositorio', async () => {
+      // Arrange
+      const repository = new RecordingLookupUserRepository();
+      const facade = new UsersFacadeImpl(repository, new CreateUserUseCase(repository));
+
+      // Act
+      const result = await facade.findByEmail('sin-arroba');
+
+      // Assert
+      expect(result).toBeNull();
+      // `toHaveLength` y no `toEqual([])`: `toEqual` ignora los `undefined` de un array, y la
+      // consulta que se escapa lleva justo un email `undefined`.
+      expect(repository.queried).toHaveLength(0);
+    });
   });
 
   describe('deleteProfile()', () => {
@@ -286,5 +306,15 @@ class FailingLookupUserRepository extends InMemoryUserRepository {
 
   findByEmail(): Promise<User | null> {
     return Promise.reject(this.failure);
+  }
+}
+
+/** Un repositorio que registra cada email con que se le consulta por `findByEmail`. */
+class RecordingLookupUserRepository extends InMemoryUserRepository {
+  readonly queried: Email[] = [];
+
+  findByEmail(email: Email): Promise<User | null> {
+    this.queried.push(email);
+    return super.findByEmail(email);
   }
 }

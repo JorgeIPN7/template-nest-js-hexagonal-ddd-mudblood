@@ -15,10 +15,11 @@ import { UsersCustomerDirectory } from './infrastructure/users-customer.director
 
 /**
  * Composition root del contexto. `UsersModule` se importa por su module file — la única
- * puerta cross-módulo (regla 3 + enmienda G1) — y de él solo se consume `UsersFacade`,
- * inyectada en el adapter del directorio. El guard JWT global lo registra `auth.module.ts`
- * desde el ciclo 4 (antes era users): `APP_GUARD` es multi-provider, así que declararlo en
- * CUALQUIER módulo que `AppModule` importe lo hace global para toda la app. Por eso `@Auth()`
+ * puerta cross-módulo (regla 3 + enmienda G1) — y de él solo se consume `UsersLookup`,
+ * inyectada en el adapter del directorio: `UsersProvisioning` queda fuera por tipo, no por
+ * ruta (backlog #13). El guard JWT global lo registra `auth.module.ts` desde el ciclo 4 (antes
+ * era users): `APP_GUARD` es multi-provider, así que declararlo en CUALQUIER módulo que
+ * `AppModule` importe lo hace global para toda la app. Por eso `@Auth()`
  * protege este controller sin que `orders` importe `AuthModule` — y no debe importarlo: de
  * auth no se consume aquí ni un símbolo.
  */

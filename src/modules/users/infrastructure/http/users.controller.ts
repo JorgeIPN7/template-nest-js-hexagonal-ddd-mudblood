@@ -45,7 +45,8 @@ const USER_EXAMPLE = {
  *
  * **Sin `POST /users` desde el ciclo 4.** El alta pública se fue a `POST /auth/register`:
  * quien nace en un alta es una CUENTA —perfil + credencial— y la credencial es de `auth`.
- * `CreateUserUseCase` sigue vivo, pero su único consumidor es ahora `UsersFacade`.
+ * `CreateUserUseCase` sigue vivo, pero su único consumidor es ahora `UsersFacadeImpl`, que lo
+ * publica detrás de `UsersProvisioning.createProfile`.
  */
 @ApiTags('Users')
 @Controller('users')
