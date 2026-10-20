@@ -233,6 +233,38 @@ describe('seedAdmin (e2e)', () => {
     expect(['8', '9', 'a', 'b']).toContain(renewedId[19]);
   });
 
+  // Backlog #41: el id del perfil no se puede renovar como el de la credencial, porque
+  // `orders.customer_id` lo guarda por valor. Sin la comprobación, el seed devolvía 'promoted'
+  // —éxito aparente— y el login seguía en 500, porque `UserMapper` falla cerrado. El perfil es un
+  // usuario corriente, inactivo y con credencial, para que cualquier escritura se notara.
+  it('debería fallar con un mensaje explícito, sin tocar auth_credentials ni el perfil, cuando el users.id del admin no es v4', async () => {
+    // Arrange
+    const v1Id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    await dataSource.query(
+      `INSERT INTO users (id, email, name, role, active, "createdAt", "updatedAt")
+       VALUES ($1, $2, 'Perfil v1', 'user', false, now(), now())`,
+      [v1Id, ADMIN_EMAIL],
+    );
+    await dataSource.query(
+      `INSERT INTO auth_credentials (id, user_id, password_hash, "createdAt", "updatedAt")
+       VALUES ($1, $2, 'hash-anterior', now(), now())`,
+      [randomUUID(), v1Id],
+    );
+    const before = await queryProfileAndCredential(v1Id);
+    setEnv(ADMIN_EMAIL, ADMIN_PASSWORD);
+
+    // Act
+    const seeding = seedAdmin(dataSource);
+
+    // Assert
+    await expect(seeding).rejects.toThrow(
+      `seed:admin: el users.id del admin (${v1Id}) no es un uuid v4 y el login respondería 500. ` +
+        'No se renueva como el de la credencial porque orders.customer_id lo referencia por valor: ' +
+        'corrígelo con SQL. No se ha escrito nada.',
+    );
+    expect(await queryProfileAndCredential(v1Id)).toEqual(before);
+  });
+
   // Backlog #34: el esquema solo exigía 12 caracteres, así que 129 pasaban, el seed sembraba el
   // admin y `@MaxLength(128)` de `LoginDto` lo dejaba fuera para siempre con un 400. Ahora el
   // esquema rechaza lo que rechazaría el login, ANTES de abrir la transacción.
@@ -348,6 +380,17 @@ describe('seedAdmin (e2e)', () => {
         }),
       );
     });
+  }
+
+  /** Las dos filas del usuario, con todo lo que el seed escribiría, para compararlas enteras. */
+  function queryProfileAndCredential(userId: string): Promise<unknown[]> {
+    return dataSource.query(
+      `SELECT u.role, u.active, u."updatedAt" AS user_updated_at,
+              c.id AS credential_id, c.password_hash, c."updatedAt" AS credential_updated_at
+       FROM users u LEFT JOIN auth_credentials c ON c.user_id = u.id
+       WHERE u.id = $1`,
+      [userId],
+    );
   }
 
   function queryUser(email: string): Promise<{ name: string; role: string }[]> {

@@ -294,6 +294,8 @@ Merece la pena leerlo: casi todos los tropiezos de la primera vez están aquí.
 
 **`ADMIN_PASSWORD: Too small: expected string to have >=12 characters` con una contraseña larga** — Mismo origen: lleva un `#` antes del carácter 12 y no está entre comillas, así que dotenv la corta ahí y lo que queda no llega al mínimo. Ni la app ni el seed arrancan hasta que la pones entre comillas simples.
 
+**`pnpm seed:admin` falla con `el users.id del admin (…) no es un uuid v4`** — Un SQL externo dejó el id del perfil en otra versión de uuid, y con él el login respondería 500. El seed no lo renueva porque `orders.customer_id` lo guarda por valor, sin clave foránea. Corrígelo con SQL en una transacción: pon un uuid v4 en `users.id` y en cada columna que lo guarda (`auth_credentials.user_id`, `orders.customer_id`) y vuelve a ejecutar el seed. Los eventos de `orders_outbox` que ya lo citan en su `payload` conservan el id viejo.
+
 **`Starting inspector on 127.0.0.1:9229 failed`** — Ya hay un depurador escuchando. Usa `npx nest start --debug=9230 --watch`.
 
 **`relation "users" does not exist`** — Si lo devuelve la app, falta `pnpm migration:run`.

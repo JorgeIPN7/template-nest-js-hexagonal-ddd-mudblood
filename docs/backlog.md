@@ -1830,6 +1830,17 @@ sobre `DB_LOGGING`, escrita en el código y en `.env.example`.
 
 ## 41. El rescate de `seed:admin` no cubre un `users.id` que no es v4
 
+**Resuelto (2026-10-20, por `/feature`; spec en
+`docs/specs/2026-10-20-seed-admin-salida-y-user-id.md`).** El seed falla con un mensaje explícito
+antes de escribir nada, como dice el criterio, pero **sin `UserId.from`**, que el seed no puede
+importar. La frontera solo deja a `database` importar `database` y `config`
+(`boundaries/dependencies`), y `pnpm seed:admin` corre con ts-node, que no resuelve el `@shared/`
+de `UserId` (`Cannot find module '@shared/domain/uuid-identifier.base'`). Las dos cosas se
+midieron el 2026-10-20. El usuario eligió copiar la regex de `UuidIdentifier` en el seed, con un
+comentario que lo explica, antes que abrir la frontera o comprobarlo en SQL con
+`uuid_extract_version`, que ataría el seed a PostgreSQL 17 o superior. El E2E usa un perfil
+inactivo, con rol `user` y con credencial: compara las dos filas enteras antes y después.
+
 **Qué pasa.** `pnpm seed:admin` renueva el id de la credencial cuando no es v4 (decisión B9 del
 contrato de módulo), pero no mira el `users.id` del admin. Si un SQL externo dejara ese id en
 otra versión (un v1, por ejemplo), el seed actualizaría el rol, haría el upsert de la credencial e

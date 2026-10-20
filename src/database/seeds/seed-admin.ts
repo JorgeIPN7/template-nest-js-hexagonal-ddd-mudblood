@@ -15,6 +15,15 @@ import { formatSeedError } from './format-seed-error';
 const ADMIN_NAME = 'Administrator';
 
 /**
+ * La regex de `UuidIdentifier` (`src/shared/domain/uuid-identifier.base.ts`), copiada a sabiendas
+ * (backlog #41): el seed no puede importar `UserId.from`. La frontera solo deja a `database`
+ * importar `database` y `config`, y `pnpm seed:admin` corre con ts-node, que no resuelve el
+ * alias `@shared/` que usa `UserId`. Si el dominio cambiara de versión de uuid, el seed fallaría
+ * con su mensaje, nunca en silencio.
+ */
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
  * Idempotente: crea el admin si no existe, o lo deja operativo si existe — rol `admin`,
  * `active = true`, hash refrescado e id de credencial renovado (ver `upsertCredential`). Recibe
  * el DataSource por parámetro (testabilidad — el E2E le pasa el suyo).
@@ -56,6 +65,16 @@ export async function seedAdmin(dataSource: DataSource): Promise<'created' | 'pr
 
     if (existing[0]) {
       const userId = existing[0].id;
+      // Antes de escribir nada: un id que no es v4 (solo lo deja un SQL externo) hace que
+      // `UserMapper` falle cerrado y el login responda 500, así que `promoted` sería otro éxito
+      // aparente. A diferencia del de la credencial, este id no se puede renovar.
+      if (!UUID_V4.test(userId)) {
+        throw new Error(
+          `seed:admin: el users.id del admin (${userId}) no es un uuid v4 y el login respondería 500. ` +
+            'No se renueva como el de la credencial porque orders.customer_id lo referencia por ' +
+            'valor: corrígelo con SQL. No se ha escrito nada.',
+        );
+      }
       // `active = true` va en el UPDATE porque sin él `promoted` es una respuesta MENTIROSA
       // para el único escenario en el que este seed es la vía de rescate. Si se desactiva por
       // error la única cuenta admin, todo endpoint `@Auth('admin')` queda inalcanzable; el

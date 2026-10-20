@@ -446,6 +446,13 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **`pnpm seed:admin` ya no declara `promoted` a un admin cuyo `users.id` no es v4** (2026-10-20,
+  #41). Si un SQL externo dejaba ese id en otra versión, el seed actualizaba el rol, renovaba la
+  credencial e imprimía `promoted`, y el login seguía en 500 porque `UserMapper` falla cerrado.
+  Ahora falla antes de escribir nada, con un mensaje que lo explica. No renueva el id como hace con
+  el de la credencial, porque `orders.customer_id` lo guarda por valor. La comprobación copia la
+  regex de `UuidIdentifier`: el seed no puede importar `UserId`, ni por las fronteras ni por
+  ts-node.
 - **El seed del primer admin ya no acepta credenciales que el login rechaza** (2026-10-01, #34).
   `ADMIN_PASSWORD` solo exigía 12 caracteres a Zod, que cuenta los selectores de variación de los
   emojis y el login no, y `ADMIN_EMAIL` solo pasaba por `z.email()`: con `'a'×129`, `'❤️'×6` o una parte local de 65 caracteres,

@@ -107,4 +107,4 @@ uuid`. El criterio del 2026-10-19 imprime el `message` igualmente, y la columna 
 ## Estado
 
 - [x] Commit 1 — #40: `formatSeedError`, el CLI y `ParameterFreeLogger`.
-- [ ] Commit 2 — #41: la comprobación del v4.
+- [x] Commit 2 — #41: la comprobación del v4.
