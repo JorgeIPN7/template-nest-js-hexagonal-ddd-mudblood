@@ -36,7 +36,7 @@ command goes through `pnpm test` / `pnpm test:e2e` (they start Jest with
 `CLAUDE.md` is enough for conventions — a session with no skills met 100 % of them in the
 experiment. Open a reference only for what it uniquely covers:
 
-- `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md` — when the plan creates a
+- `docs/nestjs-mapping.md` — when the plan creates a
   bounded context or an artifact type that no module has yet (the section for that artifact, not
   the whole file).
 - `nestjs-best-practices` — rule codes for cross-cutting concerns (auth, validation, transactions,

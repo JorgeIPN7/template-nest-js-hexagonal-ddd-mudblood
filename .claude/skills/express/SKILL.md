@@ -37,7 +37,7 @@ una línea sigue siendo un cambio de seguridad.
 - **Sin plan escrito ni subagentes**, salvo el revisor del paso 4.
 - **`CLAUDE.md` basta para las convenciones.** No leas las skills de referencia. La excepción es
   una feature que necesite un tipo de artefacto que el módulo todavía no tiene: entonces lee solo
-  la sección que toque de `.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md`. Para
+  la sección que toque de `docs/nestjs-mapping.md`. Para
   la forma de un archivo, copia el más parecido del propio módulo o de `src/modules/users/`.
 - Al empezar, guarda la base con `git rev-parse HEAD`. La usan los pasos 3 y 4.
 

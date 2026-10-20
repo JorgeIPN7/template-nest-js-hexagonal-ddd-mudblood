@@ -24,7 +24,7 @@ export type OrderSnapshot = {
 
 /**
  * Raíz del agregado. El agregado RECOLECTA sus eventos y `pullEvents()` los drena; quien
- * publica es la aplicación (patrón del skill clean-ddd-hexagonal). La recolección y el
+ * publica es la aplicación (patrón de `docs/nestjs-mapping.md`, §7). La recolección y el
  * drenaje ya no se escriben aquí: los pone `AggregateRoot`, y este agregado solo decide
  * QUÉ emite y cuándo. `customerId` es un string y no un VO propio: llega del `sub` de un
  * token ya verificado y el directorio de clientes lo re-valida ANTES de construir la orden

@@ -80,9 +80,10 @@ Hoy conviven dos convenciones, y ninguna está mal en sí misma:
   explícito en cada `@Column`.
 
 **Lo nuevo va en snake_case: toda columna de más de una palabra lleva `name:` explícito en su
-`@Column`,** como `orders` y el ejemplo de NESTJS-MAPPING (las de una sola palabra, como `id` o
-`status`, no lo necesitan). Lo existente no se renombra: un renombrado es destructivo (expand/contract, y
-sobre `auth_credentials`, el flujo completo), y unificarlo no compraría ninguna garantía. Es la
+`@Column`,** como `orders` y el ejemplo de [`nestjs-mapping.md`](nestjs-mapping.md) (las de una
+sola palabra, como `id` o `status`, no lo necesitan). Lo existente no se renombra: un renombrado
+es destructivo (expand/contract, y sobre `auth_credentials`, el flujo completo), y unificarlo no
+compraría ninguna garantía. Es la
 decisión con la que se cerró la entrada #39 del [backlog](backlog.md).
 
 ## Expand/contract: el ejemplo trabajado

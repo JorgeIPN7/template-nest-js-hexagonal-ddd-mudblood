@@ -95,14 +95,14 @@ Cuando la respuesta sea para otro equipo, envuélvela entre `====RESPUESTA PARA 
 
 ## Skills and development flows
 
-Six skills live in `.claude/skills/`. **Pick the level of the change before touching code** (full guide: [`docs/development-workflows.md`](docs/development-workflows.md)).
+Five skills live in `.claude/skills/`. **Pick the level of the change before touching code** (full guide: [`docs/development-workflows.md`](docs/development-workflows.md)).
 
 - **Trivial** — typo, docs, non-security config, dependency bump, a one-line bug with an obvious test → no skill: the change, its test if it has behaviour, the DoD.
 - **Express** (default for features) — a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks, at most an additive migration → `/express`: ≤ 2 rounds of grouped questions → spec ≤ 150 lines with the case table and the contract → TDD, red by assertion → `pnpm test:mutation:changed` → `adversarial-review` → DoD.
 - **Full** — a new bounded context; a change across contexts (facades, shared ports); a destructive migration; auth, credentials, tokens or permissions — their config included, even one line; > ~10 tasks; work someone else continues → `/brainstorming` → `writing-plans` (plan WITHOUT production code) → `executing-plans` in a new session → `adversarial-review` → DoD.
 - **Doubt between trivial and express → express; between express and full → ask the user, with your recommendation:** the full flow costs several times more (52.54 vs 11.82 USD, measured) and that's their call.
 - **Every flow runs two checks** (each caught a real defect): every declared response is producible today, its contract-table row naming the input and code path («Endpoint documentation»), and every guard test fails without its protection («A test must fail without the fix»).
-- **Skill descriptions say when each applies** (they load every session, so not repeated here). The reference skill `clean-ddd-hexagonal` (its `references/NESTJS-MAPPING.md` is the source of truth for code shape) is **read, never invoked**, only when needed: this file is enough for conventions.
+- **Skill descriptions say when each applies** (they load every session, so not repeated here). **[`docs/nestjs-mapping.md`](docs/nestjs-mapping.md) is the source of truth for code shape:** read only the section the work needs (an artifact type its module doesn't have yet, or a new context); for conventions this file is enough.
 
 ## Modelo de colaboración — casos primero, TDD después, mutación como auditor
 
@@ -208,7 +208,7 @@ PostgreSQL through TypeORM; config in `src/config/database.config.ts`, wiring in
 - **Schema changes go through migrations** (after changing an ORM entity, `pnpm migration:generate src/database/migrations/<Name>`, then `pnpm migration:run`); outside `development`, `DB_MIGRATIONS_RUN=true` applies them on boot (`resolveMigrationsRun()`) — read «Destructive migrations» before dropping or renaming anything.
 - **CI's «Schema drift» step breaks the build if the entities and the migrated schema disagree** (`migration:generate … --check` on the freshly migrated E2E database).
 - **The domain owns the dates:** a date column is `@Column({ type: 'timestamptz', default: () => 'now()' })`; no ORM entity uses `CreateDateColumn`, `UpdateDateColumn`, `DeleteDateColumn` or `VersionColumn` (the contract's `orm-managed-columns` key checks it). generic NestJS material teaches `@CreateDateColumn`; this rule wins ([why](docs/database.md#el-dominio-es-el-dueño-de-las-fechas)).
-- **New tables name their columns in snake_case: every multi-word column carries an explicit `name:`** (as `orders` and NESTJS-MAPPING); the camelCase dates of `users` and `auth_credentials` stay — a rename is destructive ([why](docs/database.md#nombres-de-columna)).
+- **New tables name their columns in snake_case: every multi-word column carries an explicit `name:`** (as `orders` and `docs/nestjs-mapping.md`); the camelCase dates of `users` and `auth_credentials` stay — a rename is destructive ([why](docs/database.md#nombres-de-columna)).
 - **ORM entities are found by glob** (`*.orm-entity.ts` under `src/modules/`), with no central list.
 - **TLS:** `DB_SSL=true` against RDS; `DB_SSL_REJECT_UNAUTHORIZED=false` encrypts without verifying the server — prefer `DB_SSL_CA` with the AWS bundle.
 - **Driver errors are translated in the adapter** (users: a concurrent insert's `23505` → `EmailAlreadyTakenError` → 409, not 500); the pre-check is a nicety, not the defence.
@@ -242,7 +242,7 @@ Why: [docs/toolchain.md](docs/toolchain.md#zod-4-y-la-configuración).
 Why: [docs/testing.md](docs/testing.md).
 
 - **Code in English, prose in Spanish:** identifiers, object keys, file/folder names, env vars, config keys, SQL columns, `operationId` and form ids in English; comments, docs, OpenAPI `summary`/`description`, ESLint and operator messages in Spanish (`language-convention.spec.ts` checks identifiers, not strings). Exception: `env.schema.ts`/`validate-env.ts` messages stay English: they share a string with Zod's untranslatable defaults.
-- **`type`, never `interface`** (`consistent-type-definitions`); a skill reference's `interface` is pseudocode — translate it. Ports are `abstract class`.
+- **`type`, never `interface`** (`consistent-type-definitions`); generic DDD material's `interface` is pseudocode — translate it. Ports are `abstract class`.
 - **Path aliases** `@/` (→ `src/`), `@common/`, `@config/`, `@database/`, `@modules/`, `@shared/`, `@test/` (→ `test/`; shared test helpers go through it), kept in sync in `tsconfig.json`, `.swcrc`, `jest.config.mjs` (the E2E config inherits it) and `scripts/mutation-targets.mjs` (`ALIASES`).
 - **Inside a module, import relatively:** it survives the module moving.
 - **No barrels (`index.ts`) in `src/`, and the lint verifies it (boundaries rule 5): every import targets the concrete file; across modules only `*.module.ts` is importable, and only from `infrastructure/` or the module root (rule 3)** — the 6 rules of `eslint.boundaries.js` and its suite `eslint-boundaries.spec.ts` are the only source (backlog #29).

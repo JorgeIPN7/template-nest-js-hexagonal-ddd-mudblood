@@ -29,7 +29,7 @@ If the request is express or trivial, say so in one sentence and propose that pa
 
 This project uses **NestJS 12 + TypeScript 6.0** (exact versions: the «Stack» line of `CLAUDE.md`). `CLAUDE.md` already carries the conventions. **Read** these skills as design references when the design needs them — do not call them as workflow steps, and don't read them by ritual:
 
-- **`clean-ddd-hexagonal`** — for architectural decisions: aggregates, ports, layer boundaries. Use its decision trees when proposing approaches that touch domain logic. Anchor concrete code shape in `${CLAUDE_SKILL_DIR}/../clean-ddd-hexagonal/references/NESTJS-MAPPING.md`.
+- **`docs/nestjs-mapping.md`** — for architectural decisions: aggregates, ports, layer boundaries, and the concrete code shape of each piece. Read only the section the design touches.
 - **`nestjs-best-practices`** — for NestJS-specific tradeoffs: auth, guards, scopes, validation, caching, queues. Cite rule codes (e.g. `security-auth-jwt`, `arch-feature-modules`) when proposing options.
 - **`javascript-typescript-jest`** — for the testing strategy section of the spec. Locks file naming (`*.spec.ts` / `*.e2e-spec.ts`), per-layer mocking (no mocks in domain, hand-written port fakes in application, realistic doubles in infrastructure), and Supertest E2E patterns.
 
@@ -41,7 +41,7 @@ You MUST create a task for each of these items and complete them in order:
 
 1. **Explore project context** — check files, docs, recent commits. Read `package.json`, `nest-cli.json`, `tsconfig.json`, and any module under `src/modules/` that resembles the area being changed.
 2. **Ask clarifying questions** — grouped: one `AskUserQuestion` round with up to 4 independent questions, each with options and your recommendation first. Ask a question on its own only when its answer changes the next ones.
-3. **Propose 2-3 approaches** — with trade-offs and your recommendation. Tag each approach with the architectural patterns from `clean-ddd-hexagonal` and the rule codes from `nestjs-best-practices` it relies on.
+3. **Propose 2-3 approaches** — with trade-offs and your recommendation. Tag each approach with the architectural patterns from `docs/nestjs-mapping.md` and the rule codes from `nestjs-best-practices` it relies on.
 4. **Present design** — sections scaled to their complexity, in one message when it fits, or in 2–3 blocks for a large design; one approval per block.
 5. **Write design doc** — save to `docs/specs/YYYY-MM-DD-<topic>-design.md`.
 6. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below).
@@ -94,7 +94,7 @@ digraph brainstorming {
 **Exploring approaches:**
 
 - Propose 2-3 different approaches with trade-offs
-- For each approach, attach the layer (`domain` / `application` / `infrastructure`), the patterns from `clean-ddd-hexagonal` (e.g., aggregate, repository port, domain event, anti-corruption layer), and the relevant rule codes from `nestjs-best-practices` (e.g., `arch-feature-modules`, `di-use-interfaces-tokens`, `security-validate-all-input`)
+- For each approach, attach the layer (`domain` / `application` / `infrastructure`), the patterns from `docs/nestjs-mapping.md` (e.g., aggregate, repository port, domain event, anti-corruption layer), and the relevant rule codes from `nestjs-best-practices` (e.g., `arch-feature-modules`, `di-use-interfaces-tokens`, `security-validate-all-input`)
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
 
