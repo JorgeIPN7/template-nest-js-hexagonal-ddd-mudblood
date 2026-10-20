@@ -564,12 +564,12 @@ Para que un flujo corra sin rescates:
 Comprobado el 2026-10-20 contra la documentación oficial y `claude --help`, con Claude Code
 2.1.304. Lo que no se pudo comprobar va marcado.
 
-- **`/autocompact 400k`, una vez.** Guarda la ventana de autocompactación en tu configuración de
+- **`/autocompact 500k`, una vez.** Guarda la ventana de autocompactación en tu configuración de
   usuario, por modelo (`modelSettings`; antes de la v2.1.288 era una sola para todos), y la aplica
   a la sesión en curso. Acepta de 100K a 1M, y `/autocompact auto` vuelve a la de serie. Con una
   ventana nativa de 1M (Opus 4.7 en adelante) se compacta por defecto hacia los 967K
   ([documentación](https://code.claude.com/docs/en/model-config#set-the-auto-compact-window)).
-  Los 400k (~40 % de la ventana) se propusieron el 2026-10-20 junto con «Sesiones» de
+  Los 500k (~50 % de la ventana) se propusieron el 2026-10-20 junto con «Sesiones» de
   `CLAUDE.md`. ⚠️ Que sean el umbral óptimo **no está verificado**: la documentación no recomienda
   ninguno.
 - **`/context`:** qué ocupa la ventana, por categorías. La fila «Memory files» suma los `CLAUDE.md`
