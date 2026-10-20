@@ -149,10 +149,10 @@ export class AuthController {
     summary: 'Autentica un usuario y emite un JWT',
     description:
       'Verifica email y contraseña y devuelve un token de acceso firmado junto con el usuario ' +
-      'autenticado. Anti-enumeración: el 401 es idéntico —mismo código, mismo mensaje y mismo ' +
-      'costo de tiempo— para email inexistente, cuenta sin credencial, password incorrecto o ' +
-      'cuenta inactiva. Tiene un límite de peticiones propio, más estricto que el global: 10 ' +
-      'por minuto.',
+      'autenticado. Anti-enumeración: el 401 es idéntico —mismo código, mismo mensaje y el mismo ' +
+      'trabajo de hash, una verificación argon2id— para email inexistente, cuenta sin ' +
+      'credencial, password incorrecto o cuenta inactiva. Tiene un límite de peticiones propio, ' +
+      'más estricto que el global: 10 por minuto.',
   })
   @ApiBody({
     type: LoginDto,

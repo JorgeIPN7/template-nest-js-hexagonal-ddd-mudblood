@@ -265,7 +265,9 @@ describe('Auth (e2e)', () => {
 
     // El perfil que ya tiene ese email guarda un id que no es v4, escrito por SQL externo: la
     // comprobación previa del alta lo lee, el mapper falla cerrado y la fachada lo relanza porque
-    // no es un rechazo de negocio. Antes era un 400 `invalid-profile` con el id de la otra cuenta.
+    // no es un rechazo de negocio. Antes era un 400 `invalid-profile` con el id de la otra cuenta;
+    // ahora el 500 lo sanea el filtro global en production y staging, pero en development y test
+    // su `message` todavía lleva ese id (la spec del contrato de módulo, §9, lo acepta así).
     it('debería responder 500 sin escribir credencial cuando el perfil existente con ese email está corrupto', async () => {
       // Arrange
       await dataSource.query(

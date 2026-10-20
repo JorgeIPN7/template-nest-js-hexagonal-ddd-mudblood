@@ -1737,6 +1737,53 @@ expand/contract (`CLAUDE.md`, «Destructive migrations»), una tabla por par de 
 
 ---
 
+## 40. `pnpm seed:admin` imprime el hash del admin cuando falla
+
+**Qué pasa.** El bloque CLI de `src/database/seeds/seed-admin.ts` (desde `8721f48`) hace
+`console.error('[seed:admin] failed:', error)`. Si falla la escritura de la credencial, `error`
+es un `QueryFailedError` de TypeORM, que guarda `parameters`, y `util.inspect` los imprime enteros,
+hash argon2id incluido. La redacción de pino (`err.parameters[*]` en `pino-options.ts`) solo
+cubre el camino HTTP, y el CLI no pasa por pino. Contradice el comentario de cabecera del propio
+seed («Nunca loguea el password ni el hash»). Lo encontró la revisión de seguridad del cierre del
+contrato de módulo (2026-10-19) y lo demostró en la base de test con un trigger `BEFORE INSERT`
+que lanzaba en `auth_credentials`: la salida llevaba `$argon2id$…`. Escenario: un Job de CI o de
+k8s lanza el seed, la escritura falla por un timeout o un corte de conexión, y el hash acaba en el
+agregador de logs, listo para crackearlo offline. Por la misma vía, con `DB_LOGGING=true` el
+logger por defecto de TypeORM (`src/database/typeorm-options.ts`) imprime los `PARAMETERS` de
+cada INSERT de credencial (razonado, sin ejecutar).
+
+**Criterio ya decidido (2026-10-19).** Va en su propio PR, por el flujo que elija el usuario,
+porque toca credenciales. El CLI imprime solo `error.message` y, si existe, `error.code`; nunca
+`detail` (en una violación de constraint, PostgreSQL pone ahí la fila entera, hash incluido) ni
+`parameters`. El formateo sale a una función pura y exportada, con un test que falle si la salida
+contiene `$argon2id$`. `DB_LOGGING` se resuelve en la misma entrada: o un logger de TypeORM que
+no imprima parámetros, o un aviso escrito de que nunca se activa con credenciales reales.
+
+**Cómo se sabrá que está hecho.** El test de la función pura en verde y rojo sin el arreglo; el
+E2E del seed con la escritura forzada a fallar no deja `$argon2id$` en la salida; y la decisión
+sobre `DB_LOGGING`, escrita en el código y en `.env.example`.
+
+---
+
+## 41. El rescate de `seed:admin` no cubre un `users.id` que no es v4
+
+**Qué pasa.** `pnpm seed:admin` renueva el id de la credencial cuando no es v4 (decisión B9 del
+contrato de módulo), pero no mira el `users.id` del admin. Si un SQL externo dejara ese id en
+otra versión (un v1, por ejemplo), el seed actualizaría el rol, haría el upsert de la credencial e
+imprimiría `promoted`, y el login seguiría en 500, porque `UserMapper` falla cerrado. Es el mismo
+«éxito aparente» que B9 se propuso eliminar. Lo razonó la revisión de seguridad del cierre del
+contrato de módulo (2026-10-19), sin ejecutarlo.
+
+**Criterio ya decidido (2026-10-19).** `users.id` no se puede renovar como el de la credencial,
+porque `orders.customer_id` lo referencia por valor. El seed falla con un mensaje explícito cuando
+el id que encuentra no es v4 (con `UserId.from`), en vez de declararlo promovido. Es un caso nuevo
+de auth, así que entra con su fila aprobada, por el flujo que toque.
+
+**Cómo se sabrá que está hecho.** Un E2E del seed con un perfil de admin con id v1 falla con ese
+mensaje y sin tocar `auth_credentials`, y se pone rojo sin la comprobación.
+
+---
+
 ## Cerrado al verificarlo
 
 - **`operationIdFactory` colisionando entre controllers con métodos homónimos.** No estaba latente:
