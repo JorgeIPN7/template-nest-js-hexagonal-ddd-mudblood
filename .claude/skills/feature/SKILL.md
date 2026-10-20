@@ -23,7 +23,7 @@ bucle.
 
 ## Pasos
 
-1. **Base.** Guarda `git rev-parse HEAD` como `<BASE>`: la usan los pasos 6 y 7. Lee el módulo
+1. **Base.** Guarda `git rev-parse HEAD` como `<BASE>`: la usan los pasos 6 a 8. Lee el módulo
    afectado: entidades, puertos, casos de uso, controller y sus tests.
 2. **Preguntas**, solo si hay decisiones abiertas de negocio, contrato público o riesgo: **una
    ronda** de `AskUserQuestion` con hasta 4 preguntas y tu recomendación primero. Lo técnico lo
@@ -62,22 +62,25 @@ bucle.
      aserción y restáurala; si sigue en verde, rehaz el test;
    - **cada estado declarado tiene un camino que hoy lo produce:** repasa la tabla «Contrato»
      contra el código final.
-6. **Mutación, una sola vez** y solo si cambió `domain/` o `application/`:
-   `pnpm test:mutation:changed <BASE>`. Por cada superviviente, propón el caso que lo mata y
-   pregúntalos todos en **una sola** `AskUserQuestion`. Los aprobados son filas nuevas con su test,
-   que pasa en verde a la primera: sin reaplicar mutantes a mano ni repetir la corrida. Un
+6. **Mutación**, solo si cambió `domain/` o `application/`: `pnpm test:mutation:changed <BASE>`.
+   Por cada superviviente, propón el caso que lo mata y pregúntalos todos en **una sola**
+   `AskUserQuestion`. Los aprobados son filas nuevas con su test, que pasa en verde a la primera:
+   su rojo lo demuestra la segunda corrida del paso 8, no reaplicar mutantes a mano. Un
    equivalente se marca con `// Stryker disable next-line <Mutador>: <motivo>`.
 7. **Revisión:** `adversarial-review` con `<BASE>` y la spec, o con las tablas aprobadas si no hay
    spec. Corrige lo crítico y lo importante, cada arreglo con su test en rojo por aserción; lo
-   menor va al informe. La mutación no se repite: el informe dice que su score es de antes.
-8. **DoD, una vez:**
+   menor va al informe.
+8. **Cierre.** Si el paso 6 dejó supervivientes o una corrección de la revisión tocó `domain/` o
+   `application/`, una segunda y última `pnpm test:mutation:changed <BASE>`: lo que siga vivo va
+   al informe, sin tercera corrida. Después, la DoD una vez:
    `pnpm typecheck && pnpm lint:check && pnpm format:check && pnpm test && pnpm test:e2e && pnpm build`.
 9. **Docs**, solo si cambió el comportamiento público: README, tabla de endpoints y la spec si
    existe. `CLAUDE.md` solo recibe gotchas nuevos.
 10. **Informe de ≤ 5 puntos**, en el formato de `CLAUDE.md`:
     1. qué se hizo y en qué archivos;
     2. casos ↔ tests (ninguna fila sin `it` ni `it` sin fila) y las dos comprobaciones;
-    3. el score de la mutación y los hallazgos de la revisión, con lo que se hizo con cada uno;
+    3. el score de la última corrida de mutación y los hallazgos de la revisión, con lo que se hizo
+       con cada uno;
     4. la DoD, con el resultado de cada comando;
     5. ⚠️ los cambios de contrato y el commit sugerido (Conventional Commits, scope de
        `commitlint.config.cjs`).
