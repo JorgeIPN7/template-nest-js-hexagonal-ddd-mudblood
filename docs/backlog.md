@@ -1390,7 +1390,15 @@ el código anterior no cumple del todo. Conteos heurísticos sobre `bc66bce`:
 - **AAA con los tres marcadores siempre**, sin `// Act + Assert`: unos 207 tests incumplen. 105 no
   llevan `// Arrange` (22 archivos; los que más, `pino-options` 19, `users.e2e` 13, `auth.e2e` 9,
   `database.config` 9, `email.vo` 8, `user-id.vo` 7, `user.entity` 6 y `orders.e2e` 5) y 102 usan
-  un marcador combinado.
+  un marcador combinado. **Actualización del 2026-10-19**, con el mismo método (reproduce los 207
+  de `bc66bce`) sobre el árbol del cierre del contrato de módulo: 194 de 1010 tests, en 45 specs.
+  99 no llevan `// Arrange` (20 specs) y 95 usan un marcador combinado (33). El que más incumple es
+  `src/__tests__/eslint-boundaries.spec.ts`, con 35 `// Arrange + Act`; no estaba en la lista de
+  arriba porque esa lista solo es de los que no llevan `// Arrange`. El plan del contrato no añadió
+  ninguno y quitó 7 (205 en `32ade98`, 198 en su último commit), y el cierre quitó 4 al reescribir
+  esos tests. El método es heurístico: cuenta las llamadas `it`, `test` y `fcTest` (también
+  `it.each(…)(…)` y `fcTest.prop(…)(…)`) cuyo primer argumento es una cadena y el último una
+  función, y busca los marcadores como comentario de línea propia.
 - **1:1 con los puertos exentos**: faltan 4 specs, las de `auth/domain/errors/auth.errors.ts`,
   `orders/domain/errors/order.errors.ts`, `users/domain/errors/user.errors.ts` y
   `orders/domain/events/order-placed.event.ts`. Los errores sin spec coinciden con los
@@ -1407,13 +1415,15 @@ el código anterior no cumple del todo. Conteos heurísticos sobre `bc66bce`:
   `order-placed.event.ts`, fuera de aquel alcance. Con los dos mensajes que fijó la Task 12 de ese plan
   (`InvalidOrderConceptError` y `CustomerGoneError`), cada error de los tres archivos tiene un
   `it` que fija su mensaje, y el censo de ese día (cabecera de `stryker.config.mjs`) no deja
-  ningún superviviente en ellos. La línea «De paso» de abajo sigue vigente: el `.filter()` está
-  hoy en `user-id.vo.spec.ts:140`.
+  ningún superviviente en ellos. **Cierre del mismo plan (2026-10-19):** existe ya
+  `orders/__tests__/domain/events/order-placed.event.spec.ts`, así que no falta ninguna de las 4.
 - **`describe` anidado con el nombre del método**: la regla se alineó con lo que ya hacía la suite
   (95 de 139 anidados), así que no deja deuda.
 
-De paso: `user-id.vo.spec.ts:103` filtra un `fc.string()` con `.filter()`, contra la regla de
-construir los arbitrarios.
+De paso: `user-id.vo.spec.ts` filtraba un `fc.string()` con `.filter()` (en `:103` sobre
+`bc66bce`, en `:140` después), contra la regla de construir los arbitrarios. **Resuelto el
+2026-10-19:** la arbitraria es `fc.string({ maxLength: 35 })`, construida (un UUID tiene 36
+caracteres justos).
 
 **Criterio ya decidido.** El código nuevo cumple desde ya; lo existente queda como deuda y no se
 arregla dentro de una feature. Pagarla es mecánico: añadir `// Arrange` vacío donde falta, partir
@@ -1423,13 +1433,13 @@ ronda, se valora cerrarla con una guarda automática que recorra los `*.spec.ts`
 `language-convention.spec.ts` con los identificadores; hoy nada verifica AAA, «debería» ni el
 idioma de los comentarios.
 
-**Cómo se sabrá que está hecho.** El conteo de tests sin los tres marcadores separados llega a 0;
-`auth.errors.ts`, `user.errors.ts` y `order-placed.event.ts` tienen su spec; cada error antiguo de
-los tres archivos de errores tiene un `it` que fija su mensaje, y la mutación de esos tres
-archivos no deja ningún superviviente. (La condición original —«existen las 4 specs» y «la
-mutación de `orders` sube de su 85.94 %»— dejó de medir la deuda el 2026-09-30: la spec de
-`order.errors.ts` ya existe, y el porcentaje de `orders` sube por el código nuevo de la
-cancelación, no por la deuda pagada.)
+**Cómo se sabrá que está hecho.** El conteo de tests sin los tres marcadores separados llega a 0.
+Lo demás que pedía este criterio se cumplió el 2026-10-19: `auth.errors.ts`, `user.errors.ts` y
+`order-placed.event.ts` tienen su spec, y cada error antiguo de los tres archivos de errores tiene
+un `it` que fija su mensaje, sin supervivientes en el censo de mutación. (La condición original
+—«existen las 4 specs» y «la mutación de `orders` sube de su 85.94 %»— dejó de medir la deuda el
+2026-09-30: la spec de `order.errors.ts` ya existe, y el porcentaje de `orders` sube por el código
+nuevo de la cancelación, no por la deuda pagada.)
 
 ---
 
@@ -1518,6 +1528,12 @@ conflictos: en esas dos semanas `main` solo recibió bumps de Renovate, y ningun
 - **Lo que no se midió.** La premisa «`CLAUDE.md` basta para las convenciones» (una sesión sin
   skills cumplió el 100 %) se midió el 2026-09-30 con la versión de entonces (54 545 bytes en
   `5263e50`, el commit base del experimento); no se ha repetido con esta.
+- **Actualización del 2026-10-19.** El contrato de módulo y su cierre devolvieron `CLAUDE.md` a
+  38 301 bytes (265 líneas): +2 893 sobre los 35 408 de `32ade98` (+8,2 %), y −40,6 % frente a los
+  64 510 originales. Lo que entró son reglas que se aplican al escribir código: el kernel y el
+  contrato de módulo de la Task 11 de su plan (spec §14), la convención de nombres de columna de
+  #39 y el umbral de mutación. No se movió contenido a `docs/`: vale el mismo criterio de arriba,
+  la fidelidad antes que el tamaño.
 
 ## 33. Un 408 en `POST /orders` no dice si el pedido se creó, y reintentar puede duplicarlo
 
@@ -1541,9 +1557,8 @@ encuentra un solo pedido y un solo `OrderPlaced`, y el contrato documenta la cab
 
 ## 34. El seed del primer admin acepta credenciales que el login rechaza
 
-**Resuelto (2026-10-01, por el flujo completo: spec
-[`2026-10-01-admin-seed-login-parity-design.md`](./specs/2026-10-01-admin-seed-login-parity-design.md)
-y plan [`2026-10-01-admin-seed-login-parity.md`](./plans/2026-10-01-admin-seed-login-parity.md)).**
+**Resuelto (2026-10-01, por el flujo completo, en `9564f95`; su spec y su plan no llegaron a
+entrar en git y no se reconstruyen, con el mismo criterio que #29).**
 Se aplicó el criterio de abajo tal cual: `PASSWORD_LENGTH` y `hasValidPasswordLength` en
 `src/config/password-policy.ts`, y `ADMIN_*` validadas con `minLength`/`maxLength` e `isEmail` de
 class-validator. El contrato publicado no cambió: el documento OpenAPI de antes y el de después
@@ -1674,16 +1689,20 @@ desaparece de la cabecera de `.env.example`, del README y de `SECURITY.md`.
 
 **Qué pasa.** El sobre de error admite una clave opcional, `errorCode`, que Nest 12 rellena
 cuando la `HttpException` la lleva (`docs/api-contract.md`, «`errorCode` es la única clave
-opcional del sobre de error»). Ningún error de esta API la lleva: un cliente que quiera
-distinguir dos 409 tiene que leer `message`, que es prosa. El contrato de módulo
-(`docs/specs/2026-10-17-module-contract-kernel-design.md`, B8) lo dejó fuera a propósito, para no
-mezclar un cambio de contrato público con un refactor.
+opcional del sobre de error»). Ningún error de esta API la lleva: un cliente que quisiera
+distinguir dos errores con el mismo status tendría que leer `message`, que es prosa. El contrato
+de módulo (`docs/specs/2026-10-17-module-contract-kernel-design.md`, B8) lo dejó fuera a
+propósito, para no mezclar un cambio de contrato público con un refactor.
 
-**Criterio propuesto, pendiente de decisión.** El código viaja en la tabla de mapeo del filtro de
-cada contexto (`mappings`, sobre `DomainExceptionFilter`): la entrada que traduce un error a su
-`HttpException` le pone también el `errorCode`. Así el dominio sigue sin conocer HTTP, y cada
-código vive junto al status que lo acompaña. Falta decidir el formato de los códigos y si se
-emiten para todos los errores o solo para los que un cliente necesita distinguir.
+**Criterio ya decidido (2026-10-19, al cerrar el contrato de módulo): aplazado hasta su
+disparador.** El código viaja en la tabla de mapeo del filtro de cada contexto (`mappings`, sobre
+`DomainExceptionFilter`): la entrada que traduce un error a su `HttpException` le pone también el
+`errorCode`. Así el dominio sigue sin conocer HTTP, y cada código vive junto al status que lo
+acompaña. **Trigger: el primer endpoint que publique dos errores con el mismo status que un
+cliente necesite distinguir.** Hasta entonces no se fijan ni el formato ni el alcance de los
+códigos: un código sin consumidor sería contrato público especulativo. Hoy no se cumple: el único
+409 publicado es el de `POST /auth/register`, y ningún otro status se repite con dos causas que un
+cliente tenga que separar.
 
 **Cómo se sabrá que está hecho.** Un error mapeado emite su `errorCode`, el ejemplo de su
 endpoint lo publica y pasa las tres comprobaciones del contrato OpenAPI, y la descripción de
@@ -1722,18 +1741,24 @@ ESLint y Prettier, que no pasan por el md.
 
 ## 39. Dos convenciones de nombres de columna en el mismo esquema
 
-**Qué pasa.** `users` y `auth_credentials` usan camelCase entre comillas (`"createdAt"`,
-`"updatedAt"`), porque no hay `NamingStrategy` y TypeORM usa el nombre de la propiedad tal cual.
-`orders` y `orders_outbox` usan snake_case (`created_at`, `customer_id`) con `name:` en cada
-`@Column`. Funciona, pero quien escribe SQL a mano o una migración tiene que recordar en qué
-tabla está (`docs/database.md`, «Nombres de columna»).
+**Resuelto (2026-10-19, sin plan propio — una regla de convención para lo nuevo, sin migración y
+sin renombrar nada).**
 
-**Criterio propuesto, pendiente de decisión.** Una sola convención para todo el esquema, con o
-sin `NamingStrategy`. Los renombrados de columna son destructivos, así que van en
-expand/contract (`CLAUDE.md`, «Destructive migrations»), una tabla por par de migraciones.
+**Qué pasa.** Las fechas de `users` y de `auth_credentials` son camelCase entre comillas
+(`"createdAt"`, `"updatedAt"`), porque no hay `NamingStrategy` y TypeORM usa el nombre de la
+propiedad tal cual (las demás columnas de `users` son una sola palabra, y las otras dos de
+`auth_credentials`, `user_id` y `password_hash`, ya llevan `name:` en snake_case). `orders` y `orders_outbox` usan snake_case (`created_at`, `customer_id`) con
+`name:` en cada `@Column`. Funciona, pero quien escribe SQL a mano o una migración tiene que
+recordar en qué tabla está (`docs/database.md`, «Nombres de columna»).
 
-**Cómo se sabrá que está hecho.** La convención está escrita en «Database» de `CLAUDE.md`,
-`pnpm migration:generate … --check` sale limpio y el paso «Schema drift» de la CI está en verde.
+**Criterio ya decidido.** Las tablas nuevas usan snake_case: toda columna de más de una palabra
+lleva `name:` explícito en su `@Column`: es lo que ya hacen `orders`, `orders_outbox` y el ejemplo de NESTJS-MAPPING, y lo que
+copia todo módulo nuevo. Las columnas existentes no se renombran: un renombrado es destructivo
+(expand/contract, y sobre `auth_credentials`, el flujo completo por ser de credenciales), y
+unificar `users` y `auth_credentials` no compraría ninguna garantía, solo estética.
+
+**Cómo se sabrá que está hecho.** La convención está escrita en «Database» de `CLAUDE.md`. Hecho
+el 2026-10-19.
 
 ---
 

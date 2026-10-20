@@ -6,6 +6,11 @@
 
 **Spec:** `docs/specs/2026-10-17-module-contract-kernel-design.md`
 
+**Estado (2026-10-19): ejecutado y cerrado.** Las 12 tareas están en `65a4fdb..1423807`, y su
+cierre, en los commits que les siguen en la rama `feat/add-core-modules`. El informe de ejecución
+—mediciones, rojos, guardas, revisiones y desvíos— va en la descripción del PR de esa rama, no
+aquí. Las casillas no se marcaron: el estado lo dice esta línea, no ellas.
+
 **Goal:** que `users`, `orders` y `auth` hereden de un kernel compartido y de unas bases de
 `common/`, y que un test de arquitectura verifique ese contrato en todo módulo de `src/modules/`,
 presente o futuro.

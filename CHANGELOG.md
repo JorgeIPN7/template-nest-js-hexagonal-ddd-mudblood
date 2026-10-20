@@ -137,7 +137,7 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
     `DELETE /users/:id` y en la comprobación previa de `POST /auth/register`. Antes el 400
     publicaba el valor corrupto; ahora es un fallo del servidor con el cuerpo genérico en
     producción. Ningún cliente puede provocarlo ni dependía del 400.
-  - **El login con una credencial cuyo id no es un uuid v4 pasa de 200/401 a un 500 saneado.**
+  - **⚠️ El login con una credencial cuyo id no es un uuid v4 pasa de 200/401 a un 500 saneado.**
     Solo se alcanza con SQL externo: todo id que escribe el sistema es v4 (el alta, el seed y la
     migración de credenciales). Una carga externa con ids de otra versión (v1, v7) deja esas
     cuentas sin poder entrar hasta renovarles el id; `pnpm seed:admin` lo hace con el del admin,
@@ -149,8 +149,11 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
   - **El ejemplo OpenAPI del `timestamp` de `RequestMetaDto`** usa el literal común. Es el único
     literal de ejemplo que cambia; aparte, los esquemas y ejemplos de `orders` cambian por el
     punto de la API de arriba.
-  - **Lo que queda fuera**, con su decisión en el backlog: `errorCode` (#37), el generador
-    `pnpm module:new` (#38) y unificar los nombres de columna (#39).
+  - **Lo que queda fuera**, con su decisión en el backlog: `errorCode` (#37, aplazado hasta que
+    un endpoint publique dos errores con el mismo status que un cliente necesite distinguir) y el
+    generador `pnpm module:new` (#38). Los nombres de columna (#39) se resolvieron sin renombrar
+    nada: snake_case, con `name:` explícito en cada columna de más de una palabra, solo en las
+    tablas nuevas.
   - **El umbral de mutación sube de 85 a 90** (`high: 95`, `low: 90`), con el censo al 100 %
     (360/360, sin supervivientes): un fork con un score entre 85 y 90 verá rojo el job `mutation`.
     `stryker.config.mjs` fija además `concurrency`, con un techo de 6 workers (con 11, la corrida

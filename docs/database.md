@@ -71,15 +71,19 @@ TypeORM rellena por su cuenta. La skill de referencia `nestjs-best-practices` en
 
 Hoy conviven dos convenciones, y ninguna está mal en sí misma:
 
-- `users` y `auth_credentials` usan camelCase entre comillas (`"createdAt"`, `"updatedAt"`):
-  no hay `NamingStrategy`, así que TypeORM usa el nombre de la propiedad tal cual
+- Las fechas de `users` y de `auth_credentials` son camelCase entre comillas (`"createdAt"`,
+  `"updatedAt"`): no hay `NamingStrategy`, así que TypeORM usa el nombre de la propiedad tal cual
   ([`1786210289581-move-credentials-to-auth-expand.ts`](../src/database/migrations/1786210289581-move-credentials-to-auth-expand.ts)
-  lo explica en su cabecera).
+  lo explica en su cabecera). Las demás columnas de `users` son una sola palabra, y las otras dos
+  de `auth_credentials`, `user_id` y `password_hash`, ya llevan `name:` en snake_case.
 - `orders` y `orders_outbox` usan snake_case (`created_at`, `customer_id`), con `name:`
   explícito en cada `@Column`.
 
-Unificarlo es la entrada #39 del [backlog](backlog.md): los renombrados son destructivos, así que
-irían en expand/contract.
+**Lo nuevo va en snake_case: toda columna de más de una palabra lleva `name:` explícito en su
+`@Column`,** como `orders` y el ejemplo de NESTJS-MAPPING (las de una sola palabra, como `id` o
+`status`, no lo necesitan). Lo existente no se renombra: un renombrado es destructivo (expand/contract, y
+sobre `auth_credentials`, el flujo completo), y unificarlo no compraría ninguna garantía. Es la
+decisión con la que se cerró la entrada #39 del [backlog](backlog.md).
 
 ## Expand/contract: el ejemplo trabajado
 

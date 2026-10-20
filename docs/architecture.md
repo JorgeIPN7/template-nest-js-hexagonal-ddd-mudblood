@@ -397,8 +397,9 @@ archivo de producción escribe 12 o 128 a mano.
 `hasher.verify()` exactamente una vez.
 
 Cuando no hay credencial real que comprobar, la llamada va contra un hash ficticio pregenerado,
-así que los cuatro caminos cuestan el mismo tiempo. El cuarto camino es nuevo: con dos dueños, un
-perfil sin credencial es un estado alcanzable.
+así que los cuatro caminos hacen el mismo trabajo de hash, una verificación argon2id; el email
+inexistente se ahorra además la lectura de la credencial. El cuarto camino es nuevo: con dos
+dueños, un perfil sin credencial es un estado alcanzable.
 
 Es un requisito **medido**: una fila de propiedad en [`login.use-case.spec.ts`][login-spec]
 comprueba error indistinguible _y_ exactamente un `verify` en los cuatro.
@@ -539,11 +540,18 @@ camino tiene cinco pasos:
    importar el id de otro.
 2. **Las tablas se van con el módulo.** No hay claves foráneas, y está verificado: lo comprueban
    `migration-conventions.spec.ts` en las migraciones y la clave `orm-relations` del contrato en
-   las entidades ORM, que ya están separadas por módulo. Las migraciones se separan.
+   las entidades ORM, que ya están separadas por módulo. Las migraciones se separan. Hay una
+   escritura que cruza dos contextos y habría que partir: `src/database/seeds/seed-admin.ts`
+   escribe `users` y `auth_credentials` en un solo `dataSource.transaction`. Con dos bases, pasa a
+   ser dos seeds, o un seed que llama a cada servicio, y pierde la atomicidad entre las dos tablas.
 3. **El relay del outbox pasa a publicar en un broker**, en lugar del log estructurado de hoy.
 4. **Con HS256, cada servicio necesitaría el secreto** para verificar los tokens. Pasar a
    RS256/JWKS, para que solo `auth` firme, es otro cambio.
-5. **`common/` pasa a ser un paquete compartido**, con las bases que hoy importan los contextos.
+5. **`common/` y el kernel de `src/shared/domain/` pasan a ser paquetes compartidos**, con las
+   bases que hoy importan los contextos: `DomainExceptionFilter` y `failClosed` de un lado,
+   `DomainError`, `Entity`, `AggregateRoot`, `UuidIdentifier` y `ValueObject` del otro. La config
+   de cada contexto se va con él: `auth` lee `@config/auth.config` y `@config/password-policy`, y
+   `health`, `@config/app.config`.
 
 Nada de esto está hecho: es la guía para cuando haga falta, no una tarea pendiente.
 
