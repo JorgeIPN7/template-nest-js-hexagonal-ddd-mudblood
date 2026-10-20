@@ -61,7 +61,7 @@ Otras carpetas de `infrastructure/` aparecen cuando hay algo que meter: `auth` t
 - Controllers viven en `infrastructure/http/` (son driver adapters), no en una carpeta paralela.
 - **Sin barrels**: no existe ningún `index.ts` en `src/`. Cada import apunta al archivo concreto.
 - **Dentro de un módulo se importa en relativo** (`../../domain/…`); **entre módulos, solo el `<context>.module.ts` ajeno** es importable, y solo desde `infrastructure/` o la raíz del módulo.
-- **La forma del contexto la verifica `src/__tests__/module-contract.spec.ts`** sobre todo `src/modules/*`, salvo la lista cerrada `FLAT_MODULES` (`health`): las cuatro carpetas y el module file, la raíz de errores sobre `DomainError`, el filtro `<context>-domain-exception.filter.ts` sobre `DomainExceptionFilter` y aplicado con `@UseFilters` en cada controller, las entidades sobre `Entity` o `AggregateRoot`, los VOs sobre `ValueObject` o `UuidIdentifier`, la forma de los casos de uso, los sufijos y las entidades ORM sin relaciones ni columnas que rellene TypeORM. Un módulo copiado de esta referencia lo pasa sin editarlo; el porqué de cada clave está en `docs/architecture.md`, «El contrato de módulo».
+- **La forma del contexto la verifica `src/__tests__/module-contract.spec.ts`** sobre todo `src/modules/*`, salvo la lista cerrada `FLAT_MODULES` (`health`): las cuatro carpetas y el module file, la raíz de errores sobre `DomainError`, el filtro `<context>-domain-exception.filter.ts` sobre `DomainExceptionFilter` y aplicado con `@UseFilters` en cada controller, las entidades sobre `Entity` o `AggregateRoot`, los VOs sobre `ValueObject` o `UuidIdentifier`, la forma de los casos de uso, los sufijos y las entidades ORM sin relaciones ni columnas que rellene TypeORM. Un módulo copiado de esta referencia lo pasa en cuanto tiene sus tests (`structure` pide un `.ts` en `__tests__/`), y compila: lo verifica `src/__tests__/nestjs-mapping.spec.ts`, que extrae los bloques `billing` de este documento, los pasa por el contrato y los compila con el `tsconfig.json` del repo contra el kernel y `common/` reales. ESLint y Prettier no pasan por ellos. El porqué de cada clave está en `docs/architecture.md`, «El contrato de módulo».
 
 ## 2. Puertos: `abstract class`, tipo y token a la vez (obligatorio)
 
@@ -169,6 +169,16 @@ export class InvoiceId extends UuidIdentifier<'InvoiceId'> {
 }
 ```
 
+Los estados posibles son una constante y la unión que se deriva de ella, en una sola fuente: la leen la entidad, el mapper que los valida al leer y el DTO que los publica en OpenAPI.
+
+```ts
+// src/modules/billing/domain/value-objects/invoice-status.ts
+// Calca: src/modules/orders/domain/value-objects/order-status.ts
+/** Ciclo de vida de la factura. Unión y no enum, con el mismo patrón que `ORDER_STATUSES`. */
+export const INVOICE_STATUSES = ['draft', 'issued'] as const;
+export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
+```
+
 `ValueObject` compara con `===`: todos los VOs del repo envuelven un primitivo. Uno que envolviera un objeto tendría que sobrescribir `equals()`.
 
 **Toda entidad extiende `Entity<TId>`** (`@shared/domain/entity.base`): su constructor protegido recibe `BaseEntityProps<TId>` —`{ id, createdAt, updatedAt }`— y aporta `id`, `createdAt`, el getter `updatedAt`, `touch(now)` (protegido) y `equals()`, que compara la clase y después el id. **Si emite eventos, extiende `AggregateRoot<TId, TEvent>`** (`@shared/domain/aggregate-root`), una `Entity` que además aporta `record()` (protegido) y `pullEvents()` (drena). Nada de props-bag: el resto del estado vive en los campos privados de cada entidad, que solo cambian sus métodos de intención.
@@ -185,8 +195,7 @@ import { InvoiceNotDraftError } from '../errors/invoice.errors';
 import { InvoiceIssued } from '../events/invoice-issued.event';
 import type { InvoiceAmount } from '../value-objects/invoice-amount.vo';
 import type { InvoiceId } from '../value-objects/invoice-id.vo';
-
-export type InvoiceStatus = 'draft' | 'issued';
+import type { InvoiceStatus } from '../value-objects/invoice-status';
 
 export type InvoiceSnapshot = {
   id: string;
@@ -332,6 +341,65 @@ export class InvoicesController {
 }
 ```
 
+El DTO de respuesta es el único que se serializa: el agregado nunca sale tal cual. Lleva un `@ApiProperty` por campo, con su ejemplo, y construye la respuesta desde `toSnapshot()`.
+
+```ts
+// src/modules/billing/infrastructure/http/dto/invoice-response.dto.ts
+// Calca: src/modules/orders/infrastructure/http/dto/order-response.dto.ts
+import { ApiProperty } from '@nestjs/swagger';
+
+import type { Invoice } from '../../../domain/entities/invoice.entity';
+import { INVOICE_STATUSES, type InvoiceStatus } from '../../../domain/value-objects/invoice-status';
+
+export class InvoiceResponseDto {
+  @ApiProperty({
+    description: 'Identificador de la factura.',
+    example: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    format: 'uuid',
+  })
+  id!: string;
+
+  @ApiProperty({ description: 'Importe en céntimos.', example: 149_900 })
+  amountCents!: number;
+
+  @ApiProperty({
+    description: 'Estado de la factura. Una factura `issued` no vuelve a `draft`.',
+    enum: [...INVOICE_STATUSES],
+    example: 'issued',
+  })
+  status!: InvoiceStatus;
+
+  // `type: String` + `format` explícitos: el tipo de diseño de un `Date` no basta para el esquema.
+  @ApiProperty({
+    description: 'Momento en que se creó el borrador, en UTC.',
+    example: '2026-08-01T10:15:00.000Z',
+    type: String,
+    format: 'date-time',
+  })
+  createdAt!: Date;
+
+  @ApiProperty({
+    description: 'Última modificación, en UTC: al emitirla, el instante de la emisión.',
+    example: '2026-08-01T12:30:00.000Z',
+    type: String,
+    format: 'date-time',
+  })
+  updatedAt!: Date;
+
+  /** El dominio nunca se serializa directamente: siempre pasa por este DTO. */
+  static fromDomain(invoice: Invoice): InvoiceResponseDto {
+    const snapshot = invoice.toSnapshot();
+    const dto = new InvoiceResponseDto();
+    dto.id = snapshot.id;
+    dto.amountCents = snapshot.amountCents;
+    dto.status = snapshot.status;
+    dto.createdAt = snapshot.createdAt;
+    dto.updatedAt = snapshot.updatedAt;
+    return dto;
+  }
+}
+```
+
 - **La ruta no lleva versión ni prefijo.** `applyGlobals()` (`src/main.ts`) pone el prefijo global y `enableVersioning({ type: VersioningType.URI, defaultVersion })`: `@Controller('invoices')` queda en `/api/v1/invoices`.
 - **⚠️ Dos rutas que puedan casar la misma petición abortan el arranque.** `NEST_APP_OPTIONS` (`src/main.ts`, compartido con `createTestApp()`) fija `routeConflictPolicy: { duplicate: 'error', shadow: 'error' }`, opción nueva de Nest 12 que por defecto vale `'off'` (`@nestjs/common/interfaces/nest-application-options.interface.d.ts`). Un `GET invoices/:id` junto a un `GET invoices/pending` hace fallar `app.init()` en cualquier orden. Si el patrón hace falta, se baja `shadow` a `'warn'` con el motivo escrito; nunca se quita la política.
 - **Autenticación segura por defecto.** `JwtAuthGuard` es `APP_GUARD` global (registrado en `auth.module.ts`): sin decorador, el endpoint ya exige JWT. `@Auth()` / `@Auth('admin')` declara el rol y adjunta la documentación de 401/403; `@Public()` lo abre; `@CurrentUser()` inyecta los claims.
@@ -372,6 +440,111 @@ export class InvoiceOrmEntity {
   @Column({ type: 'int', default: 1 })
   version!: number;
 }
+```
+
+El outbox es del contexto: tabla propia, `billing_outbox`, y su entidad ORM vive aquí, no en un genérico compartido (§7).
+
+```ts
+// src/modules/billing/infrastructure/persistence/invoice-outbox-message.orm-entity.ts
+// Calca: src/modules/orders/infrastructure/persistence/outbox-message.orm-entity.ts
+import { Column, Entity, PrimaryColumn } from 'typeorm';
+
+/** Sin FK a `invoices`: la fila es autosuficiente (el payload lleva todo) y el relay no necesita join. */
+@Entity({ name: 'billing_outbox' })
+export class InvoiceOutboxMessageOrmEntity {
+  @PrimaryColumn({ type: 'uuid' })
+  id!: string;
+
+  @Column({ name: 'event_type', type: 'varchar', length: 120 })
+  eventType!: string;
+
+  @Column({ type: 'jsonb' })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: 'occurred_at', type: 'timestamptz' })
+  occurredAt!: Date;
+
+  @Column({ name: 'processed_at', type: 'timestamptz', nullable: true })
+  processedAt!: Date | null;
+}
+```
+
+```ts
+// src/modules/billing/infrastructure/persistence/invoice.mapper.ts
+// Calca: src/modules/orders/infrastructure/persistence/order.mapper.ts
+import { failClosed } from '@common/persistence/fail-closed';
+
+import { Invoice } from '../../domain/entities/invoice.entity';
+import { InvoiceDomainError } from '../../domain/errors/invoice.errors';
+import { InvoiceAmount } from '../../domain/value-objects/invoice-amount.vo';
+import { InvoiceId } from '../../domain/value-objects/invoice-id.vo';
+import { INVOICE_STATUSES, type InvoiceStatus } from '../../domain/value-objects/invoice-status';
+
+import { InvoiceOrmEntity } from './invoice.orm-entity';
+
+const isInvoiceStatus = (value: string): value is InvoiceStatus =>
+  (INVOICE_STATUSES as readonly string[]).includes(value);
+
+// Predicado local y no exportado desde `invoice.errors.ts`: ese archivo solo puede exportar clases
+// (clave `errors` del test de contrato de módulo).
+const isInvoiceDomainError = (error: unknown): error is InvoiceDomainError =>
+  error instanceof InvoiceDomainError;
+
+/**
+ * La columna tiene `DEFAULT 1` pero ningún `CHECK`. Una fila con versión 0 —que solo puede venir
+ * de fuera del código: un arreglo a mano, un backfill— haría que el adaptador tomara la factura
+ * por una sin guardar: su `save` iría por el INSERT, chocaría con su propio id y respondería un
+ * 409 en cada intento, sin forma de emitirla nunca.
+ */
+const readVersion = (row: InvoiceOrmEntity): number => {
+  if (row.version < 1) {
+    throw new Error(
+      `La factura ${row.id} tiene una versión imposible para una fila guardada: ${row.version}`,
+    );
+  }
+  return row.version;
+};
+
+/**
+ * Única frontera entre la fila y el agregado: `rehydrate` al leer, que no re-emite eventos, y
+ * `toSnapshot()` al escribir. Falla cerrado: un `status` que este código no conoce (la columna es
+ * un `varchar` sin `CHECK`), una `version` menor que 1 o una fila que los VOs de hoy rechazan es
+ * un dato corrupto, y sale como 500, nunca como un 400 con el valor dentro.
+ */
+export const InvoiceMapper = {
+  toDomain(row: InvoiceOrmEntity): Invoice {
+    const { status } = row;
+    if (!isInvoiceStatus(status)) {
+      throw new Error(`La factura ${row.id} tiene un estado desconocido: "${status}"`);
+    }
+    const version = readVersion(row);
+    return failClosed(
+      () =>
+        Invoice.rehydrate({
+          id: InvoiceId.from(row.id),
+          amount: InvoiceAmount.from(row.amountCents),
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          status,
+          version,
+        }),
+      isInvoiceDomainError,
+      (error) => `La factura ${row.id} tiene datos que el dominio rechaza: ${error.message}`,
+    );
+  },
+
+  toPersistence(invoice: Invoice): InvoiceOrmEntity {
+    const snapshot = invoice.toSnapshot();
+    const row = new InvoiceOrmEntity();
+    row.id = snapshot.id;
+    row.amountCents = snapshot.amountCents;
+    row.createdAt = snapshot.createdAt;
+    row.updatedAt = snapshot.updatedAt;
+    row.status = snapshot.status;
+    row.version = snapshot.version;
+    return row;
+  },
+};
 ```
 
 ```ts
@@ -580,7 +753,7 @@ export class BillingDomainExceptionFilter extends DomainExceptionFilter<InvoiceD
 | Infrastructure (traducción)               | Unitario           | Jest, sin base (PBT en los round-trips de mapper)           | Mappers, filtros de dominio, controllers, guards, DTOs, adaptadores ACL y de seguridad |
 | Infrastructure (persistencia)             | Integración        | Jest contra PostgreSQL real (base de test, `pnpm test:e2e`) | Repositorios TypeORM (`*.typeorm.repository.e2e-spec.ts`)                              |
 | HTTP                                      | E2E                | Jest + Supertest sobre el `AppModule` real                  | Endpoint completo: pipes, guard, filtros, base                                         |
-| Arquitectura                              | Unitario           | Jest + la API de TypeScript, sin type-check                 | Contrato de módulo, fronteras de ESLint y cero claves foráneas en las migraciones      |
+| Arquitectura                              | Unitario           | Jest + la API de TypeScript, sin type-check salvo esta referencia | Contrato de módulo, fronteras de ESLint, cero claves foráneas en las migraciones y que esta referencia cumpla el contrato y compile (`nestjs-mapping.spec.ts`) |
 
 **Importante:** los tests de dominio no levantan `Test.createTestingModule`. Son `Invoice.draft(...)` puro.
 

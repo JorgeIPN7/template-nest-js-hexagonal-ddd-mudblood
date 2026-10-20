@@ -156,8 +156,13 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
     `stryker.config.mjs` fija además `concurrency`, con un techo de 6 workers (con 11, la corrida
     completa se quedaba sin memoria), y `timeoutMS: 10000`. `pnpm test:mutation:changed` cuenta
     por estado lo que deja fuera del score y lista los Timeout.
+  - **La referencia de código tiene guarda:** `src/__tests__/nestjs-mapping.spec.ts` pasa los
+    bloques `billing` de NESTJS-MAPPING por el contrato de módulo y por `tsc`. Para compilar, la
+    referencia gana el mapper, el DTO de respuesta y la entidad ORM del outbox, que importaba sin
+    enseñarlos, y una fuente única de los estados de la factura.
   - Spec en `docs/specs/2026-10-17-module-contract-kernel-design.md`; plan en
-    `docs/plans/2026-10-17-module-contract-kernel.md`.
+    `docs/plans/2026-10-17-module-contract-kernel.md`. La guarda de NESTJS-MAPPING, en
+    `docs/specs/2026-10-19-nestjs-mapping-guard-express.md`.
 - **`CLAUDE.md`, de 64 510 a 35 408 bytes: cada regla en una línea, con su porqué y, donde el largo salió, un enlace**
   (2026-10-16, backlog #32). La historia, las mediciones y los ejemplos trabajados pasan a cinco
   documentos nuevos en `docs/` —`toolchain.md`, `architecture.md`, `api-contract.md`, `database.md`

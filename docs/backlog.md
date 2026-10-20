@@ -1705,6 +1705,19 @@ pasarlo sin tocar el test.
 **Cómo se sabrá que está hecho.** Un módulo recién generado pasa `pnpm typecheck`,
 `pnpm lint:check`, el test de contrato y sus propios specs sin editarlo.
 
+**Requisito que el criterio no recogía (2026-10-19).** La clave `filter` del contrato exige el
+filtro de dominio de cada contexto sin condición (`src/__tests__/helpers/module-contract-checker.ts`),
+así que un contexto sin HTTP no pasaría el test sin tocarlo, que es justo lo que el criterio
+promete del módulo generado. En el cambio que añada el primer contexto sin HTTP, la regla pasa a
+«solo si `infrastructure/http/` tiene controllers», con su caso en `module-contract.spec.ts`.
+
+**La referencia ya tiene guarda (2026-10-19).** `src/__tests__/nestjs-mapping.spec.ts` pasa los
+bloques `billing` de NESTJS-MAPPING por el contrato de módulo y por `tsc`, con el `tsconfig.json`
+del repo (spec `docs/specs/2026-10-19-nestjs-mapping-guard-express.md`). Para compilar le faltaban
+el mapper, el DTO de respuesta y la entidad ORM del outbox, y se añadieron. Las plantillas del
+generador parten así de bloques que cumplen el contrato y compilan; lo que la guarda no ve son
+ESLint y Prettier, que no pasan por el md.
+
 ---
 
 ## 39. Dos convenciones de nombres de columna en el mismo esquema
