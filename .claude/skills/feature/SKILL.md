@@ -1,6 +1,6 @@
 ---
 name: feature
-description: 'Flujo para un cambio con lógica o con riesgo: un endpoint o un caso de uso nuevo, una migración, lógica en domain/ o application/, o algo de la lista de riesgo (auth, credenciales, tokens o permisos —también su configuración—, un cambio entre contextos, una migración destructiva, un contexto nuevo). Tabla de casos aprobada en el chat, TDD con rojo por aserción, mutación del código nuevo, revisión adversarial y DoD; modo grande por porciones para más de ~8 tareas, un contexto nuevo o trabajo que otra persona continuará. No se usa para lo demás (errata, docs, config que no es de seguridad, un bump, un bug con su test evidente): eso es modo Directo, sin skill.'
+description: 'Flujo para un cambio con lógica o con riesgo: un endpoint o un caso de uso nuevo, una migración, una regla nueva o cambiada en domain/ o application/, o algo de la lista de riesgo (auth, credenciales, tokens o permisos —también su configuración—, un cambio entre contextos, una migración destructiva, un contexto nuevo). Tabla de casos aprobada en el chat, TDD con rojo por aserción, mutación del código nuevo, revisión adversarial y DoD; modo grande por porciones para más de ~8 tareas, un contexto nuevo o trabajo que otra persona continuará. No se usa para lo demás (errata, docs, config que no es de seguridad, un bump, un bug cuyo comportamiento correcto ya está decidido): eso es modo Directo, sin skill.'
 argument-hint: '<qué quieres construir o arreglar> | continuar docs/specs/<archivo>.md'
 ---
 

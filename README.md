@@ -561,7 +561,7 @@ src/modules/users/
 - **Property-based con `fast-check`** en value objects, funciones puras y round-trips de mapeo. Los arbitrarios se **construyen**, nunca se filtran con `.filter()`.
 - Helpers compartidos por un módulo en `<módulo>/__tests__/helpers/`; los transversales en `test/helpers/`, importados por `@test/`.
 
-**Cómo se decide qué se prueba:** el modelo de colaboración —tabla de casos acordados, TDD con rojo por aserción y mutación como auditor— está en [`CLAUDE.md`](./CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor), y cómo lo aplica cada flujo de trabajo, en [`docs/development-workflows.md`](./docs/development-workflows.md). La mutación es un gate real: `pnpm test:mutation` con `break: 90` y job propio en CI; `pnpm test:mutation:changed` audita solo el código nuevo de una rama.
+**Cómo se decide qué se prueba:** el modelo de colaboración —tabla de casos acordados, TDD con rojo por aserción y mutación como auditor— está en el skill [`/feature`](./.claude/skills/feature/SKILL.md); cuándo se usa y cuándo basta el modo Directo, en [`CLAUDE.md`](./CLAUDE.md#flujo-de-trabajo), y las mediciones que lo justifican, en [`docs/development-workflows.md`](./docs/development-workflows.md). La mutación es un gate real: `pnpm test:mutation` con `break: 90` y job propio en CI; `pnpm test:mutation:changed` audita solo el código nuevo de una rama.
 
 ### Base de datos de los tests
 
@@ -608,7 +608,7 @@ El umbral de `branches` (50) es más bajo que el resto a propósito: SWC instrum
 | `pnpm seed:admin`              | Crea o promueve el primer admin (`ADMIN_EMAIL`/`ADMIN_PASSWORD`), idempotente |
 | `pnpm outbox:relay`            | Publica (hoy: log) los eventos pendientes de `orders_outbox` y los marca      |
 
-**Definition of Done** de cualquier cambio: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`, todo en verde.
+**Definition of Done** de cualquier cambio que no sea solo de docs: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`, todo en verde. Si solo tocas docs, basta con `format:check`, `pnpm exec prettier --check` sobre los `.md` de `docs/` que toques (`format:check` no los cubre) y `test`.
 
 ### Docker
 

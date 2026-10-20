@@ -2,7 +2,7 @@
 
 > **⚠️ Desde el 2026-10-20, `express`, `brainstorming`, `writing-plans` y `executing-plans` están
 > retirados:** los sustituye [`/feature`](../.claude/skills/feature/SKILL.md), y lo que no lo
-> necesita va en modo Directo, sin skill (`CLAUDE.md`, «Skills and development flows»). Lo que
+> necesita va en modo Directo, sin skill (`CLAUDE.md`, «Flujo de trabajo»). Lo que
 > sigue describe los flujos anteriores y conserva sus mediciones como historia.
 
 Cómo se trabaja en este repositorio con un asistente de IA (Claude Code y las skills de
@@ -607,8 +607,8 @@ Las reglas de decisión se fijaron (y se sellaron con un hash) antes de ejecutar
 - **Las skills son documentación del repo.** Lint y Prettier ignoran `.claude/`, así que ninguna
   herramienta verifica su formato. Revisa el diff a mano.
 - **Si tocas el `description` de una skill**, recuerda que decide cuándo se activa sola. Los
-  criterios de nivel tienen que coincidir en tres sitios: `CLAUDE.md` («Skills and development
-  flows»), las descripciones de `express`, `brainstorming` y `writing-plans`, y este documento.
+  criterios de nivel tienen que coincidir en tres sitios: `CLAUDE.md` («Flujo de trabajo»), la
+  descripción de `feature` y este documento.
 - **Si tocas el prompt del revisor o los pasos de un flujo**, pruébalo en una feature pequeña y
   compara con la referencia medida de la [§1](#1-los-tres-niveles): tiempo, coste, rojos por
   aserción, mutación y hallazgos de la revisión.
