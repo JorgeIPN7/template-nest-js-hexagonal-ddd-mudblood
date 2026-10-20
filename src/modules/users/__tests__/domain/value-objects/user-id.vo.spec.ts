@@ -134,15 +134,19 @@ describe('UserId', () => {
       );
     });
 
+    // La arbitraria se construye y no se filtra: un UUID tiene 36 caracteres justos, así que
+    // ninguna cadena de 35 o menos puede tener su forma.
     it('debería rechazar cualquier cadena que no tenga la forma de un UUID', () => {
       fc.assert(
-        fc.property(
-          fc.string().filter((value) => !/^[0-9a-f-]{36}$/i.test(value)),
-          (value) => {
-            // Act + Assert
-            expect(() => UserId.from(value)).toThrow(InvalidUserIdError);
-          },
-        ),
+        fc.property(fc.string({ maxLength: 35 }), (value) => {
+          // Arrange
+
+          // Act
+          const act = () => UserId.from(value);
+
+          // Assert
+          expect(act).toThrow(InvalidUserIdError);
+        }),
       );
     });
   });

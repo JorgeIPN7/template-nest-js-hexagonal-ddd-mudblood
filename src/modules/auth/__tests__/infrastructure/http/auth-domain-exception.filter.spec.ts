@@ -43,16 +43,23 @@ describe('AuthDomainExceptionFilter', () => {
     // del usuario sino una fila corrupta, y ahora es un 500 (ver los dos casos de más abajo).
     // La forma `it.each` se conserva porque el fallback de 400 sigue siendo el destino por
     // defecto de todo error de dominio nuevo.
-    it.each([['InvalidProfileError', new InvalidProfileError('"x" is not a valid email address')]])(
-      'debería traducir %s a 400',
-      (_caso, error) => {
-        // Arrange
-        const filter = new AuthDomainExceptionFilter();
+    //
+    // La tabla lleva factorías, no errores: construido al recolectar, un error de dominio que
+    // lanza (un mutante de su constructor) tumba la carga del archivo, y Stryker lo cuenta como
+    // error en vez de como muerto.
+    it.each([
+      ['InvalidProfileError', () => new InvalidProfileError('"x" is not a valid email address')],
+    ])('debería traducir %s a 400', (_caso, buildError) => {
+      // Arrange
+      const filter = new AuthDomainExceptionFilter();
+      const error = buildError();
 
-        // Act + Assert
-        expect(() => filter.catch(error)).toThrow(BadRequestException);
-      },
-    );
+      // Act
+      const act = () => filter.catch(error);
+
+      // Assert
+      expect(act).toThrow(BadRequestException);
+    });
 
     it('debería traducir InvalidPasswordHashError a 500', () => {
       // Arrange

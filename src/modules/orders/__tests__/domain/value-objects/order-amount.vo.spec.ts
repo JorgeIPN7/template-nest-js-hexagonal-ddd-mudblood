@@ -21,6 +21,21 @@ describe('OrderAmount', () => {
       // Act + Assert
       expect(() => OrderAmount.from(10_000_001)).toThrow(InvalidOrderAmountError);
     });
+
+    // El tope exacto, por el mismo motivo que el límite de 140 del concepto: sin él, ninguna fila
+    // fija distinguía un `>=` en vez de `>`, y solo podía matarlo la de propiedad si la semilla
+    // generaba justo el tope (en el censo del 2026-10-19 sobrevivió).
+    it('debería aceptar un importe igual al tope de 10 000 000 céntimos', () => {
+      // Arrange
+      const cap = 10_000_000;
+
+      // Act
+      const act = () => OrderAmount.from(cap);
+
+      // Assert
+      expect(act).not.toThrow();
+      expect(act().value).toBe(cap);
+    });
   });
 
   describe('from() (property-based)', () => {

@@ -5,9 +5,8 @@ import { PasswordHash } from '../../../domain/value-objects/password-hash.vo';
 const NOW = new Date('2026-08-07T10:00:00.000Z');
 const LATER = new Date('2026-08-07T11:00:00.000Z');
 const USER_ID = '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012';
-const HASH = PasswordHash.from(
-  '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHRzb21lc2FsdA$aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678901234567',
-);
+const HASH_VALUE =
+  '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHRzb21lc2FsdA$aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678901234567';
 
 /**
  * El agregado no tiene transiciones (no hay caso de uso de cambio de contraseña), así que no
@@ -18,7 +17,7 @@ describe('Credential', () => {
   describe('create()', () => {
     it('debería nacer con las marcas de tiempo iguales', () => {
       // Act
-      const credential = Credential.create({ userId: USER_ID, passwordHash: HASH, now: NOW });
+      const credential = Credential.create({ userId: USER_ID, passwordHash: hash(), now: NOW });
 
       // Assert
       expect(credential.createdAt).toEqual(NOW);
@@ -26,22 +25,26 @@ describe('Credential', () => {
     });
 
     it('debería quedar ligada al usuario y al hash recibidos', () => {
+      // Arrange
+      const passwordHash = hash();
+
       // Act
-      const credential = Credential.create({ userId: USER_ID, passwordHash: HASH, now: NOW });
+      const credential = Credential.create({ userId: USER_ID, passwordHash, now: NOW });
 
       // Assert
       expect(credential.userId).toBe(USER_ID);
-      expect(credential.passwordHash).toBe(HASH);
+      expect(credential.passwordHash).toBe(passwordHash);
     });
 
     // El id lo acuña el propio agregado con `CredentialId.generate()`. Si dejara de hacerlo, dos
     // credenciales compartirían PK y la segunda pisaría a la primera al guardarse.
     it('debería acuñar un CredentialId propio y distinto en cada alta', () => {
       // Arrange
+      const passwordHash = hash();
 
       // Act
-      const first = Credential.create({ userId: USER_ID, passwordHash: HASH, now: NOW });
-      const second = Credential.create({ userId: USER_ID, passwordHash: HASH, now: NOW });
+      const first = Credential.create({ userId: USER_ID, passwordHash, now: NOW });
+      const second = Credential.create({ userId: USER_ID, passwordHash, now: NOW });
 
       // Assert
       expect(first.id).toBeInstanceOf(CredentialId);
@@ -56,7 +59,7 @@ describe('Credential', () => {
       const params = {
         id: CredentialId.from('7c9e6679-7425-40de-944b-e07fc1f90ae7'),
         userId: USER_ID,
-        passwordHash: HASH,
+        passwordHash: hash(),
         createdAt: NOW,
         updatedAt: LATER,
       };
@@ -74,7 +77,7 @@ describe('Credential', () => {
   describe('toSnapshot()', () => {
     it('debería exponer valores primitivos en lugar de value objects', () => {
       // Arrange
-      const credential = Credential.create({ userId: USER_ID, passwordHash: HASH, now: NOW });
+      const credential = Credential.create({ userId: USER_ID, passwordHash: hash(), now: NOW });
 
       // Act
       const snapshot = credential.toSnapshot();
@@ -83,7 +86,7 @@ describe('Credential', () => {
       expect(snapshot).toEqual({
         id: credential.id.value,
         userId: USER_ID,
-        passwordHash: HASH.value,
+        passwordHash: HASH_VALUE,
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -91,7 +94,7 @@ describe('Credential', () => {
 
     it('debería sobrevivir al round-trip snapshot→rehydrate', () => {
       // Arrange
-      const original = Credential.create({ userId: USER_ID, passwordHash: HASH, now: NOW });
+      const original = Credential.create({ userId: USER_ID, passwordHash: hash(), now: NOW });
 
       // Act
       const revived = Credential.rehydrate({
@@ -105,3 +108,12 @@ describe('Credential', () => {
     });
   });
 });
+
+// Helpers
+
+/**
+ * Un `PasswordHash` nuevo en cada llamada, dentro del `it`: construido en el ámbito del módulo,
+ * un mutante de `PasswordHash.from` que lanza tumba la carga del archivo, y Stryker lo cuenta
+ * como error en vez de como muerto.
+ */
+const hash = (): PasswordHash => PasswordHash.from(HASH_VALUE);

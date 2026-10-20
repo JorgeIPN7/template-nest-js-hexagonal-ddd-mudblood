@@ -44,15 +44,22 @@ describe('OrdersDomainExceptionFilter', () => {
       expect(thrown.message).not.toContain('9d2a1c7e');
     });
 
+    // Factorías y no errores, por el mismo motivo que en el filtro de auth: construido al
+    // recolectar, un error de dominio que lanza tumba la carga del archivo y Stryker lo cuenta
+    // como error en vez de como muerto.
     it.each([
-      ['InvalidOrderConceptError', new InvalidOrderConceptError('   ')],
-      ['InvalidOrderAmountError', new InvalidOrderAmountError(-1)],
-    ])('debería traducir %s a 400', (_caso, error) => {
+      ['InvalidOrderConceptError', () => new InvalidOrderConceptError('   ')],
+      ['InvalidOrderAmountError', () => new InvalidOrderAmountError(-1)],
+    ])('debería traducir %s a 400', (_caso, buildError) => {
       // Arrange
       const filter = new OrdersDomainExceptionFilter();
+      const error = buildError();
 
-      // Act + Assert
-      expect(() => filter.catch(error)).toThrow(BadRequestException);
+      // Act
+      const act = () => filter.catch(error);
+
+      // Assert
+      expect(act).toThrow(BadRequestException);
     });
 
     it('debería traducir InvalidOrderIdError a 400 con el mensaje del dominio', () => {
