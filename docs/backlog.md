@@ -1528,6 +1528,27 @@ conflictos: en esas dos semanas `main` solo recibió bumps de Renovate, y ningun
 - **Lo que no se midió.** La premisa «`CLAUDE.md` basta para las convenciones» (una sesión sin
   skills cumplió el 100 %) se midió el 2026-09-30 con la versión de entonces (54 545 bytes en
   `5263e50`, el commit base del experimento); no se ha repetido con esta.
+
+**Segunda pasada y cierre (2026-10-20, rama `update-skills`, commit `00fec46`).** `CLAUDE.md`
+pasó de 38 095 a 21 877 bytes (264 → 196 líneas, −42,6 %): −66,1 % sobre los 64 510 del
+original, así que el criterio «la mitad o menos» ya se cumple. Fue parte del cambio que retiró
+ocho skills y dejó el flujo en Directo y `/feature` (`docs/development-workflows.md`, «Flujo
+vigente»).
+
+- **Qué cambió respecto a la primera.** Esta sí quitó reglas a propósito: las que ya imponen
+  tests, lint o CI quedan en una línea que nombra su guarda, lo que se deduce del código salió y
+  los porqués que ya estaban en `docs/` pasaron a un enlace. Las invariantes de `auth` y `orders`
+  siguen dentro, recortadas, como se decidió el 2026-10-16.
+- ⚠️ **Sin cotejo uno a uno registrado,** a diferencia de la primera pasada: el segundo criterio
+  de «Cómo se sabrá que está hecho» no se volvió a comprobar.
+- **Lo que queda, sin bloquear el cierre:**
+  - la fila «Memory files» de `/context`: después, el `CLAUDE.md` del proyecto ocupa 9k tokens
+    (Claude Code 2.1.304); el antes no se midió con `/context` (la auditoría lo estimó en ~10k);
+  - las reglas por ruta de Claude Code (`.claude/rules/`), como opción futura para sacar de
+    `CLAUDE.md` las secciones de `auth` y `orders`; no se han evaluado;
+  - la premisa «`CLAUDE.md` basta para las convenciones», que sigue sin medirse con esta versión:
+    es la prueba sin skills de `docs/development-workflows.md`, «Configuración recomendada de
+    Claude Code».
 - **Actualización del 2026-10-19.** El contrato de módulo y su cierre devolvieron `CLAUDE.md` a
   38 301 bytes (265 líneas): +2 893 sobre los 35 408 de `32ade98` (+8,2 %), y −40,6 % frente a los
   64 510 originales. Lo que entró son reglas que se aplican al escribir código: el kernel y el
