@@ -49,8 +49,8 @@ PostgreSQL a través de TypeORM: la configuración vive en
 Regla (`CLAUDE.md`, «Database»): una columna de fecha es
 `@Column({ type: 'timestamptz', default: () => 'now()' })`, y ninguna entidad ORM usa
 `CreateDateColumn`, `UpdateDateColumn`, `DeleteDateColumn` ni `VersionColumn`, las columnas que
-TypeORM rellena por su cuenta. La skill de referencia `nestjs-best-practices` enseña
-`@CreateDateColumn`; aquí manda la regla de `CLAUDE.md`.
+TypeORM rellena por su cuenta. El material genérico de NestJS enseña `@CreateDateColumn`; aquí
+manda la regla de `CLAUDE.md`.
 
 - **Por qué.** El dominio sella `createdAt` al crear y mueve `updatedAt` con `touch(now)` en cada
   método de intención. Con un `UpdateDateColumn`, si el dominio no movió la fecha pero sí otra
@@ -80,9 +80,10 @@ Hoy conviven dos convenciones, y ninguna está mal en sí misma:
   explícito en cada `@Column`.
 
 **Lo nuevo va en snake_case: toda columna de más de una palabra lleva `name:` explícito en su
-`@Column`,** como `orders` y el ejemplo de NESTJS-MAPPING (las de una sola palabra, como `id` o
-`status`, no lo necesitan). Lo existente no se renombra: un renombrado es destructivo (expand/contract, y
-sobre `auth_credentials`, el flujo completo), y unificarlo no compraría ninguna garantía. Es la
+`@Column`,** como `orders` y el ejemplo de [`nestjs-mapping.md`](nestjs-mapping.md) (las de una
+sola palabra, como `id` o `status`, no lo necesitan). Lo existente no se renombra: un renombrado
+es destructivo (expand/contract, y sobre `auth_credentials`, el flujo completo), y unificarlo no
+compraría ninguna garantía. Es la
 decisión con la que se cerró la entrada #39 del [backlog](backlog.md).
 
 ## Expand/contract: el ejemplo trabajado

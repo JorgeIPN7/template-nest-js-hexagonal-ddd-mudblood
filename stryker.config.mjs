@@ -1,8 +1,8 @@
 // stryker.config.mjs
 /**
- * Mutation testing — el auditor del modelo «casos primero» (ver CLAUDE.md, sección «Modelo de
- * colaboración»; la spec original, §4.5, se perdió en la reconstrucción del historial del
- * 2026-08-08 — backlog #29).
+ * Mutation testing — el auditor del modelo «casos primero» (ver CLAUDE.md, sección «Flujo de
+ * trabajo», y el skill /feature; la spec original, §4.5, se perdió en la reconstrucción del
+ * historial del 2026-08-08 — backlog #29).
  *
  * `mutate` apunta solo a domain/ y application/ —de los módulos y del shared
  * kernel—: es donde viven los casos de negocio. Infra, config y wiring quedan

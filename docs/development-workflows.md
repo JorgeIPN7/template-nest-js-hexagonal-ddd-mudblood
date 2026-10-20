@@ -1,23 +1,71 @@
 # Flujos de desarrollo con IA
 
 Cómo se trabaja en este repositorio con un asistente de IA (Claude Code y las skills de
-[`.claude/skills/`](../.claude/skills/)): qué flujo usar según la tarea, cómo se invoca, qué
-hace el asistente, qué te toca a ti y qué deja escrito cada uno. Al final están las mediciones que
-justifican cada decisión, para no tener que repetir la discusión.
+[`.claude/skills/`](../.claude/skills/)): qué sigue vigente, qué se retiró y por qué, cómo
+funcionan las piezas que comparten los flujos y las mediciones que lo justifican, para no tener que
+repetir la discusión.
 
-> **En una frase:** los cambios triviales van sin skills; una feature dentro de un contexto que ya
-> existe va por **`/express`**; y la cadena completa (`/brainstorming` → plan → ejecución) queda
-> para contextos nuevos, cambios entre contextos, migraciones destructivas, seguridad y trabajos
-> grandes.
+## Flujo vigente (2026-10-20)
+
+Dos niveles: **Directo**, por defecto y sin skill, y
+**[`/feature`](../.claude/skills/feature/SKILL.md)**. Cuándo va cada cambio por uno u otro y qué
+se ejecuta al cerrar lo fijan [`CLAUDE.md`, «Flujo de trabajo»](../CLAUDE.md#flujo-de-trabajo) y
+el propio skill; aquí no se repite, para no abrir la segunda fuente que backlog #29 decidió no
+abrir. [`adversarial-review`](../.claude/skills/adversarial-review/SKILL.md) es el último paso de
+`/feature` y, en Directo, va a petición.
+
+**Qué sigue vigente de este documento:** §7 a §11 (la revisión adversarial, las dos
+comprobaciones, la mutación del código nuevo, git y el entorno) y §13. §1 a §6 describen los
+flujos retirados el 2026-10-20, y §12, el experimento que los midió: se quedan como historia, con
+sus mediciones.
+
+### Qué se retiró y por qué
+
+Había nueve skills en `.claude/skills/`: se retiraron ocho y `adversarial-review` se adelgazó. Los
+datos salen de la auditoría de solo lectura del 2026-10-20, sobre las mediciones de este documento
+y los 91 transcripts del proyecto (del 17 al 20 de octubre):
+
+- **Casi no se usaban:** 6 llamadas a Skill en toda la historia. `subagent-driven-development` y
+  `javascript-typescript-jest` no se usaron nunca, y `nestjs-best-practices`, en una sola sesión.
+- **El tiempo se iba fuera del código:** la planificación, 2,76 h activas (1,23 M tokens de salida
+  y ninguna edición en `src/`); la implementación, 2,35 h; el cierre, 7,77 h, 3,3 veces la
+  implementación.
+- **El coste crecía con la ceremonia** (la misma feature,
+  [§12](#12-de-dónde-sale-todo-esto-el-experimento-del-2026-09-30)): exprés, 41 min y 11,82 USD;
+  sin skills, ~1 h y ≈8,3 USD; plan e inline, ~2 h y 23,19 USD; cadena completa, ~3 h 30 min y
+  52,54 USD.
+- **La carga fija por sesión era de ~44k tokens:** ~10k del `CLAUDE.md` del proyecto, ~6k del
+  listado de skills y el resto, configuración global del usuario, fuera del repo.
+- **Lo que sí aportó calidad sigue en `/feature`:** la tabla de casos con rojo por aserción (solo
+  el exprés llegó a 5 de 5), la revisión adversarial final (encontró un defecto importante en las
+  cuatro ramas) y las dos comprobaciones de la [§8](#8-las-dos-comprobaciones-que-comparten-todos-los-flujos)
+  (cada una cazó un defecto real).
+
+| Skill                         | Qué era                            | Por qué se retiró                                                                                                                                                   | Qué la sustituye                                                     |
+| ----------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `express`                     | El flujo exprés                    | Es la base de `/feature`: el más rápido y barato del experimento, y el único con TDD real                                                                           | `/feature`                                                           |
+| `brainstorming`               | El diseño del flujo completo       | La cadena completa costó 4,4 veces el exprés (52,54 frente a 11,82 USD) y dejó pasar el oráculo de enumeración que el exprés cerró desde el diseño                  | El modo grande de `/feature`: spec con 2–3 enfoques y una aprobación |
+| `writing-plans`               | El plan escrito                    | El plan de 2 824 líneas llevaba el código dentro: fue ≈85 % del coste del diseño, el 100 % del código salió literal de él y 0 de 5 specs tuvieron rojo por aserción | La lista «Estado» de la spec en el modo grande                       |
+| `executing-plans`             | La ejecución del plan en la sesión | Sin plan no hay qué ejecutar; con él, ~2 h y 23,19 USD frente a los 41 min del exprés                                                                               | Los pasos 4 a 10 de `/feature`                                       |
+| `subagent-driven-development` | Un implementer por tarea           | Ninguna sesión real la usó; en el experimento, 36,01 USD frente a 6,66 USD del mismo código inline, y 0 defectos en 16 revisores por tarea                          | —                                                                    |
+| `javascript-typescript-jest`  | Convenciones de Jest               | No se usó nunca; la rama sin skills cumplió el 100 % de las convenciones solo con `CLAUDE.md`                                                                       | `CLAUDE.md`, «Code conventions»                                      |
+| `nestjs-best-practices`       | ~119k tokens de NestJS genérico    | Se leyó en una sesión y contradice el repo: tokens `Symbol`, `@CreateDateColumn`, `jest.fn`, servicios                                                              | `CLAUDE.md` y [`nestjs-mapping.md`](nestjs-mapping.md)               |
+| `clean-ddd-hexagonal`         | DDD y hexagonal genéricos          | Solo su `NESTJS-MAPPING.md` era propio del repo; las otras 7 referencias enseñan CQRS, puertos `I*Port` e `interface`, que el repo prohíbe                          | [`nestjs-mapping.md`](nestjs-mapping.md)                             |
+
+**`adversarial-review` se adelgazó:** perdió la receta de copiar el repo al scratchpad del revisor,
+cuyo propio texto avisaba de que podía vaciar `node_modules`; ahora es de solo lectura y sin
+Stryker, y la segunda pasada solo se hace tras corregir un crítico.
 
 ## Contenido
 
-1. [Los tres niveles](#1-los-tres-niveles)
-2. [Cómo elegir el flujo](#2-cómo-elegir-el-flujo)
-3. [Nivel trivial](#3-nivel-trivial)
-4. [Flujo exprés](#4-flujo-exprés)
-5. [Flujo completo](#5-flujo-completo)
-6. [Cuándo compensa subagent-driven-development](#6-cuándo-compensa-subagent-driven-development)
+- [Flujo vigente (2026-10-20)](#flujo-vigente-2026-10-20)
+
+1. [Los tres niveles](#1-los-tres-niveles) (historia)
+2. [Cómo elegir el flujo](#2-cómo-elegir-el-flujo) (historia)
+3. [Nivel trivial](#3-nivel-trivial) (historia)
+4. [Flujo exprés](#4-flujo-exprés) (historia)
+5. [Flujo completo](#5-flujo-completo) (historia)
+6. [Cuándo compensa subagent-driven-development](#6-cuándo-compensa-subagent-driven-development) (historia)
 7. [La revisión adversarial](#7-la-revisión-adversarial)
 8. [Las dos comprobaciones que comparten todos los flujos](#8-las-dos-comprobaciones-que-comparten-todos-los-flujos)
 9. [Mutación del código nuevo](#9-mutación-del-código-nuevo)
@@ -29,6 +77,9 @@ justifican cada decisión, para no tener que repetir la discusión.
 ---
 
 ## 1. Los tres niveles
+
+> **Historia.** Estos tres niveles se retiraron el 2026-10-20; los vigentes están en
+> [Flujo vigente](#flujo-vigente-2026-10-20). Se conservan por sus referencias medidas.
 
 | Nivel                           | Para qué                                                                                                                                                                                                                    | Cómo se arranca                                                             | Qué haces tú                                                                                                                                        | Referencia medida                                            |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
@@ -42,6 +93,9 @@ de git. El asistente **nunca** hace commits: el `.claude/settings.json` del repo
 [§10](#10-git-quién-hace-los-commits)).
 
 ## 2. Cómo elegir el flujo
+
+> **Historia.** El árbol y la tabla eligen entre los niveles retirados el 2026-10-20; hoy decide
+> `CLAUDE.md`, «Flujo de trabajo».
 
 ### Árbol de decisión
 
@@ -97,6 +151,8 @@ constante usa el hasher de producción.
 
 ## 3. Nivel trivial
 
+> **Historia.** Retirado el 2026-10-20; lo sustituye el modo Directo.
+
 **Para qué:** cambios en los que diseñar sería más caro que hacer. Ejemplos: una errata, una
 variable de entorno, un bump o un bug de una línea con causa clara.
 
@@ -118,6 +174,9 @@ y la columna `varchar(140)`, así que lleva una migración y es exprés.
 
 ## 4. Flujo exprés
 
+> **Historia.** `express` se retiró el 2026-10-20 y es la base de `/feature`. Se conserva por sus
+> mediciones.
+
 **Para qué:** una feature o un bug con lógica dentro de un contexto que ya existe. Es el flujo
 por defecto.
 
@@ -127,7 +186,7 @@ por defecto.
 /express Quiero que un cliente pueda cancelar sus pedidos.
 ```
 
-La skill vive en [`.claude/skills/express/SKILL.md`](../.claude/skills/express/SKILL.md). No usa
+La skill vivía en `.claude/skills/express/SKILL.md`. No usa
 plan escrito ni subagentes, salvo el revisor final.
 
 ### Pasos
@@ -157,6 +216,9 @@ y sirve de ejemplo del formato. Llega con la rama de la feature.
 asistente completa lo que falte, sobre todo la tabla y el contrato, y pide la aprobación igual.
 
 ## 5. Flujo completo
+
+> **Historia.** `brainstorming`, `writing-plans` y `executing-plans` se retiraron el 2026-10-20;
+> el trabajo grande va por el modo grande de `/feature`. Se conserva por sus mediciones.
 
 **Para qué:** los casos en los que un error de diseño sale caro, o en los que el trabajo no cabe
 en una sesión:
@@ -215,7 +277,7 @@ encarece cada turno: el plan y la spec en disco son todo el traspaso.
   5. refactor.
      Solo pregunta si algo cambió: un caso que la tabla no cubre, un caso que no se puede implementar
      tal como está escrito, o un desvío del plan. Lo hace una vez y agrupado.
-- **`subagent-driven-development`**: solo para planes grandes de tareas independientes
+- **`subagent-driven-development`**: retirada el 2026-10-20; ninguna sesión real la usó
   ([§6](#6-cuándo-compensa-subagent-driven-development)).
 
 ### Paso 4 — Auditoría, una sola vez al final
@@ -239,6 +301,9 @@ y las confirmaciones rutinarias. **Todavía no se ha medido la cadena ajustada**
 de 1 h 30 min a 2 h para una feature de ese tamaño.
 
 ## 6. Cuándo compensa subagent-driven-development
+
+> **Historia.** `subagent-driven-development` se retiró el 2026-10-20: ninguna sesión real la usó.
+> Se conserva por su medición.
 
 **Solo cuando se cumple todo esto:**
 
@@ -282,16 +347,10 @@ Busca defectos reales en el diff respecto a la base:
 4. huecos de test;
 5. convenciones de `CLAUDE.md`.
 
-**Reglas del revisor:**
-
-- No edita el repo, ni siquiera temporalmente.
-- Para demostrar un hallazgo trabaja en una copia nueva del árbol en su scratchpad, sin artefactos
-  (unos 4 MB) y con `node_modules` enlazado. Ejecuta las herramientas con `node`, nunca con
-  `pnpm <script>`: la verificación de dependencias de pnpm reescribiría el `node_modules` real a
-  través del enlace.
-- La copia aísla archivos, no bases de datos: nunca ejecuta `migration:*`, `db:*` ni `seed:*`, que
-  apuntan a la base de desarrollo, y una protección de esquema no se quita editando la copia.
-- Mientras revisa, la sesión principal espera: los E2E comparten la base de test.
+**Reglas del revisor:** de solo lectura y sin Stryker; qué comandos puede ejecutar sobre el árbol
+lo fija su prompt. Hasta el 2026-10-20 trabajaba en una copia del árbol, y se quitó porque la
+propia receta avisaba de que podía vaciar el `node_modules` real. Mientras revisa, la sesión
+principal espera: los E2E comparten la base de test.
 
 **Después:** la sesión verifica cada hallazgo y lo clasifica como real o falso positivo.
 
@@ -299,8 +358,7 @@ Busca defectos reales en el diff respecto a la base:
 - **Menor:** va al informe.
 - **Mutación otra vez** si alguna corrección tocó `domain/` o `application/`: el score del informe
   es el del código final.
-- **Segunda pasada** si alguna corrección cambió el comportamiento de producción, aunque sea en un
-  solo archivo, acotada a los archivos tocados.
+- **Segunda pasada** solo tras corregir un hallazgo crítico, acotada a los archivos tocados.
 
 **Uso suelto:** `/adversarial-review` (base opcional; por defecto, la bifurcación con `main`), o
 «revisa esta rama antes del PR». Revisa **tu árbol** contra esa base: no recibe la rama de otro ni
@@ -323,14 +381,15 @@ reglas de `CLAUDE.md`, pero ningún paso del flujo las ejecutaba.
 
 **1. Cada respuesta declarada tiene que poder producirse hoy.**
 
-La tabla de contrato de la spec (o de la tarea del plan) lleva la columna «Camino que lo produce
-hoy»: la entrada o el estado, y la rama del código que devuelve ese código de estado.
+La tabla de contrato (la de la spec o, sin spec, la aprobada en el chat) lleva la columna «Camino
+que lo produce hoy»: la entrada o el estado, y la rama del código que devuelve ese código de
+estado.
 
 - Sin camino, no se declara. Una defensa para un estado futuro va en un comentario, junto con la
   condición que la haría alcanzable.
 - El guard de contrato comprueba el 400, el 408 y el 429 en los dos sentidos, y exige el 401 y el 403
   donde los pone `@Auth`. Si un 404, un 409 o un 403 sin roles son alcanzables depende del código:
-  eso lo responde quien escribe la spec.
+  eso lo responde quien escribe la tabla.
 - Caso real: la rama exprés publicó un 409 «si el reintento también choca». Con dos estados (y un
   único cambio posible, colocado → cancelado), el reintento siempre relee un pedido ya cancelado y
   responde 200. Era imposible de producir.
@@ -388,8 +447,8 @@ quedaban fuera, y un cambio así podía dar cero mutantes y salir en verde.
 
 - La lista de supervivientes que imprime es la del cambio; no hay que cruzarla a mano con el diff.
 - Por cada superviviente, el flujo propone el caso que lo mata. Ese test pasa en verde a la
-  primera, porque el código ya hace lo que afirma: el rojo se demuestra aplicando el mutante a
-  mano, viendo el test fallar por aserción y restaurando (ver la skill `express`, paso 3).
+  primera, porque el código ya hace lo que afirma: su rojo lo demuestra la segunda corrida de
+  mutación, sin reaplicar mutantes a mano (`/feature`, pasos 6 y 8).
 - Un mutante equivalente —ningún test puede distinguirlo— se marca en el código con
   `// Stryker disable next-line <Mutador>: <motivo>` y se cita en el informe. Sin marcar cuenta
   como superviviente, y con pocos mutantes uno solo basta para bajar del umbral.
@@ -457,9 +516,8 @@ las lecturas de la tabla.
 - Desde **tu propia terminal**, como en todo el experimento.
 - Cada flujo termina con un mensaje propuesto en Conventional Commits, con un scope de la lista
   cerrada de `commitlint.config.cjs`.
-- Momentos habituales de commit:
-  - flujo completo: la spec, el plan y la implementación;
-  - exprés: una sola vez al final.
+- Momentos habituales de commit: en Directo y en `/feature`, uno al final; en el modo grande de
+  `/feature`, uno por porción.
 - Trabaja en una rama propia, creada con `git switch --no-track -c <rama>`: `main` exige PR y
   checks en verde.
 
@@ -500,6 +558,33 @@ Para que un flujo corra sin rescates:
 - **Modo de permisos:** si tu configuración global arranca las sesiones en modo plan, pasa a un
   modo que ejecute (`--permission-mode` al lanzar `claude`, o `Shift+Tab`) antes de invocar un
   flujo.
+
+### Configuración recomendada de Claude Code
+
+Comprobado el 2026-10-20 contra la documentación oficial y `claude --help`, con Claude Code
+2.1.304. Lo que no se pudo comprobar va marcado.
+
+- **`/autocompact 500k`, una vez.** Guarda la ventana de autocompactación en tu configuración de
+  usuario, por modelo (`modelSettings`; antes de la v2.1.288 era una sola para todos), y la aplica
+  a la sesión en curso. Acepta de 100K a 1M, y `/autocompact auto` vuelve a la de serie. Con una
+  ventana nativa de 1M (Opus 4.7 en adelante) se compacta por defecto hacia los 967K
+  ([documentación](https://code.claude.com/docs/en/model-config#set-the-auto-compact-window)).
+  Los 500k (~50 % de la ventana) se propusieron el 2026-10-20 junto con «Sesiones» de
+  `CLAUDE.md`. ⚠️ Que sean el umbral óptimo **no está verificado**: la documentación no recomienda
+  ninguno.
+- **`/context`:** qué ocupa la ventana, por categorías. La fila «Memory files» suma los `CLAUDE.md`
+  y la memoria cargados: mídela antes y después de tocar `CLAUDE.md`. El 2026-10-20, el del
+  proyecto ocupaba 9k tokens.
+- **`/skills`:** las skills cargadas; `t` las ordena por tokens.
+- **`/skill-doctor`:** cuánto cuesta en contexto cada skill y con qué frecuencia se usa (desde la
+  v2.1.252).
+- **Para medir un flujo:**
+  - `claude --disable-slash-commands` desactiva todas las skills y los comandos de la sesión:
+    sirve para comparar con y sin skills. Que siga cargando `CLAUDE.md` **no está verificado**: la
+    documentación no lo dice.
+  - `claude --safe-mode` arranca sin ninguna personalización: ni `CLAUDE.md`, ni skills, ni
+    plugins, hooks, MCP o agentes propios. Sirve de línea base de coste, pero no para medir el
+    cumplimiento de convenciones, porque tampoco carga el `CLAUDE.md` del proyecto.
 
 ## 12. De dónde sale todo esto: el experimento del 2026-09-30
 
@@ -562,6 +647,10 @@ inexistente, y que se distinguía por las mayúsculas del UUID. E lo cerró desd
 
 ### Decisiones
 
+> Estado al 2026-10-16. El 2026-10-20 se retiraron los skills donde se aplicaron
+> ([Qué se retiró y por qué](#qué-se-retiró-y-por-qué)); `/feature` conserva D1, D2, D4, D12 y
+> D15, y de D3, la revisión final.
+
 Las reglas de decisión se fijaron (y se sellaron con un hash) antes de ejecutar la primera rama.
 
 | #   | Ajuste                                                         | Estado                                                                                                           |
@@ -599,36 +688,33 @@ Las reglas de decisión se fijaron (y se sellaron con un hash) antes de ejecutar
 - **Las skills son documentación del repo.** Lint y Prettier ignoran `.claude/`, así que ninguna
   herramienta verifica su formato. Revisa el diff a mano.
 - **Si tocas el `description` de una skill**, recuerda que decide cuándo se activa sola. Los
-  criterios de nivel tienen que coincidir en tres sitios: `CLAUDE.md` («Skills and development
-  flows»), las descripciones de `express`, `brainstorming` y `writing-plans`, y este documento.
+  criterios de nivel tienen que coincidir en tres sitios: `CLAUDE.md` («Flujo de trabajo»), la
+  descripción de `feature` y la tabla de niveles del README («Skills de IA y flujos de trabajo»).
+  Este documento no los repite.
 - **Si tocas el prompt del revisor o los pasos de un flujo**, pruébalo en una feature pequeña y
   compara con la referencia medida de la [§1](#1-los-tres-niveles): tiempo, coste, rojos por
   aserción, mutación y hallazgos de la revisión.
-- **`skills-lock.json`** fija el origen externo de las siete skills adaptadas. `express` y
-  `adversarial-review` son propias del repo y no tienen entrada.
 
 ### Señales para revisar un flujo
 
 - **La revisión adversarial encuentra dos veces el mismo tipo de defecto:** falta una comprobación
   en el flujo. Así nacieron las dos de la
   [§8](#8-las-dos-comprobaciones-que-comparten-todos-los-flujos).
-- **Una spec exprés supera a menudo las 150 líneas, o necesita más de dos rondas:** esa clase de
-  tarea es de flujo completo.
-- **Una tarea de flujo completo termina con un diseño que cabía en una spec exprés:** el criterio
-  de nivel está demasiado alto.
-- **`executing-plans` agota el contexto en planes medianos:** revisa el umbral de
-  `subagent-driven-development`.
+- **Una spec de `/feature` supera a menudo las 150 líneas, o necesita más de una ronda de
+  preguntas:** esa clase de tarea es de modo grande.
+- **Una tarea de modo grande termina con un diseño que cabía en una sesión:** el umbral del modo
+  grande está demasiado bajo.
 
 ### Siguiente paso decidido
 
-- **Adelgazar `CLAUDE.md`** (`docs/backlog.md` #32): **hecho el 2026-10-16.** Pasó de 64 510 a
-  35 408 bytes (−45,1 %): cada regla conserva su porqué en una cláusula o, si el largo salió, tras
-  un enlace, y el historial y las mediciones se fueron a `docs/` (`toolchain.md`, `architecture.md`, `api-contract.md`,
-  `database.md` y `testing.md`). Por qué no llegó a la mitad: ver el cierre del #32.
+- **Medir un cambio pequeño real en modo Directo**, con su tiempo y su coste, y anotarlo aquí: los
+  cambios pequeños nunca se han medido. Si se quiere, también la prueba sin skills y la línea base
+  sin personalización de la
+  [configuración recomendada de Claude Code](#configuración-recomendada-de-claude-code).
 
 ### Propuestas abiertas (decisión del usuario)
 
 - **Guarda automática de convenciones de test** (`docs/backlog.md` #30): hoy nada verifica por
   script el «debería», los tres marcadores AAA ni el 1:1.
-- **Evals de regresión de los flujos** con `claude plugin eval`. ⚠️ Esa herramienta publica el
+- **Evals de regresión de `/feature` y `adversarial-review`** con `claude plugin eval`. ⚠️ Esa herramienta publica el
   informe en claude.ai por defecto; hay que usar `--no-publish`.

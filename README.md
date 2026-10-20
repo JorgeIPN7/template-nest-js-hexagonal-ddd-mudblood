@@ -294,6 +294,8 @@ Merece la pena leerlo: casi todos los tropiezos de la primera vez están aquí.
 
 **`ADMIN_PASSWORD: Too small: expected string to have >=12 characters` con una contraseña larga** — Mismo origen: lleva un `#` antes del carácter 12 y no está entre comillas, así que dotenv la corta ahí y lo que queda no llega al mínimo. Ni la app ni el seed arrancan hasta que la pones entre comillas simples.
 
+**`pnpm seed:admin` falla con `el users.id del admin (…) no es un uuid v4`** — Un SQL externo dejó el id del perfil en otra versión de uuid, y con él el login respondería 500. El seed no lo renueva porque `orders.customer_id` lo guarda por valor, sin clave foránea. Corrígelo con SQL en una transacción: pon un uuid v4 en `users.id` y en cada columna que lo guarda (`auth_credentials.user_id`, `orders.customer_id`) y vuelve a ejecutar el seed. Los eventos de `orders_outbox` que ya lo citan en su `payload` conservan el id viejo.
+
 **`Starting inspector on 127.0.0.1:9229 failed`** — Ya hay un depurador escuchando. Usa `npx nest start --debug=9230 --watch`.
 
 **`relation "users" does not exist`** — Si lo devuelve la app, falta `pnpm migration:run`.
@@ -420,7 +422,7 @@ La columna **¿Tocarla?** responde lo único que se suele preguntar: `No` = el d
 | `DB_SSL` / `DB_SSL_REJECT_UNAUTHORIZED` / `DB_SSL_CA`                  | `false` / `true` / —                           | **Prod: sí** | Ver [conexión y TLS](#conexión-y-tls-rds).                                                                       |
 | `DB_SYNCHRONIZE`                                                       | `false`                                        | No           | Solo surte efecto en `development`; ver abajo.                                                                   |
 | `DB_MIGRATIONS_RUN`                                                    | `false`                                        | **Prod**     | Solo surte efecto **fuera** de `development`. Lee el aviso de [deploy notes](#deploy-notes) antes de encenderla. |
-| `DB_LOGGING`                                                           | `false`                                        | No           | Registra cada consulta SQL. **Ese log no pasa por la redacción de Pino.**                                        |
+| `DB_LOGGING`                                                           | `false`                                        | No           | Registra cada consulta SQL, sin sus parámetros (backlog #40). **Ese log no pasa por la redacción de Pino.**      |
 | `DB_POOL_MAX` / `DB_POOL_IDLE_TIMEOUT_MS` / `DB_CONNECTION_TIMEOUT_MS` | `10` / `30000` / `10000`                       | **Prod**     | Pool de `pg`. `DB_POOL_MAX × réplicas` no debe superar el `max_connections`.                                     |
 | `DB_DATABASE_TEST`                                                     | `nest_base_template_test`                      | Opcional     | La **única variable que no pasa por la validación**: la lee `test/setup-env.ts` directamente.                    |
 
@@ -561,7 +563,7 @@ src/modules/users/
 - **Property-based con `fast-check`** en value objects, funciones puras y round-trips de mapeo. Los arbitrarios se **construyen**, nunca se filtran con `.filter()`.
 - Helpers compartidos por un módulo en `<módulo>/__tests__/helpers/`; los transversales en `test/helpers/`, importados por `@test/`.
 
-**Cómo se decide qué se prueba:** el modelo de colaboración —tabla de casos acordados, TDD con rojo por aserción y mutación como auditor— está en [`CLAUDE.md`](./CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor), y cómo lo aplica cada flujo de trabajo, en [`docs/development-workflows.md`](./docs/development-workflows.md). La mutación es un gate real: `pnpm test:mutation` con `break: 90` y job propio en CI; `pnpm test:mutation:changed` audita solo el código nuevo de una rama.
+**Cómo se decide qué se prueba:** el modelo de colaboración —tabla de casos acordados, TDD con rojo por aserción y mutación como auditor— está en el skill [`/feature`](./.claude/skills/feature/SKILL.md); cuándo se usa y cuándo basta el modo Directo, en [`CLAUDE.md`](./CLAUDE.md#flujo-de-trabajo), y las mediciones que lo justifican, en [`docs/development-workflows.md`](./docs/development-workflows.md). La mutación es un gate real: `pnpm test:mutation` con `break: 90` y job propio en CI; `pnpm test:mutation:changed` audita solo el código nuevo de una rama.
 
 ### Base de datos de los tests
 
@@ -608,7 +610,7 @@ El umbral de `branches` (50) es más bajo que el resto a propósito: SWC instrum
 | `pnpm seed:admin`              | Crea o promueve el primer admin (`ADMIN_EMAIL`/`ADMIN_PASSWORD`), idempotente |
 | `pnpm outbox:relay`            | Publica (hoy: log) los eventos pendientes de `orders_outbox` y los marca      |
 
-**Definition of Done** de cualquier cambio: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`, todo en verde.
+**Definition of Done** de cualquier cambio que no sea solo de docs: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`, todo en verde. Si solo tocas docs, basta con `format:check`, `pnpm exec prettier --check` sobre los `.md` de `docs/` que toques (`format:check` no los cubre) y `test`.
 
 ### Docker
 
@@ -810,39 +812,27 @@ Los `/health` están exentos del throttler (`@SkipThrottle`) y del `TransformInt
 
 ## Skills de IA y flujos de trabajo
 
-Una **skill** es un manual que se le carga a un asistente de IA para que trabaje como se trabaja aquí, en vez de improvisar. Son archivos de texto: viven en [`.claude/skills/`](./.claude/skills/), se leen igual que cualquier documento y no ejecutan nada por su cuenta. Hay nueve.
+Una **skill** es un manual que se le carga a un asistente de IA para que trabaje como se trabaja aquí, en vez de improvisar. Son archivos de texto: viven en [`.claude/skills/`](./.claude/skills/), se leen igual que cualquier documento y no ejecutan nada por su cuenta. Hay dos.
 
-**Qué flujo usar depende del tamaño y del riesgo del cambio.** La guía completa —cómo elegir según el tipo de tarea, qué hace el asistente en cada paso, qué te toca a ti, qué deja escrito, cuánto cuesta y las mediciones que lo justifican— está en **[`docs/development-workflows.md`](./docs/development-workflows.md)**. En resumen:
+**Qué flujo usar depende del tamaño y del riesgo del cambio.** Cuándo va cada cambio por un nivel u otro lo fija [`CLAUDE.md`, «Flujo de trabajo»](./CLAUDE.md#flujo-de-trabajo), y los pasos, el skill. **[`docs/development-workflows.md`](./docs/development-workflows.md)** cuenta qué se retiró y por qué, cómo funcionan la revisión adversarial, las dos comprobaciones y la mutación del código nuevo, la configuración recomendada de Claude Code y las mediciones que lo justifican. En resumen:
 
-| Nivel                           | Para qué                                                                                                                                                                                    | Cómo se arranca                                                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| **Trivial**                     | Errata, docs, configuración que no es de seguridad, bump de dependencia, bug de una línea                                                                                                   | Pídelo sin skill; el asistente aplica `CLAUDE.md` y la DoD                                |
-| **Exprés** (por defecto)        | Una feature o un bug con lógica dentro de **un** contexto que ya existe (hasta ~8 tareas)                                                                                                   | `/express <qué quieres>`                                                                  |
-| **Completo** (casos especiales) | Seguridad (auth, credenciales, tokens, permisos y su configuración), contexto nuevo, cambios entre contextos, migración destructiva, más de ~10 tareas, trabajo que continuará otra persona | `/brainstorming <idea>` → plan sin código → `/executing-plans <plan>` en una sesión nueva |
+| Nivel                       | Para qué                                                                                                                                                                                                                        | Cómo se arranca                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Directo** (por defecto)   | Errata, docs, configuración que no es de seguridad, bump de dependencia, bug con su test evidente                                                                                                                               | Pídelo sin skill; el asistente aplica `CLAUDE.md` y la DoD                     |
+| **`/feature`**              | Un endpoint o caso de uso nuevo, una migración, lógica en `domain/` o `application/`, o algo de riesgo: auth, credenciales, tokens, permisos y su configuración, cambios entre contextos, migración destructiva, contexto nuevo | `/feature <qué quieres>`                                                       |
+| **`/feature`**, modo grande | Más de ~8 tareas, un contexto nuevo o trabajo que continuará otra persona: spec con 2–3 enfoques y porciones de ~400 líneas, una por sesión                                                                                     | `/feature <qué quieres>`; para retomar, `/feature continuar docs/specs/<spec>` |
 
-**Exprés y completo terminan igual:** mutación del código nuevo (`pnpm test:mutation:changed`), una revisión adversarial y la DoD; el trivial, con la DoD. **El asistente nunca hace commits**: [`.claude/settings.json`](./.claude/settings.json) le deniega el git que escribe, y los commits los haces tú desde tu terminal con el mensaje que te propone.
+**`/feature` termina** con la mutación del código nuevo (`pnpm test:mutation:changed`), una revisión adversarial y la DoD; **Directo**, con la DoD. **El asistente nunca hace commits**: [`.claude/settings.json`](./.claude/settings.json) le deniega el git que escribe, y los commits los haces tú desde tu terminal con el mensaje que te propone.
 
-**Las seis del flujo de trabajo:**
+**Las dos del flujo de trabajo, ambas propias de este repo:**
 
-| Skill                                                                                               | Qué hace                                                                                                             |
-| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| [`express`](./.claude/skills/express/SKILL.md) _(propia)_                                           | El flujo por defecto: mini-diseño, spec corta con su tabla de casos, TDD, mutación, revisión y DoD, en una sesión    |
-| [`brainstorming`](https://www.skills.sh/obra/superpowers/brainstorming)                             | Flujo completo, paso 1: convierte una idea en una spec aprobada en `docs/specs/`                                     |
-| [`writing-plans`](https://www.skills.sh/obra/superpowers/writing-plans)                             | Flujo completo, paso 2: un plan **sin código** en `docs/plans/` — archivos, firmas, decisiones y casos de cada tarea |
-| [`executing-plans`](https://www.skills.sh/obra/superpowers/executing-plans)                         | Flujo completo, paso 3 (por defecto): ejecuta el plan en la sesión y lo audita una vez al final                      |
-| [`subagent-driven-development`](https://www.skills.sh/obra/superpowers/subagent-driven-development) | Flujo completo, paso 3 para planes grandes de tareas independientes: un asistente nuevo por tarea                    |
-| [`adversarial-review`](./.claude/skills/adversarial-review/SKILL.md) _(propia)_                     | El último paso de todos los flujos, o suelta antes de un PR: un revisor que busca defectos reales, no aprobar        |
+| Skill                                                                | Qué hace                                                                                                                |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| [`feature`](./.claude/skills/feature/SKILL.md)                       | Tabla de casos aprobada en el chat, TDD con rojo por aserción, mutación, revisión y DoD; con modo grande por porciones  |
+| [`adversarial-review`](./.claude/skills/adversarial-review/SKILL.md) | El último paso de `/feature`, o a petición en Directo: un revisor de solo lectura que busca defectos reales, no aprobar |
 
-**Las tres que se consultan** cuando el trabajo las necesita, para no reinventar criterios ya decididos:
+**La forma del código no es una skill:** dónde va cada archivo, qué capa puede importar a cuál y cómo se escribe cada pieza viven en [`docs/nestjs-mapping.md`](./docs/nestjs-mapping.md), que se consulta por secciones cuando el trabajo crea algo que su módulo todavía no tiene.
 
-| Skill                                                                                                   | Manda sobre                                                                             |
-| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [`clean-ddd-hexagonal`](https://www.skills.sh/ccheney/robust-skills/clean-ddd-hexagonal)                | Dónde va cada archivo, qué capa puede importar a cuál, cómo se modela un dominio        |
-| [`nestjs-best-practices`](https://www.skills.sh/kadajett/agent-nestjs-skills/nestjs-best-practices)     | 45 reglas de NestJS 12: módulos, inyección de dependencias, seguridad, rendimiento      |
-| [`javascript-typescript-jest`](https://www.skills.sh/github/awesome-copilot/javascript-typescript-jest) | Lo que `CLAUDE.md` no cubre de los tests: mocking por capa, property-based testing, E2E |
-
-[`skills-lock.json`](./skills-lock.json) fija el origen y un hash de contenido de las siete que vienen de fuera — el equivalente a un `pnpm-lock.yaml` para las skills. `express` y `adversarial-review` son de este repo y no tienen entrada.
-
-> **⚠️ Las siete de origen externo están adaptadas a este repositorio y ninguna es la versión original.** Las cuatro del flujo completo están hechas a este stack y a su forma de trabajar (`docs/specs/`, `docs/plans/`, la tabla «Casos acordados») y, desde el 2026-09-30, a los ajustes que midió el experimento de flujos: plan sin código, ejecución inline por defecto, una revisión adversarial en lugar de revisores por tarea. `clean-ddd-hexagonal` y `javascript-typescript-jest` se reescribieron para este stack y estas convenciones, y `nestjs-best-practices` lleva las reglas alineadas con NestJS 12. Traerse la versión de arriba sin más **pisaría esas adaptaciones**. Compara antes de actualizar. La revisión para la 12, que la migración (backlog #27) dejó fuera a propósito, se hizo el 2026-09-28: cambiaron 24 de las 45 reglas, las otras seis skills dejaron de anunciar NestJS 11, y la referencia de forma de código (`NESTJS-MAPPING.md`), la skill de tests y los prompts de revisión dejaron de enseñar tokens `Symbol` y carpetas `handlers/`.
+Hasta el 2026-10-20 había nueve; se retiraron ocho. `/feature` sustituye a `express`, `brainstorming`, `writing-plans` y `executing-plans`; `subagent-driven-development`, `javascript-typescript-jest` y `nestjs-best-practices` se retiraron sin sustituto, y de `clean-ddd-hexagonal` solo sigue su referencia de forma de código, hoy `docs/nestjs-mapping.md`. El porqué, con sus datos, en [`docs/development-workflows.md`](./docs/development-workflows.md#qué-se-retiró-y-por-qué).
 
 El lint y Prettier ignoran `.claude/` a propósito: son documentación, no código del proyecto.

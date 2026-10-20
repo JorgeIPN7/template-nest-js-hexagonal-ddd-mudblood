@@ -1,6 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
+
+import type { DataSource } from 'typeorm';
 
 import type * as DataSourceModule from '../data-source';
 
@@ -56,6 +59,28 @@ describe('data-source', () => {
     // Assert
     expect(database).toBe('from_local');
   });
+
+  // Cada comando de la CLI de TypeORM fija su propio `logging` con `setOptions`
+  // (`migration:show` pide `['schema']`; `migration:run` y `migration:revert`, también
+  // `'query'` y `'error'`), y `setOptions` recrea el logger con `LoggerFactory.create`, que
+  // devuelve tal cual una instancia. Si `ParameterFreeLogger` se quedara con el `DB_LOGGING` de su
+  // constructor, `pnpm migration:show` saldría con 0 sin listar ninguna migración.
+  it('debería imprimir lo que pide un comando de la CLI que fija su logging con setOptions', () => {
+    // Arrange
+    writeFileSync(join(workdir, '.env'), 'DB_LOGGING=false\n');
+    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const dataSource = loadedDataSource();
+    dataSource.setOptions({ logging: ['schema'] });
+
+    // Act
+    dataSource.logger.logSchemaBuild('[X] 1 CreateUsers1700000000000');
+
+    // Assert
+    const printed = consoleLog.mock.calls
+      .flat()
+      .map((part) => stripVTControlCharacters(String(part)));
+    expect(printed.join(' ')).toContain('[X] 1 CreateUsers1700000000000');
+  });
 });
 
 // Helpers
@@ -68,4 +93,16 @@ const loadedDatabase = (): unknown => {
     database = (dataSourceOptions as { database?: unknown }).database;
   });
   return database;
+};
+
+/** El `DataSource` que exporta `data-source.ts`, evaluado desde cero, como lo carga la CLI. */
+const loadedDataSource = (): DataSource => {
+  let dataSource: DataSource | undefined;
+  jest.isolateModules(() => {
+    dataSource = jest.requireActual<typeof DataSourceModule>('../data-source').default;
+  });
+  if (!dataSource) {
+    throw new Error('data-source.ts no exportó un DataSource');
+  }
+  return dataSource;
 };

@@ -1,27 +1,26 @@
 # Tests: el porqué de las convenciones
 
 Este documento guarda el porqué, las mediciones y la historia de las reglas de test de
-[`CLAUDE.md`](../CLAUDE.md): el «Modelo de colaboración» y las convenciones de test de
+[`CLAUDE.md`](../CLAUDE.md): el «Flujo de trabajo» y las convenciones de test de
 «Code conventions». Al final recoge también el porqué y la historia de las demás convenciones de
 «Code conventions» y de «Deferred work», que no son de test pero comparten bloque en `CLAUDE.md`.
 La regla vigente está en `CLAUDE.md`: si este documento y `CLAUDE.md` discrepan, gana `CLAUDE.md`.
 
 ## Modelo de colaboración
 
-Regla
-([`CLAUDE.md`, «Modelo de colaboración»](../CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor)):
-casos primero, TDD después, mutación como auditor.
+Regla ([`CLAUDE.md`, «Flujo de trabajo»](../CLAUDE.md#flujo-de-trabajo), y el skill
+[`/feature`](../.claude/skills/feature/SKILL.md)): casos primero, TDD después, mutación como
+auditor.
 
-La definición vigente del modelo es esa sección de `CLAUDE.md`. La spec donde nació
+La definición vigente del modelo son esa sección de `CLAUDE.md` y el skill. La spec donde nació
 (`2026-08-04-roadmap-and-collaboration-model-design.md`) se quedó en el historial anterior a la
 reconstrucción del 2026-08-08 y no existe en el repo (backlog #29).
 
 ### Las tres fases
 
-Las tres fases —contrato, ejecución (IA) y validación— se definen solo en
-[`CLAUDE.md`, «Modelo de colaboración — casos primero, TDD después, mutación como auditor»](../CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor):
-copiarlas aquí abriría la segunda fuente que backlog #29 decidió no abrir. Aquí queda lo que
-`CLAUDE.md` no cuenta:
+Las tres fases —contrato, ejecución (IA) y validación— se definen solo en los pasos 3 a 8 del
+skill [`/feature`](../.claude/skills/feature/SKILL.md): copiarlas aquí abriría la segunda fuente
+que backlog #29 decidió no abrir. Aquí queda lo que el skill no cuenta:
 
 - **Sin confirmación rutinaria antes de cada tarea (fase 2):** medido, 3 confirmaciones y 0
   cambios; es la medición de la decisión D1 de
@@ -41,9 +40,7 @@ vive en el texto del `it`; de esas tablas, la suite es la única fuente que qued
 
 ## La mutación como gate
 
-Regla
-([`CLAUDE.md`, «Modelo de colaboración»](../CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor)):
-la mutación es gate, no sugerencia: `thresholds.break: 90` en
+Regla ([`CLAUDE.md`, «Flujo de trabajo»](../CLAUDE.md#flujo-de-trabajo)): la mutación es gate, no sugerencia: `thresholds.break: 90` en
 [`stryker.config.mjs`](../stryker.config.mjs) y job `mutation` propio en
 [`ci.yml`](../.github/workflows/ci.yml).
 

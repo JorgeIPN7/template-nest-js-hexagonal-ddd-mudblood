@@ -27,11 +27,15 @@ loadEnv({ path: ['.env.local', '.env'], quiet: true, override: false });
 const databaseConfig = buildDatabaseConfig(envSchema.parse(process.env));
 
 // `synchronize` y `migrationsRun` no aplican a la CLI: sus comandos son explícitos.
-export const dataSourceOptions = {
-  ...buildTypeOrmOptions(databaseConfig),
+//
+// `Object.assign` y no un spread: `ParameterFreeLogger` lee `logging` del objeto que construyó
+// `buildTypeOrmOptions`, y los comandos de la CLI de TypeORM cambian ese valor con `setOptions`
+// sobre el objeto que recibe el `DataSource`. Con una copia, `pnpm migration:show` no listaría
+// nada (lo fija `data-source.spec.ts`).
+export const dataSourceOptions = Object.assign(buildTypeOrmOptions(databaseConfig), {
   synchronize: false,
   migrationsRun: false,
-} as DataSourceOptions;
+}) as DataSourceOptions;
 
 // Un único export de `DataSource`: la CLI de TypeORM rechaza el archivo si encuentra
 // más de uno (por ejemplo, exportarlo a la vez como named y como default).

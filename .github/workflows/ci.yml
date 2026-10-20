@@ -64,8 +64,8 @@ jobs:
     permissions:
       contents: read
 
-    # La suite E2E se ejecuta contra PostgreSQL real (el skill prohíbe mockear el ORM
-    # en los tests de persistencia), así que el job necesita una base de verdad.
+    # La suite E2E se ejecuta contra PostgreSQL real (`docs/nestjs-mapping.md`, §9, prohíbe
+    # mockear el ORM en los tests de persistencia), así que el job necesita una base de verdad.
     services:
       postgres:
         image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873

@@ -1528,6 +1528,27 @@ conflictos: en esas dos semanas `main` solo recibió bumps de Renovate, y ningun
 - **Lo que no se midió.** La premisa «`CLAUDE.md` basta para las convenciones» (una sesión sin
   skills cumplió el 100 %) se midió el 2026-09-30 con la versión de entonces (54 545 bytes en
   `5263e50`, el commit base del experimento); no se ha repetido con esta.
+
+**Segunda pasada y cierre (2026-10-20, rama `update-skills`, commit `00fec46`).** `CLAUDE.md`
+pasó de 38 095 a 21 877 bytes (264 → 196 líneas, −42,6 %): −66,1 % sobre los 64 510 del
+original, así que el criterio «la mitad o menos» ya se cumple. Fue parte del cambio que retiró
+ocho skills y dejó el flujo en Directo y `/feature` (`docs/development-workflows.md`, «Flujo
+vigente»).
+
+- **Qué cambió respecto a la primera.** Esta sí quitó reglas a propósito: las que ya imponen
+  tests, lint o CI quedan en una línea que nombra su guarda, lo que se deduce del código salió y
+  los porqués que ya estaban en `docs/` pasaron a un enlace. Las invariantes de `auth` y `orders`
+  siguen dentro, recortadas, como se decidió el 2026-10-16.
+- ⚠️ **Sin cotejo uno a uno registrado,** a diferencia de la primera pasada: el segundo criterio
+  de «Cómo se sabrá que está hecho» no se volvió a comprobar.
+- **Lo que queda, sin bloquear el cierre:**
+  - la fila «Memory files» de `/context`: después, el `CLAUDE.md` del proyecto ocupa 9k tokens
+    (Claude Code 2.1.304); el antes no se midió con `/context` (la auditoría lo estimó en ~10k);
+  - las reglas por ruta de Claude Code (`.claude/rules/`), como opción futura para sacar de
+    `CLAUDE.md` las secciones de `auth` y `orders`; no se han evaluado;
+  - la premisa «`CLAUDE.md` basta para las convenciones», que sigue sin medirse con esta versión:
+    es la prueba sin skills de `docs/development-workflows.md`, «Configuración recomendada de
+    Claude Code».
 - **Actualización del 2026-10-19.** El contrato de módulo y su cierre devolvieron `CLAUDE.md` a
   38 301 bytes (265 líneas): +2 893 sobre los 35 408 de `32ade98` (+8,2 %), y −40,6 % frente a los
   64 510 originales. Lo que entró son reglas que se aplican al escribir código: el kernel y el
@@ -1764,6 +1785,23 @@ el 2026-10-19.
 
 ## 40. `pnpm seed:admin` imprime el hash del admin cuando falla
 
+**Resuelto (2026-10-20, por `/feature`; spec en
+`docs/specs/2026-10-20-seed-admin-salida-y-user-id.md`).** Se aplicó el criterio de abajo tal
+cual. El CLI imprime `formatSeedError(error)`: el mensaje y, si es texto, el código. La función
+vive en `src/database/seeds/format-seed-error.ts` y no en el seed, porque importar el seed carga
+`data-source.ts`, que lee el `.env` al importarse. Para `DB_LOGGING` se eligió el logger:
+`ParameterFreeLogger` (`src/database/parameter-free-logger.ts`) imprime la consulta sin sus
+parámetros, también la del INSERT de cada `POST /auth/register`. Lee `logging` del objeto de
+opciones en cada llamada, porque TypeORM devuelve tal cual una instancia en `logger` y cada
+comando de su CLI fija el suyo con `setOptions`. Con el valor del constructor, `pnpm
+migration:show` salía con 0 sin listar nada (lo encontró la revisión adversarial). Comparadas con
+la base, las salidas de `migration:show`, `migration:run` y `schema:log` no cambian, salvo por los
+parámetros que ya no se imprimen. El E2E
+lanza el CLI real con un `CHECK … NOT VALID` temporal que rechaza los hashes, así que el error
+lleva el hash en `detail` y en `parameters`, y con `DB_LOGGING=true`. Medido antes del arreglo:
+la salida traía `Failing row contains (…, $argon2id$v=1…`. Se pone rojo sin el formateo y, por
+separado, sin el logger.
+
 **Qué pasa.** El bloque CLI de `src/database/seeds/seed-admin.ts` (desde `8721f48`) hace
 `console.error('[seed:admin] failed:', error)`. Si falla la escritura de la credencial, `error`
 es un `QueryFailedError` de TypeORM, que guarda `parameters`, y `util.inspect` los imprime enteros,
@@ -1792,6 +1830,17 @@ sobre `DB_LOGGING`, escrita en el código y en `.env.example`.
 
 ## 41. El rescate de `seed:admin` no cubre un `users.id` que no es v4
 
+**Resuelto (2026-10-20, por `/feature`; spec en
+`docs/specs/2026-10-20-seed-admin-salida-y-user-id.md`).** El seed falla con un mensaje explícito
+antes de escribir nada, como dice el criterio, pero **sin `UserId.from`**, que el seed no puede
+importar. La frontera solo deja a `database` importar `database` y `config`
+(`boundaries/dependencies`), y `pnpm seed:admin` corre con ts-node, que no resuelve el `@shared/`
+de `UserId` (`Cannot find module '@shared/domain/uuid-identifier.base'`). Las dos cosas se
+midieron el 2026-10-20. El usuario eligió copiar la regex de `UuidIdentifier` en el seed, con un
+comentario que lo explica, antes que abrir la frontera o comprobarlo en SQL con
+`uuid_extract_version`, que ataría el seed a PostgreSQL 17 o superior. El E2E usa un perfil
+inactivo, con rol `user` y con credencial: compara las dos filas enteras antes y después.
+
 **Qué pasa.** `pnpm seed:admin` renueva el id de la credencial cuando no es v4 (decisión B9 del
 contrato de módulo), pero no mira el `users.id` del admin. Si un SQL externo dejara ese id en
 otra versión (un v1, por ejemplo), el seed actualizaría el rol, haría el upsert de la credencial e
@@ -1806,6 +1855,26 @@ de auth, así que entra con su fila aprobada, por el flujo que toque.
 
 **Cómo se sabrá que está hecho.** Un E2E del seed con un perfil de admin con id v1 falla con ese
 mensaje y sin tocar `auth_credentials`, y se pone rojo sin la comprobación.
+
+---
+
+## 42. Con la base parada, `pnpm seed:admin` no dice a qué host ni puerto intentó conectar
+
+**Qué pasa.** Desde #40, el CLI imprime solo `error.message` y `error.code`. Si la base no
+responde, Node lanza un `AggregateError`, con un intento por familia de direcciones, y su
+`message` está vacío. La salida queda en `[seed:admin] failed:  (código ECONNREFUSED)` (medido el
+2026-10-20 con `DB_PORT=1`). Antes de #40, el `util.inspect` del error enseñaba cada intento
+(`connect ECONNREFUSED ::1:1`). El código basta para saber que la base rechazó la conexión, pero
+no a qué host y puerto se intentó, que es lo primero que hay que mirar cuando el `.env` apunta
+mal. Lo encontró la revisión adversarial de #40.
+
+**Propuesta, sin decidir.** Cuando el error sea un `AggregateError` con el `message` vacío,
+`formatSeedError` añade los `message` de sus `errors`, que solo llevan dirección y puerto. Cambia
+el criterio de #40 («solo `message` y `code`»), que no se reabrió en su sesión: por eso queda
+aquí y no se aplicó.
+
+**Cómo se sabrá que está hecho.** Una fila de `format-seed-error.spec.ts` con un `AggregateError`
+de `message` vacío cuya salida lleva el host y el puerto, en rojo sin el cambio.
 
 ---
 

@@ -1,5 +1,8 @@
+import type { Logger } from 'typeorm';
+
 import { buildDatabaseConfig as buildConfig } from '@test/helpers/config.factory';
 
+import { ParameterFreeLogger } from '../parameter-free-logger';
 import { buildTypeOrmOptions, ENTITIES_GLOB, MIGRATIONS_GLOB } from '../typeorm-options';
 
 describe('buildTypeOrmOptions', () => {
@@ -102,5 +105,43 @@ describe('buildTypeOrmOptions', () => {
 
     // Assert
     expect(options.migrationsTableName).toBe('migrations');
+  });
+
+  // Backlog #40: el logger por defecto imprime los parámetros, y el INSERT de una credencial
+  // lleva el hash.
+  it('debería registrar las consultas con un logger que no imprime sus parámetros', () => {
+    // Arrange
+
+    // Act
+    const options = buildTypeOrmOptions(buildConfig());
+
+    // Assert
+    expect(options.logger).toBeInstanceOf(ParameterFreeLogger);
+  });
+
+  // Con una instancia en `logger`, TypeORM ignora la opción `logging`: el flag tiene que llegar
+  // al constructor, o `DB_LOGGING=true` dejaría de registrar nada sin avisar.
+  it('debería encender el logger cuando la config activa el registro de consultas', () => {
+    // Arrange
+    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const logger = buildTypeOrmOptions(buildConfig({ logging: true })).logger as Logger;
+
+    // Act
+    logger.logQuery('SELECT 1');
+
+    // Assert
+    expect(consoleLog).toHaveBeenCalled();
+  });
+
+  it('debería dejar mudo el logger cuando la config apaga el registro de consultas', () => {
+    // Arrange
+    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const logger = buildTypeOrmOptions(buildConfig({ logging: false })).logger as Logger;
+
+    // Act
+    logger.logQuery('SELECT 1');
+
+    // Assert
+    expect(consoleLog).not.toHaveBeenCalled();
   });
 });

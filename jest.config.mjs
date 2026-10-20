@@ -95,8 +95,9 @@ const config = {
     // Lo siguiente se valida en la suite E2E (`pnpm test:e2e`), no aquí. Medirlo en la
     // suite unitaria penalizaría por seguir la propia convención del repo:
     //   - `*.module.ts`: wiring declarativo; compilar el módulo abre conexiones reales.
-    //   - `*.typeorm.repository.ts`: el skill exige probar repositorios contra una base
-    //     real, no con `jest.mock('typeorm')`, y eso es justo lo que hacen los E2E.
+    //   - `*.typeorm.repository.ts`: `docs/nestjs-mapping.md` (§9) exige probar repositorios
+    //     contra una base real, no con `jest.mock('typeorm')`, y eso es justo lo que hacen
+    //     los E2E.
     //   - `data-source.ts` y `migrations/`: los ejecuta la CLI (`pnpm migration:run`).
     // `test/jest-e2e.config.mjs` mide estos archivos y les aplica su propio umbral —con UNA
     // excepción, que conviene tener escrita porque el comentario anterior la negaba: hasta el

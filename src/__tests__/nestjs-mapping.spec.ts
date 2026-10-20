@@ -10,7 +10,7 @@ import {
 } from './helpers/module-contract-checker';
 
 const ROOT = path.resolve(__dirname, '../..');
-const REFERENCE = '.claude/skills/clean-ddd-hexagonal/references/NESTJS-MAPPING.md';
+const REFERENCE = 'docs/nestjs-mapping.md';
 const BILLING = 'src/modules/billing/';
 const FILTER = `${BILLING}infrastructure/http/billing-domain-exception.filter.ts`;
 const MAPPER = `${BILLING}infrastructure/persistence/invoice.mapper.ts`;
@@ -35,17 +35,17 @@ const KEY_TARGETS: Record<ContractKey, RegExp> = {
 };
 
 /**
- * `NESTJS-MAPPING.md` es la fuente de verdad de la forma del código (`CLAUDE.md`), y su ejemplo
- * `billing` es lo que se copia al crear un contexto. Esta guarda lo trata como un módulo de
- * verdad: extrae sus bloques, los pasa por el contrato de módulo y los compila con el `tsconfig`
- * del repo contra el kernel y `common/` reales. Si el kernel cambia y la referencia no, se pone
- * roja aquí, y no en el primer módulo que alguien copie.
+ * `docs/nestjs-mapping.md` es la fuente de verdad de la forma del código (`CLAUDE.md`), y su
+ * ejemplo `billing` es lo que se copia al crear un contexto. Esta guarda lo trata como un
+ * módulo de verdad: extrae sus bloques, los pasa por el contrato de módulo y los compila con el
+ * `tsconfig` del repo contra el kernel y `common/` reales. Si el kernel cambia y la referencia
+ * no, se pone roja aquí, y no en el primer módulo que alguien copie.
  *
  * Sigue el patrón de `docs/testing.md`, «Guardas de arquitectura»: el árbol (la referencia de
  * hoy) más una rotura puntual por comprobación, que demuestra que ni el contrato ni `tsc` pasan
  * en vacío. Lo que no ve: ESLint y Prettier no pasan por los bloques del md.
  */
-describe('NESTJS-MAPPING.md', () => {
+describe('nestjs-mapping.md', () => {
   describe('los bloques', () => {
     it('debería declarar en cada bloque ts la ruta del archivo de billing que enseña, sin repetir ninguna', () => {
       // Arrange

@@ -1,4 +1,7 @@
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -13,6 +16,10 @@ import { seedAdmin } from '../seeds/seed-admin';
 /** Cumple `PASSWORD_LENGTH` de `src/config/password-policy.ts`; el valor en sí es irrelevante. */
 const ADMIN_PASSWORD = 'Password-Segura-1';
 const ADMIN_EMAIL = 'primer.admin@example.com';
+
+/** Constraint temporal con la que el E2E del CLI fuerza a fallar la escritura de la credencial. */
+const REJECT_ARGON2_CONSTRAINT = 'seed_e2e_reject_argon2';
+const REPO_ROOT = join(__dirname, '..', '..', '..');
 
 /**
  * E2E contra PostgreSQL real: `seedAdmin` habla SQL crudo directamente —no pasa por
@@ -44,12 +51,19 @@ describe('seedAdmin (e2e)', () => {
   });
 
   beforeEach(async () => {
+    // Por si una pasada anterior se cortó durante el caso del CLI, sin llegar al `afterEach`.
+    await dataSource.query(
+      `ALTER TABLE auth_credentials DROP CONSTRAINT IF EXISTS ${REJECT_ARGON2_CONSTRAINT}`,
+    );
     await dataSource.query('TRUNCATE TABLE auth_credentials');
     await dataSource.query('TRUNCATE TABLE users CASCADE');
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     restoreEnv();
+    await dataSource.query(
+      `ALTER TABLE auth_credentials DROP CONSTRAINT IF EXISTS ${REJECT_ARGON2_CONSTRAINT}`,
+    );
   });
 
   afterAll(async () => {
@@ -219,6 +233,38 @@ describe('seedAdmin (e2e)', () => {
     expect(['8', '9', 'a', 'b']).toContain(renewedId[19]);
   });
 
+  // Backlog #41: el id del perfil no se puede renovar como el de la credencial, porque
+  // `orders.customer_id` lo guarda por valor. Sin la comprobación, el seed devolvía 'promoted'
+  // —éxito aparente— y el login seguía en 500, porque `UserMapper` falla cerrado. El perfil es un
+  // usuario corriente, inactivo y con credencial, para que cualquier escritura se notara.
+  it('debería fallar con un mensaje explícito, sin tocar auth_credentials ni el perfil, cuando el users.id del admin no es v4', async () => {
+    // Arrange
+    const v1Id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    await dataSource.query(
+      `INSERT INTO users (id, email, name, role, active, "createdAt", "updatedAt")
+       VALUES ($1, $2, 'Perfil v1', 'user', false, now(), now())`,
+      [v1Id, ADMIN_EMAIL],
+    );
+    await dataSource.query(
+      `INSERT INTO auth_credentials (id, user_id, password_hash, "createdAt", "updatedAt")
+       VALUES ($1, $2, 'hash-anterior', now(), now())`,
+      [randomUUID(), v1Id],
+    );
+    const before = await queryProfileAndCredential(v1Id);
+    setEnv(ADMIN_EMAIL, ADMIN_PASSWORD);
+
+    // Act
+    const seeding = seedAdmin(dataSource);
+
+    // Assert
+    await expect(seeding).rejects.toThrow(
+      `seed:admin: el users.id del admin (${v1Id}) no es un uuid v4 y el login respondería 500. ` +
+        'No se renueva como el de la credencial porque orders.customer_id lo referencia por valor: ' +
+        'corrígelo con SQL. No se ha escrito nada.',
+    );
+    expect(await queryProfileAndCredential(v1Id)).toEqual(before);
+  });
+
   // Backlog #34: el esquema solo exigía 12 caracteres, así que 129 pasaban, el seed sembraba el
   // admin y `@MaxLength(128)` de `LoginDto` lo dejaba fuera para siempre con un 400. Ahora el
   // esquema rechaza lo que rechazaría el login, ANTES de abrir la transacción.
@@ -237,6 +283,32 @@ describe('seedAdmin (e2e)', () => {
     );
     expect(counts[0]).toEqual({ users: 0, credentials: 0 });
   });
+
+  // Backlog #40, con el CLI real y no con la función: es el bloque CLI el que imprimía el error
+  // entero. El `CHECK` rechaza los hashes argon2id, así que el error de PostgreSQL lleva el hash
+  // en `detail` («Failing row contains…») y TypeORM, en `parameters`. Con `DB_LOGGING=true`, la
+  // misma prueba cubre el logger de TypeORM, que imprimía los parámetros de cada INSERT.
+  it('debería terminar con código 1 y sin el hash en la salida cuando falla la escritura de la credencial', async () => {
+    // Arrange
+    setEnv(ADMIN_EMAIL, ADMIN_PASSWORD);
+    await dataSource.query(
+      `ALTER TABLE auth_credentials ADD CONSTRAINT ${REJECT_ARGON2_CONSTRAINT}
+       CHECK (password_hash NOT LIKE '$argon2id$%') NOT VALID`,
+    );
+
+    // Act
+    const cli = await runSeedCli({ DB_LOGGING: 'true' });
+
+    // Assert
+    expect(cli.exitCode).toBe(1);
+    expect(cli.stderr).toContain('[seed:admin] failed:');
+    expect(cli.stderr).toContain('(código 23514)');
+    // Prueba de que el logger estaba encendido en el hijo: sin ella, un `DB_LOGGING` que dejara
+    // de llegarle pondría en verde la aserción de stdout también sin `ParameterFreeLogger`.
+    expect(cli.stdout).toContain('INSERT INTO auth_credentials');
+    expect(cli.stdout).not.toContain('$argon2id$');
+    expect(cli.stderr).not.toContain('$argon2id$');
+  }, 60_000);
 
   it('debería rechazar cuando faltan ADMIN_EMAIL o ADMIN_PASSWORD en el entorno', async () => {
     // Arrange
@@ -271,6 +343,54 @@ describe('seedAdmin (e2e)', () => {
     } else {
       process.env.ADMIN_PASSWORD = originalAdminPassword;
     }
+  }
+
+  /**
+   * Lanza `pnpm seed:admin` tal cual, `ts-node src/database/seeds/seed-admin.ts`, con el entorno
+   * de esta suite (la base de test y las `ADMIN_*` de `setEnv`). En modo `transpileOnly`, porque
+   * los tipos ya los comprueba `pnpm typecheck` y así arranca en segundos.
+   */
+  function runSeedCli(
+    extraEnv: Record<string, string>,
+  ): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [require.resolve('ts-node/dist/bin.js'), 'src/database/seeds/seed-admin.ts'],
+        {
+          cwd: REPO_ROOT,
+          env: { ...process.env, TS_NODE_TRANSPILE_ONLY: 'true', ...extraEnv },
+          // Antes que el plazo del `it`: un hijo vivo retendría la tabla mientras el
+          // `afterEach` espera su `ALTER TABLE`.
+          timeout: 50_000,
+        },
+      );
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
+      child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+      child.on('error', reject);
+      // Sin los códigos ANSI del resaltado de SQL, que parten las palabras y podrían partir el
+      // hash y dejar en verde un `not.toContain` sin el arreglo.
+      child.on('close', (exitCode) =>
+        resolve({
+          exitCode,
+          stdout: stripVTControlCharacters(stdout),
+          stderr: stripVTControlCharacters(stderr),
+        }),
+      );
+    });
+  }
+
+  /** Las dos filas del usuario, con todo lo que el seed escribiría, para compararlas enteras. */
+  function queryProfileAndCredential(userId: string): Promise<unknown[]> {
+    return dataSource.query(
+      `SELECT u.role, u.active, u."updatedAt" AS user_updated_at,
+              c.id AS credential_id, c.password_hash, c."updatedAt" AS credential_updated_at
+       FROM users u LEFT JOIN auth_credentials c ON c.user_id = u.id
+       WHERE u.id = $1`,
+      [userId],
+    );
   }
 
   function queryUser(email: string): Promise<{ name: string; role: string }[]> {

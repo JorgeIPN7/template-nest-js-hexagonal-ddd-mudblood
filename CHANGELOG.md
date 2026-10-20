@@ -446,6 +446,13 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **`pnpm seed:admin` ya no declara `promoted` a un admin cuyo `users.id` no es v4** (2026-10-20,
+  #41). Si un SQL externo dejaba ese id en otra versión, el seed actualizaba el rol, renovaba la
+  credencial e imprimía `promoted`, y el login seguía en 500 porque `UserMapper` falla cerrado.
+  Ahora falla antes de escribir nada, con un mensaje que lo explica. No renueva el id como hace con
+  el de la credencial, porque `orders.customer_id` lo guarda por valor. La comprobación copia la
+  regex de `UuidIdentifier`: el seed no puede importar `UserId`, ni por las fronteras ni por
+  ts-node.
 - **El seed del primer admin ya no acepta credenciales que el login rechaza** (2026-10-01, #34).
   `ADMIN_PASSWORD` solo exigía 12 caracteres a Zod, que cuenta los selectores de variación de los
   emojis y el login no, y `ADMIN_EMAIL` solo pasaba por `z.email()`: con `'a'×129`, `'❤️'×6` o una parte local de 65 caracteres,
@@ -713,6 +720,20 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Security
 
+- **`pnpm seed:admin` ya no imprime el hash del admin cuando falla, y `DB_LOGGING` ya no imprime
+  parámetros** (2026-10-20, #40). El bloque CLI hacía `console.error(error)`, y `util.inspect`
+  volcaba el `detail` de PostgreSQL (la fila entera en una violación de constraint) y los
+  `parameters` de TypeORM: los dos llevan el hash argon2id, que acababa en el log del Job que
+  lanzara el seed. Ahora imprime solo el mensaje y el código (`formatSeedError`). Con
+  `DB_LOGGING=true`, el logger por defecto de TypeORM añadía `-- PARAMETERS: [...]` a cada
+  consulta, también al INSERT de la credencial de cada `POST /auth/register`; lo sustituye
+  `ParameterFreeLogger`, que imprime la consulta sin sus valores y sigue el `logging` que cada
+  comando de la CLI de TypeORM fija con `setOptions`: la salida de `migration:show`,
+  `migration:run` y `schema:log` no cambia, salvo por los parámetros. Lo fija un E2E que lanza el CLI
+  real con la escritura forzada a fallar y `DB_LOGGING=true`, y se pone rojo sin cualquiera de los
+  dos arreglos. ⚠️ **Al depurar con `DB_LOGGING=true` ya no se ven los valores de las consultas,**
+  solo sus `$1`, `$2`… Con la base parada, la salida del seed ya no dice a qué host ni puerto
+  intentó conectar (#42).
 - **El 503 de las sondas de health no publica el texto del driver de la base** (2026-09-25).
   Terminus 12 añade `message: err.message` al indicador `database` cuando la query falla, y
   `AllExceptionsFilter` publica ese mapa en el 503 de `/health` y `/health/readiness`, dos endpoints

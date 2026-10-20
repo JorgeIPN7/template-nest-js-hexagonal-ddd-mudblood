@@ -1,10 +1,12 @@
 # Mapeo Hexagonal/DDD → NestJS 12 + TS 6.0
 
-Concreción de los conceptos genéricos del skill al stack del proyecto: **NestJS 12, TypeScript 6.0, Node 24, pnpm, SWC, Pino, Zod, class-validator, TypeORM, Jest**. Las versiones exactas no se repiten aquí porque envejecen con cada bump: mandan la línea «Stack» de `CLAUDE.md`, `package.json` (dependencias y `engines.node`), `.nvmrc` y `packageManager`.
+Cómo se escribe en este repo cada pieza de la arquitectura hexagonal y DDD, en el stack del proyecto: **NestJS 12, TypeScript 6.0, Node 24, pnpm, SWC, Pino, Zod, class-validator, TypeORM, Jest**. Las versiones exactas no se repiten aquí porque envejecen con cada bump: mandan la línea «Stack» de `CLAUDE.md`, `package.json` (dependencias y `engines.node`), `.nvmrc` y `packageManager`.
 
-> Esta referencia complementa `LAYERS.md`, `DDD-TACTICAL.md` y `HEXAGONAL.md`. Cuando el `SKILL.md` u otra referencia describa un concepto en pseudocódigo, este archivo es la fuente de verdad para cómo escribirlo en este repo. **La implementación de referencia es `src/modules/users/`**: ante la duda, copia su forma. Los ejemplos de abajo usan un contexto hipotético `billing` con la forma exacta de `users` y `orders`; cada bloque indica qué archivo real calca.
+> **Es la fuente de verdad de la forma del código.** Cuando un libro, una guía o el material genérico de NestJS o de DDD enseñe un patrón en pseudocódigo, aquí está cómo se escribe en este repo. **La implementación de referencia es `src/modules/users/`**: ante la duda, copia su forma. Los ejemplos de abajo usan un contexto hipotético `billing` con la forma exacta de `users` y `orders`; cada bloque indica qué archivo real calca.
 
-> **Convención obligatoria — `type`, nunca `interface`.** El ESLint del repo aplica `@typescript-eslint/consistent-type-definitions: ['error', 'type']`. Los demás archivos de `references/` usan `interface` porque son teoría agnóstica del lenguaje; **en código real de este repo eso rompe `pnpm lint:check`**. Datos, entradas de casos de uso y DTOs planos se declaran como `export type X = { … };`. **Los puertos son la excepción: `abstract class`** (§2), porque tienen que sobrevivir a la compilación para servir de token de inyección.
+> **Se consulta por secciones, no se lee entero.** Para casi todo cambio bastan `CLAUDE.md` y los archivos del propio módulo: en el experimento del 2026-09-30, la sesión sin acceso a ninguna skill cumplió el 100 % de las convenciones ([`development-workflows.md`](development-workflows.md), §12). Ábrelo cuando el trabajo cree algo que su módulo todavía no tiene —la sección de ese tipo de archivo— o un contexto nuevo: la estructura de §1 y la checklist de §11.
+
+> **Convención obligatoria — `type`, nunca `interface`.** El ESLint del repo aplica `@typescript-eslint/consistent-type-definitions: ['error', 'type']`. El material genérico de DDD y hexagonal escribe datos y puertos con `interface` (y los puertos, con un token `Symbol`) porque es pseudocódigo agnóstico del lenguaje; **en código real de este repo eso rompe `pnpm lint:check`**. Datos, entradas de casos de uso y DTOs planos se declaran como `export type X = { … };`. **Los puertos son la excepción: `abstract class`** (§2), porque tienen que sobrevivir a la compilación para servir de token de inyección.
 
 ## 0. Qué cambia NestJS 12 para este mapeo
 
@@ -746,20 +748,20 @@ export class BillingDomainExceptionFilter extends DomainExceptionFilter<InvoiceD
 
 ## 9. Tests por capa
 
-| Capa                                      | Tipo               | Herramienta                                                 | Qué prueba                                                                             |
-| ----------------------------------------- | ------------------ | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Domain (y el kernel `src/shared/domain/`) | Unitario puro      | Jest, sin mocks                                             | Invariantes de entidades y VOs; las bases del kernel con dobles de prueba              |
-| Application                               | Unitario con fakes | Jest + fakes in-memory escritos a mano                      | Casos de uso contra puertos fake                                                       |
-| Infrastructure (traducción)               | Unitario           | Jest, sin base (PBT en los round-trips de mapper)           | Mappers, filtros de dominio, controllers, guards, DTOs, adaptadores ACL y de seguridad |
-| Infrastructure (persistencia)             | Integración        | Jest contra PostgreSQL real (base de test, `pnpm test:e2e`) | Repositorios TypeORM (`*.typeorm.repository.e2e-spec.ts`)                              |
-| HTTP                                      | E2E                | Jest + Supertest sobre el `AppModule` real                  | Endpoint completo: pipes, guard, filtros, base                                         |
+| Capa                                      | Tipo               | Herramienta                                                       | Qué prueba                                                                                                                                                     |
+| ----------------------------------------- | ------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain (y el kernel `src/shared/domain/`) | Unitario puro      | Jest, sin mocks                                                   | Invariantes de entidades y VOs; las bases del kernel con dobles de prueba                                                                                      |
+| Application                               | Unitario con fakes | Jest + fakes in-memory escritos a mano                            | Casos de uso contra puertos fake                                                                                                                               |
+| Infrastructure (traducción)               | Unitario           | Jest, sin base (PBT en los round-trips de mapper)                 | Mappers, filtros de dominio, controllers, guards, DTOs, adaptadores ACL y de seguridad                                                                         |
+| Infrastructure (persistencia)             | Integración        | Jest contra PostgreSQL real (base de test, `pnpm test:e2e`)       | Repositorios TypeORM (`*.typeorm.repository.e2e-spec.ts`)                                                                                                      |
+| HTTP                                      | E2E                | Jest + Supertest sobre el `AppModule` real                        | Endpoint completo: pipes, guard, filtros, base                                                                                                                 |
 | Arquitectura                              | Unitario           | Jest + la API de TypeScript, sin type-check salvo esta referencia | Contrato de módulo, fronteras de ESLint, cero claves foráneas en las migraciones y que esta referencia cumpla el contrato y compile (`nestjs-mapping.spec.ts`) |
 
 **Importante:** los tests de dominio no levantan `Test.createTestingModule`. Son `Invoice.draft(...)` puro.
 
 **En `infrastructure/` la base la pide lo que toca el SUT, no la carpeta.** De los specs bajo `__tests__/infrastructure/` de los tres contextos, solo los `*.typeorm.repository.e2e-spec.ts` corren en `pnpm test:e2e`. Los demás son `*.spec.ts` de `pnpm test` y no abren conexión: mappers, filtros, controllers, guard, DTOs, hasher, signer y adaptadores ACL.
 
-**Convenciones de archivo y mocking** se rigen por el skill `javascript-typescript-jest`:
+**Convenciones de archivo y mocking** se rigen por `CLAUDE.md` («Code conventions») y [`docs/testing.md`](./testing.md):
 
 - **Ubicación:** en `src/modules/<context>/__tests__/`, espejo de la estructura del módulo y **1:1** con el archivo fuente (`domain/entities/invoice.entity.ts` ↔ `__tests__/domain/entities/invoice.entity.spec.ts`). Los puertos (`domain/ports/`, clases abstractas sin lógica) quedan exentos; los errores y los eventos no. El SUT se importa en relativo.
 - **Unit:** `*.spec.ts`. **E2E:** `*.e2e-spec.ts` dentro del mismo `__tests__/` — el del contexto (`__tests__/<context>.e2e-spec.ts`) arranca la app con `createTestApp()` de `@test/helpers/create-test-app`; el de un repositorio vive en `__tests__/infrastructure/persistence/<name>.typeorm.repository.e2e-spec.ts`.
@@ -776,7 +778,7 @@ export class BillingDomainExceptionFilter extends DomainExceptionFilter<InvoiceD
 
 - AAA explícito (`// Arrange / // Act / // Assert`) y `it` en español empezando por `debería…` son obligatorios.
 
-**Property-based testing (PBT) con `fast-check` + `@fast-check/jest`** — los invariantes de dominio (importe siempre positivo, `issue` solo desde `draft`) y el round-trip del mapper en infraestructura son el caso ideal. Las arbitrarias se **construyen**, nunca se `.filter()`-an sobre `fc.string()`. Ver la subsección «Property-based testing» del skill `javascript-typescript-jest`.
+**Property-based testing (PBT) con `fast-check` + `@fast-check/jest`** — los invariantes de dominio (importe siempre positivo, `issue` solo desde `draft`) y el round-trip del mapper en infraestructura son el caso ideal. Las arbitrarias se **construyen**, nunca se `.filter()`-an sobre `fc.string()`.
 
 **La mutación es gate**: `thresholds.break` en `stryker.config.mjs` y job propio en CI. Un módulo nuevo sin casos no entra en silencio. Para auditar solo lo que cambió una rama, `pnpm test:mutation:changed [base]`; para un módulo entero, `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"` (sin llaves: Stryker parte `--mutate` por comas antes de expandirlas y daría cero mutantes en verde). El kernel se audita con `pnpm test:mutation --mutate "src/shared/domain/**/*.ts"`, con objetivo del 100 %: todo contexto hereda de él.
 
@@ -791,7 +793,7 @@ export class BillingDomainExceptionFilter extends DomainExceptionFilter<InvoiceD
 - **Dirección única.** `auth → users` y `orders → users`; si `users` importara a quien lo consume nacería un ciclo. Lo compartido por varios (`@Public`, `@Auth`, `@CurrentUser`, `AuthenticatedUser`) vive en `common/`.
 - **Guard global desde un módulo.** `APP_GUARD` es multi-provider: `auth.module.ts` lo registra y protege toda la app sin que `AppModule` importe internos de ningún módulo.
 - El root `AppModule` solo importa los módulos de contexto y la configuración global; no contiene lógica.
-- Para multi-tenant request-scoped, `Scope.REQUEST` con **durable providers** (`durable?: boolean` sigue en las opciones de provider de `@nestjs/common` 12.1.0; regla `di-durable-providers` del skill nestjs-best-practices). Hoy ningún contexto lo necesita.
+- Para multi-tenant request-scoped, `Scope.REQUEST` con **durable providers** (`durable?: boolean` sigue en las opciones de provider de `@nestjs/common` 12.1.0). Hoy ningún contexto lo necesita.
 
 ## 11. Checklist al diseñar un nuevo módulo
 
