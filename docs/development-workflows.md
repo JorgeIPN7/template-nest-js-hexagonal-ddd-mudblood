@@ -215,7 +215,7 @@ encarece cada turno: el plan y la spec en disco son todo el traspaso.
   5. refactor.
      Solo pregunta si algo cambió: un caso que la tabla no cubre, un caso que no se puede implementar
      tal como está escrito, o un desvío del plan. Lo hace una vez y agrupado.
-- **`subagent-driven-development`**: solo para planes grandes de tareas independientes
+- **`subagent-driven-development`**: retirada el 2026-10-20; ninguna sesión real la usó
   ([§6](#6-cuándo-compensa-subagent-driven-development)).
 
 ### Paso 4 — Auditoría, una sola vez al final
@@ -239,6 +239,9 @@ y las confirmaciones rutinarias. **Todavía no se ha medido la cadena ajustada**
 de 1 h 30 min a 2 h para una feature de ese tamaño.
 
 ## 6. Cuándo compensa subagent-driven-development
+
+> **Retirada el 2026-10-20:** ninguna sesión real la usó. Lo que sigue queda como historia de la
+> medición.
 
 **Solo cuando se cumple todo esto:**
 

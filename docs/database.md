@@ -49,8 +49,8 @@ PostgreSQL a través de TypeORM: la configuración vive en
 Regla (`CLAUDE.md`, «Database»): una columna de fecha es
 `@Column({ type: 'timestamptz', default: () => 'now()' })`, y ninguna entidad ORM usa
 `CreateDateColumn`, `UpdateDateColumn`, `DeleteDateColumn` ni `VersionColumn`, las columnas que
-TypeORM rellena por su cuenta. La skill de referencia `nestjs-best-practices` enseña
-`@CreateDateColumn`; aquí manda la regla de `CLAUDE.md`.
+TypeORM rellena por su cuenta. El material genérico de NestJS enseña `@CreateDateColumn`; aquí
+manda la regla de `CLAUDE.md`.
 
 - **Por qué.** El dominio sella `createdAt` al crear y mueve `updatedAt` con `touch(now)` en cada
   método de intención. Con un `UpdateDateColumn`, si el dominio no movió la fecha pero sí otra

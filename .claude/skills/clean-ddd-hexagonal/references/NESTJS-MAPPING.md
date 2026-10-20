@@ -759,7 +759,7 @@ export class BillingDomainExceptionFilter extends DomainExceptionFilter<InvoiceD
 
 **En `infrastructure/` la base la pide lo que toca el SUT, no la carpeta.** De los specs bajo `__tests__/infrastructure/` de los tres contextos, solo los `*.typeorm.repository.e2e-spec.ts` corren en `pnpm test:e2e`. Los demás son `*.spec.ts` de `pnpm test` y no abren conexión: mappers, filtros, controllers, guard, DTOs, hasher, signer y adaptadores ACL.
 
-**Convenciones de archivo y mocking** se rigen por el skill `javascript-typescript-jest`:
+**Convenciones de archivo y mocking** se rigen por `CLAUDE.md` («Code conventions») y [`docs/testing.md`](../../../../docs/testing.md):
 
 - **Ubicación:** en `src/modules/<context>/__tests__/`, espejo de la estructura del módulo y **1:1** con el archivo fuente (`domain/entities/invoice.entity.ts` ↔ `__tests__/domain/entities/invoice.entity.spec.ts`). Los puertos (`domain/ports/`, clases abstractas sin lógica) quedan exentos; los errores y los eventos no. El SUT se importa en relativo.
 - **Unit:** `*.spec.ts`. **E2E:** `*.e2e-spec.ts` dentro del mismo `__tests__/` — el del contexto (`__tests__/<context>.e2e-spec.ts`) arranca la app con `createTestApp()` de `@test/helpers/create-test-app`; el de un repositorio vive en `__tests__/infrastructure/persistence/<name>.typeorm.repository.e2e-spec.ts`.
@@ -776,7 +776,7 @@ export class BillingDomainExceptionFilter extends DomainExceptionFilter<InvoiceD
 
 - AAA explícito (`// Arrange / // Act / // Assert`) y `it` en español empezando por `debería…` son obligatorios.
 
-**Property-based testing (PBT) con `fast-check` + `@fast-check/jest`** — los invariantes de dominio (importe siempre positivo, `issue` solo desde `draft`) y el round-trip del mapper en infraestructura son el caso ideal. Las arbitrarias se **construyen**, nunca se `.filter()`-an sobre `fc.string()`. Ver la subsección «Property-based testing» del skill `javascript-typescript-jest`.
+**Property-based testing (PBT) con `fast-check` + `@fast-check/jest`** — los invariantes de dominio (importe siempre positivo, `issue` solo desde `draft`) y el round-trip del mapper en infraestructura son el caso ideal. Las arbitrarias se **construyen**, nunca se `.filter()`-an sobre `fc.string()`.
 
 **La mutación es gate**: `thresholds.break` en `stryker.config.mjs` y job propio en CI. Un módulo nuevo sin casos no entra en silencio. Para auditar solo lo que cambió una rama, `pnpm test:mutation:changed [base]`; para un módulo entero, `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"` (sin llaves: Stryker parte `--mutate` por comas antes de expandirlas y daría cero mutantes en verde). El kernel se audita con `pnpm test:mutation --mutate "src/shared/domain/**/*.ts"`, con objetivo del 100 %: todo contexto hereda de él.
 
@@ -791,7 +791,7 @@ export class BillingDomainExceptionFilter extends DomainExceptionFilter<InvoiceD
 - **Dirección única.** `auth → users` y `orders → users`; si `users` importara a quien lo consume nacería un ciclo. Lo compartido por varios (`@Public`, `@Auth`, `@CurrentUser`, `AuthenticatedUser`) vive en `common/`.
 - **Guard global desde un módulo.** `APP_GUARD` es multi-provider: `auth.module.ts` lo registra y protege toda la app sin que `AppModule` importe internos de ningún módulo.
 - El root `AppModule` solo importa los módulos de contexto y la configuración global; no contiene lógica.
-- Para multi-tenant request-scoped, `Scope.REQUEST` con **durable providers** (`durable?: boolean` sigue en las opciones de provider de `@nestjs/common` 12.1.0; regla `di-durable-providers` del skill nestjs-best-practices). Hoy ningún contexto lo necesita.
+- Para multi-tenant request-scoped, `Scope.REQUEST` con **durable providers** (`durable?: boolean` sigue en las opciones de provider de `@nestjs/common` 12.1.0). Hoy ningún contexto lo necesita.
 
 ## 11. Checklist al diseñar un nuevo módulo
 

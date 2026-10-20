@@ -1,6 +1,6 @@
 ---
 name: adversarial-review
-description: 'Revisión adversarial de un cambio antes de darlo por terminado. Un único subagente general-purpose revisa el diff contra CLAUDE.md buscando defectos reales: fallos de corrección con escenario concreto, respuestas del contrato que hoy no se pueden producir, tests de guarda que no fallarían sin su protección, huecos de test y convenciones. Después, la sesión verifica y corrige lo crítico y lo importante. Es el paso final de express, executing-plans y subagent-driven-development, y sirve también sola antes de abrir un PR.'
+description: 'Revisión adversarial de un cambio antes de darlo por terminado. Un único subagente general-purpose revisa el diff contra CLAUDE.md buscando defectos reales: fallos de corrección con escenario concreto, respuestas del contrato que hoy no se pueden producir, tests de guarda que no fallarían sin su protección, huecos de test y convenciones. Después, la sesión verifica y corrige lo crítico y lo importante. Es el paso final de express y executing-plans, y sirve también sola antes de abrir un PR.'
 argument-hint: '[base]'
 ---
 
@@ -16,7 +16,7 @@ revisores por tarea. En el experimento del 2026-09-30 (`docs/development-workflo
 
 ## Cuándo
 
-- Paso final de `express`, `executing-plans` y `subagent-driven-development`, antes de la DoD.
+- Paso final de `express` y `executing-plans`, antes de la DoD.
 - Sola, antes de abrir un PR de algo que no pasó por un flujo, si el cambio toca comportamiento.
   Un cambio trivial (errata, config que no es de seguridad, bump) no la necesita.
 - **No revisa el PR de otra persona tal cual.** Revisa el árbol actual contra una base, y ningún

@@ -95,14 +95,14 @@ Cuando la respuesta sea para otro equipo, envuélvela entre `====RESPUESTA PARA 
 
 ## Skills and development flows
 
-Nine skills live in `.claude/skills/`. **Pick the level of the change before touching code** (full guide: [`docs/development-workflows.md`](docs/development-workflows.md)).
+Six skills live in `.claude/skills/`. **Pick the level of the change before touching code** (full guide: [`docs/development-workflows.md`](docs/development-workflows.md)).
 
 - **Trivial** — typo, docs, non-security config, dependency bump, a one-line bug with an obvious test → no skill: the change, its test if it has behaviour, the DoD.
 - **Express** (default for features) — a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks, at most an additive migration → `/express`: ≤ 2 rounds of grouped questions → spec ≤ 150 lines with the case table and the contract → TDD, red by assertion → `pnpm test:mutation:changed` → `adversarial-review` → DoD.
-- **Full** — a new bounded context; a change across contexts (facades, shared ports); a destructive migration; auth, credentials, tokens or permissions — their config included, even one line; > ~10 tasks; work someone else continues → `/brainstorming` → `writing-plans` (plan WITHOUT production code) → `executing-plans` in a new session, or `subagent-driven-development` only for ~10+ mostly independent tasks → `adversarial-review` → DoD.
+- **Full** — a new bounded context; a change across contexts (facades, shared ports); a destructive migration; auth, credentials, tokens or permissions — their config included, even one line; > ~10 tasks; work someone else continues → `/brainstorming` → `writing-plans` (plan WITHOUT production code) → `executing-plans` in a new session → `adversarial-review` → DoD.
 - **Doubt between trivial and express → express; between express and full → ask the user, with your recommendation:** the full flow costs several times more (52.54 vs 11.82 USD, measured) and that's their call.
 - **Every flow runs two checks** (each caught a real defect): every declared response is producible today, its contract-table row naming the input and code path («Endpoint documentation»), and every guard test fails without its protection («A test must fail without the fix»).
-- **Skill descriptions say when each applies** (they load every session, so not repeated here). The reference skills — `clean-ddd-hexagonal` (its `references/NESTJS-MAPPING.md` is the source of truth for code shape), `nestjs-best-practices` (45 rule codes), `javascript-typescript-jest` — are **read, never invoked**, only when needed: this file is enough for conventions.
+- **Skill descriptions say when each applies** (they load every session, so not repeated here). The reference skill `clean-ddd-hexagonal` (its `references/NESTJS-MAPPING.md` is the source of truth for code shape) is **read, never invoked**, only when needed: this file is enough for conventions.
 
 ## Modelo de colaboración — casos primero, TDD después, mutación como auditor
 
@@ -207,7 +207,7 @@ PostgreSQL through TypeORM; config in `src/config/database.config.ts`, wiring in
 - **`synchronize` is resolved in code:** `DB_SYNCHRONIZE` can only turn it off; on also needs `NODE_ENV=development` (`resolveSynchronize()`), since it can drop columns and data.
 - **Schema changes go through migrations** (after changing an ORM entity, `pnpm migration:generate src/database/migrations/<Name>`, then `pnpm migration:run`); outside `development`, `DB_MIGRATIONS_RUN=true` applies them on boot (`resolveMigrationsRun()`) — read «Destructive migrations» before dropping or renaming anything.
 - **CI's «Schema drift» step breaks the build if the entities and the migrated schema disagree** (`migration:generate … --check` on the freshly migrated E2E database).
-- **The domain owns the dates:** a date column is `@Column({ type: 'timestamptz', default: () => 'now()' })`; no ORM entity uses `CreateDateColumn`, `UpdateDateColumn`, `DeleteDateColumn` or `VersionColumn` (the contract's `orm-managed-columns` key checks it). `nestjs-best-practices` teaches `@CreateDateColumn`; this rule wins ([why](docs/database.md#el-dominio-es-el-dueño-de-las-fechas)).
+- **The domain owns the dates:** a date column is `@Column({ type: 'timestamptz', default: () => 'now()' })`; no ORM entity uses `CreateDateColumn`, `UpdateDateColumn`, `DeleteDateColumn` or `VersionColumn` (the contract's `orm-managed-columns` key checks it). generic NestJS material teaches `@CreateDateColumn`; this rule wins ([why](docs/database.md#el-dominio-es-el-dueño-de-las-fechas)).
 - **New tables name their columns in snake_case: every multi-word column carries an explicit `name:`** (as `orders` and NESTJS-MAPPING); the camelCase dates of `users` and `auth_credentials` stay — a rename is destructive ([why](docs/database.md#nombres-de-columna)).
 - **ORM entities are found by glob** (`*.orm-entity.ts` under `src/modules/`), with no central list.
 - **TLS:** `DB_SSL=true` against RDS; `DB_SSL_REJECT_UNAUTHORIZED=false` encrypts without verifying the server — prefer `DB_SSL_CA` with the AWS bundle.
