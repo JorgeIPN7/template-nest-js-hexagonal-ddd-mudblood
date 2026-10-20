@@ -92,10 +92,10 @@ src/
 ├── main.ts                              # Process: applyGlobals(), listen, shutdown
 ├── app.module.ts                        # Root module: imports context modules + global config
 ├── bootstrap/                           # OpenAPI document and Scalar UI
-├── common/                              # Cross-cutting (filters, interceptors, decorators, dto)
+├── common/                              # Cross-cutting (filters, interceptors, decorators, dto, persistence)
 ├── config/                              # Zod-validated config
 ├── database/                            # DataSource, migrations, seeds, outbox relay
-├── shared/domain/                       # Shared kernel: AggregateRoot, ValueObject
+├── shared/domain/                       # Shared kernel: DomainError, Entity, AggregateRoot, UuidIdentifier, ValueObject
 └── modules/
     └── <bounded-context>/               # e.g. users, auth, orders
         ├── domain/                      # NO @nestjs/*, ORM, HTTP-client, class-validator, pino
@@ -109,7 +109,7 @@ src/
         │   └── <context>.facade.ts               # only if another context consumes this one
         ├── infrastructure/              # adapters — the only layer touching external libs
         │   ├── http/<resource>.controller.ts     # driver adapter
-        │   ├── http/<aggregate>-domain-exception.filter.ts
+        │   ├── http/<context>-domain-exception.filter.ts   # one per context
         │   ├── http/dto/<name>.dto.ts
         │   ├── persistence/<name>.orm-entity.ts
         │   ├── persistence/<name>.mapper.ts

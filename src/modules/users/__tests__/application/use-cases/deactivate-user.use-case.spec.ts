@@ -1,3 +1,5 @@
+import { captureRejection } from '@test/helpers/capture-error';
+
 import { DeactivateUserUseCase } from '../../../application/use-cases/deactivate-user.use-case';
 import { UserNotFoundError } from '../../../domain/errors/user.errors';
 import type { User } from '../../../domain/entities/user.entity';
@@ -33,6 +35,21 @@ describe('DeactivateUserUseCase', () => {
       await expect(useCase.execute({ userId: UserId.generate().value })).rejects.toThrow(
         UserNotFoundError,
       );
+    });
+
+    // `UserId` guarda el valor en minúsculas: si el error citara el id normalizado, el 404 no
+    // repetiría lo que mandó el cliente.
+    it('debería repetir en el UserNotFoundError el id tal como llegó, aunque venga en mayúsculas', async () => {
+      // Arrange
+      const { useCase } = buildUseCase();
+      const userId = '3F2504E0-4F89-41D3-9A0C-0305E82C3301';
+
+      // Act
+      const error = await captureRejection(useCase.execute({ userId }));
+
+      // Assert
+      expect(error).toBeInstanceOf(UserNotFoundError);
+      expect(error.message).toBe('User 3F2504E0-4F89-41D3-9A0C-0305E82C3301 was not found');
     });
 
     // La entidad corta en seco si ya está inactiva, así que ni siquiera toca `updatedAt`.

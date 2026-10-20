@@ -101,8 +101,8 @@ export default tseslint.config(
       //
       // Si la constante se RENOMBRA en vez de desaparecer, en runtime nada lanza:
       // `reflector.get(undefined, …)` devuelve `undefined` y el interceptor deja de detectar SSE.
-      // La única señal es el TS2305 de `typecheck` (medido con un paquete de prueba). Las dos
-      // claves que hacían falta viven copiadas y ancladas al decorador público que las escribe en
+      // La única señal es el TS2305 de `typecheck` (medido con un paquete de prueba). Las
+      // claves que hacen falta viven copiadas y ancladas al decorador público que las escribe en
       // `src/common/nest-metadata.constants.ts`. Un tipo que la raíz no exporta se deriva de uno
       // que sí, como hace `src/config/cors.config.ts`.
       //
@@ -174,9 +174,9 @@ export default tseslint.config(
     // —lo contrario deja dos huecos comprobados—:
     //
     //   (1) La forma de DECLARACIÓN `import type { … } from '…'`. Su `source` cubre tanto
-    //       `ports/` como `*.module`: `UsersFacade` es un puerto a todos los efectos (la
-    //       fachada es una `abstract class` que se inyecta) y su ruta NO contiene `ports/`,
-    //       que era el hueco (b).
+    //       `ports/` como `*.module`: `UsersLookup` y `UsersProvisioning` son puertos a todos
+    //       los efectos (`abstract class` que se inyectan desde `users.module`) y su ruta NO
+    //       contiene `ports/`, que era el hueco (b).
     //   (2) La forma MIXTA `import { VALOR, type Puerto } from '…'`. Aquí el `importKind` de
     //       la DECLARACIÓN es `"value"` y el del SPECIFIER es `"type"`, así que el selector
     //       (1) no la ve — hueco (a). El emit se borra igual y Nest revienta igual.
@@ -205,7 +205,7 @@ export default tseslint.config(
           selector:
             'ImportDeclaration[source.value=/(ports\\/|\\.module$)/] > ImportSpecifier[importKind="type"]:not([imported.name=/^(CreateProfileResult|DirectoryUser|FindUsersCriteria|SignedToken|TokenClaims|UserPage|UserSummary)$/])',
           message:
-            'El `type` INLINE borra ese specifier del emit igual que `import type`: si el nombre es un puerto (`UserRepository`, `PasswordHasher`, `UsersFacade`…), Nest fallará EN RUNTIME con los gates en verde. Impórtalo como valor. Si de verdad es un DATO que acompaña al puerto y no algo inyectable, añádelo a la lista cerrada de este selector en `eslint.config.mjs`.',
+            'El `type` INLINE borra ese specifier del emit igual que `import type`: si el nombre es un puerto (`UserRepository`, `PasswordHasher`, `UsersLookup`…), Nest fallará EN RUNTIME con los gates en verde. Impórtalo como valor. Si de verdad es un DATO que acompaña al puerto y no algo inyectable, añádelo a la lista cerrada de este selector en `eslint.config.mjs`.',
         },
       ],
     },

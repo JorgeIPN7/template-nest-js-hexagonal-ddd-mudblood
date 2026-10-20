@@ -17,7 +17,7 @@ export type LoginResult = SignedToken & { user: DirectoryUser };
 /**
  * Anti-enumeración por diseño, y ahora ENTERA dentro de auth —que es quien posee el hash y
  * el dummy—: email inexistente, cuenta sin credencial, usuario inactivo y password
- * incorrecto convergen en el MISMO error y el MISMO costo de tiempo (un `verify` y solo uno
+ * incorrecto convergen en el MISMO error y el MISMO trabajo de hash (un `verify` y solo uno
  * en todos los caminos, contra el hash dummy del puerto cuando no hay credencial real que
  * comprobar). Es un requisito de seguridad MEDIDO: la fila L9 de la tabla de casos lo fija
  * como propiedad, no como ejemplo suelto.

@@ -43,14 +43,15 @@ vive en el texto del `it`; de esas tablas, la suite es la única fuente que qued
 
 Regla
 ([`CLAUDE.md`, «Modelo de colaboración»](../CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor)):
-la mutación es gate, no sugerencia: `thresholds.break: 85` en
+la mutación es gate, no sugerencia: `thresholds.break: 90` en
 [`stryker.config.mjs`](../stryker.config.mjs) y job `mutation` propio en
 [`ci.yml`](../.github/workflows/ci.yml).
 
 - **Desde cuándo:** 2026-08-06 (backlog #9).
-- **De dónde sale el 85:** del baseline medido —90.14 % global—, y el margen está dominado por el
-  peso de cada módulo en mutantes, no por su score. El racional completo, con la aritmética, vive
-  en el comentario de cabecera de [`stryker.config.mjs`](../stryker.config.mjs).
+- **De dónde sale el 90:** el 85 original salió del baseline medido el 2026-08-06 —90.14 %
+  global—, y el margen está dominado por el peso de cada módulo en mutantes, no por su score.
+  Subió a 90 el 2026-10-19, con el censo al 100 % y sin supervivientes. El racional completo, con
+  la aritmética, vive en el comentario de cabecera de [`stryker.config.mjs`](../stryker.config.mjs).
 - **Qué protege:** bajar el score por debajo del umbral rompe la CI, así que un módulo nuevo sin
   casos no entra en silencio.
 
@@ -84,6 +85,37 @@ anti-enumeración, idempotencia— la comprobación es obligatoria:
 1. quita la protección un momento;
 2. observa que el test falla por aserción;
 3. restaura la protección.
+
+### Guardas de arquitectura: detector, árbol y rotura puntual
+
+Un test de arquitectura (una regla sobre el código del repo, no sobre su comportamiento) tiene un
+modo de fallo propio: si solo comprueba que el árbol está limpio, pasa igual de verde con un
+detector que no detecta nada. Por eso se escribe en tres capas, y
+[`module-contract.spec.ts`](../src/__tests__/module-contract.spec.ts) es el ejemplo completo:
+
+- **El detector** trabaja sobre un fixture sintético: un contexto `billing` que cumple el
+  contrato, y una fila por regla que rompe solo esa regla. Cada fila compara con igualdad exacta,
+  así que una regla que se dispara de más también la pone en rojo. Su rojo por aserción se
+  demuestra con el checker como stub (`() => []`): todas las filas que esperan una violación
+  fallan.
+- **El árbol** compara el repo real con igualdad exacta (`toEqual([])`, no un `length`). Una fila
+  de no vacuidad comprueba que hay algo que mirar —al menos un contexto descubierto—, sin nombrar
+  los módulos de ejemplo, que el usuario del template puede quitar.
+- **La rotura puntual** demuestra que la fila árbol lee el repo de verdad: se rompe un módulo
+  real a mano (un `ManyToOne` en una entidad ORM, un module file de un contexto vacío), se ve la
+  fila en rojo y se restaura.
+
+Los precedentes son los bloques `describe('el detector')` y `describe('el árbol')` de
+[`language-convention.spec.ts`](../src/__tests__/language-convention.spec.ts) y de
+[`migration-conventions.spec.ts`](../src/database/__tests__/migration-conventions.spec.ts).
+
+**El trinquete, para una migración larga.** Cuando la regla nueva falla hoy en varios sitios que
+se arreglarán en tareas distintas, la fila árbol nace comparando con igualdad exacta contra una
+constante con las violaciones de hoy (`PENDING_VIOLATIONS`, en el caso del contrato de módulo).
+Cada tarea empieza quitando sus líneas de la lista, y la fila se pone roja por aserción; al
+terminar, vuelve a verde. La suite no se queda en rojo entre tareas, y una violación arreglada
+sin quitarla de la lista también la pone en rojo. Cuando la lista se vacía, la fila pasa a
+`toEqual([])` y la constante se borra.
 
 ## Mocking por capa y cobertura
 

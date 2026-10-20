@@ -16,6 +16,7 @@ import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { ApiEnvelope } from '@common/dto/api-envelope.dto';
 import { buildErrorExample } from '@common/dto/error-example.factory';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '@common/dto/error-response.dto';
+import { buildRequestMetaExample } from '@common/dto/example-meta.factory';
 
 import { CancelOrderUseCase } from '../../application/use-cases/cancel-order.use-case';
 import { PlaceOrderUseCase } from '../../application/use-cases/place-order.use-case';
@@ -30,32 +31,29 @@ const ORDER_ID_EXAMPLE = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 const COLLECTION_PATH = '/api/v1/orders';
 const CANCEL_PATH = `${COLLECTION_PATH}/${ORDER_ID_EXAMPLE}/cancel`;
 
-/** Lo que `TransformInterceptor` añade a toda respuesta de éxito — mismos valores fijos que users. */
-const requestMeta = (path: string) => ({
-  timestamp: '2026-08-01T10:15:00.000Z',
-  path,
-  requestId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
-});
-
 const ORDER_EXAMPLE = {
   id: ORDER_ID_EXAMPLE,
   customerId: '9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012',
   concept: 'Suscripción anual plan Pro',
   amountCents: 149_900,
-  placedAt: '2026-08-01T10:15:00.000Z',
+  createdAt: '2026-08-01T10:15:00.000Z',
+  updatedAt: '2026-08-01T10:15:00.000Z',
   status: 'placed',
 } as const;
 
-/** `cancelledAt` solo aparece aquí: un pedido colocado no lleva la clave (ver el DTO). */
+const CANCELLED_AT_EXAMPLE = '2026-08-01T12:30:00.000Z';
+
+/**
+ * `cancelledAt` solo aparece aquí: un pedido colocado no lleva la clave (ver el DTO).
+ * `updatedAt` avanza con la misma constante: `Order.cancel()` lo sella con el instante de la
+ * cancelación. Dejarlo igual a `createdAt` describiría una cancelación que no tocó la fila.
+ */
 const CANCELLED_ORDER_EXAMPLE = {
   ...ORDER_EXAMPLE,
   status: 'cancelled',
-  cancelledAt: '2026-08-01T12:30:00.000Z',
+  updatedAt: CANCELLED_AT_EXAMPLE,
+  cancelledAt: CANCELLED_AT_EXAMPLE,
 } as const;
-
-/** Los ejemplos de error salen SIEMPRE de la factoría: `error` se deriva del status. */
-const errorExample = (statusCode: number, message: string, path: string) =>
-  buildErrorExample(statusCode, { path, message });
 
 /**
  * Adaptador de entrada. Primer consumidor real de `@CurrentUser()`: el `customerId` sale
@@ -102,7 +100,7 @@ export class OrdersController {
     example: {
       success: true,
       data: ORDER_EXAMPLE,
-      request: requestMeta(COLLECTION_PATH),
+      request: buildRequestMetaExample(COLLECTION_PATH),
     },
   })
   // `@Auth()` sin roles no declara 403 — este es del endpoint: token válido cuyo usuario
@@ -110,16 +108,16 @@ export class OrdersController {
   @ApiForbiddenResponse({
     description: 'El usuario del token ya no existe o está inactivo.',
     type: ErrorResponseDto,
-    example: errorExample(403, 'Forbidden', COLLECTION_PATH),
+    example: buildErrorExample(403, { path: COLLECTION_PATH, message: 'Forbidden' }),
   })
   @ApiBadRequestResponse({
     description: 'El cuerpo no supera la validación de entrada.',
     type: ValidationErrorResponseDto,
-    example: errorExample(
-      400,
-      'concept must be longer than or equal to 1 characters, amountCents must not be less than 1',
-      COLLECTION_PATH,
-    ),
+    example: buildErrorExample(400, {
+      path: COLLECTION_PATH,
+      message:
+        'concept must be longer than or equal to 1 characters, amountCents must not be less than 1',
+    }),
   })
   @ApiStandardErrors()
   async place(
@@ -143,10 +141,11 @@ export class OrdersController {
     operationId: 'cancelOrder',
     summary: 'Cancela un pedido del usuario autenticado',
     description:
-      'Pasa un pedido colocado a `cancelled`, sella `cancelledAt` y persiste el evento ' +
-      'OrderCancelled en la misma transacción (outbox). Es idempotente: cancelar un pedido ya ' +
-      'cancelado devuelve 200 con el pedido tal cual, su `cancelledAt` original y sin un segundo ' +
-      'evento. El pedido de otro cliente responde 404, idéntico al de un pedido inexistente. ' +
+      'Pasa un pedido colocado a `cancelled`, sella `cancelledAt` y `updatedAt` con el instante ' +
+      'de la cancelación y persiste el evento OrderCancelled en la misma transacción (outbox). ' +
+      'Es idempotente: cancelar un pedido ya cancelado devuelve 200 con el pedido tal cual, su ' +
+      '`cancelledAt` y su `updatedAt` originales y sin un segundo evento. El pedido de otro ' +
+      'cliente responde 404, idéntico al de un pedido inexistente. ' +
       'Como en la colocación, se re-verifica que el usuario del token siga existiendo y activo.',
   })
   @ApiParam({
@@ -160,18 +159,21 @@ export class OrdersController {
     example: {
       success: true,
       data: CANCELLED_ORDER_EXAMPLE,
-      request: requestMeta(CANCEL_PATH),
+      request: buildRequestMetaExample(CANCEL_PATH),
     },
   })
   @ApiForbiddenResponse({
     description: 'El usuario del token ya no existe o está inactivo.',
     type: ErrorResponseDto,
-    example: errorExample(403, 'Forbidden', CANCEL_PATH),
+    example: buildErrorExample(403, { path: CANCEL_PATH, message: 'Forbidden' }),
   })
   @ApiNotFoundResponse({
     description: 'El pedido no existe o es de otro cliente: las dos respuestas son idénticas.',
     type: ErrorResponseDto,
-    example: errorExample(404, `Order ${ORDER_ID_EXAMPLE} was not found`, CANCEL_PATH),
+    example: buildErrorExample(404, {
+      path: CANCEL_PATH,
+      message: `Order ${ORDER_ID_EXAMPLE} was not found`,
+    }),
   })
   // Sin 409, a propósito: hoy ninguna petición lo produce. La única escritura posible sobre un
   // pedido existente es otra cancelación, así que el reintento de `CancelOrderUseCase` siempre
@@ -183,11 +185,10 @@ export class OrdersController {
   @ApiBadRequestResponse({
     description: 'El id no es un UUID v4.',
     type: ValidationErrorResponseDto,
-    example: errorExample(
-      400,
-      '"no-es-uuid" is not a valid order id',
-      `${COLLECTION_PATH}/no-es-uuid/cancel`,
-    ),
+    example: buildErrorExample(400, {
+      path: `${COLLECTION_PATH}/no-es-uuid/cancel`,
+      message: '"no-es-uuid" is not a valid order id',
+    }),
   })
   @ApiStandardErrors()
   async cancel(

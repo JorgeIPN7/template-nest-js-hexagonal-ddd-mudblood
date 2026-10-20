@@ -10,6 +10,7 @@ import {
   changeSurface,
   importedPaths,
   mutantsTouchingChange,
+  singleSurvivorBreaks,
   subjectOfSpec,
 } from './mutation-targets.mjs';
 
@@ -178,27 +179,45 @@ const main = async (workDir) => {
 
   const report = JSON.parse(readFileSync(reportPath, 'utf8'));
   const mutants = mutantsTouchingChange(report, surface);
-  const { detected, undetected, valid, score } = changeScore(mutants);
+  const { detected, undetected, valid, score, excluded, timedOut } = changeScore(mutants);
+
+  // Lo que el score deja fuera se imprime siempre, también sin score: dos corridas del mismo
+  // cambio con denominadores distintos se ven aquí, y no al investigar la diferencia después.
+  const excludedEntries = Object.entries(excluded);
+  const excludedTotal = excludedEntries.reduce((total, [, count]) => total + count, 0);
+  const printExcluded = () => {
+    if (excludedTotal > 0) {
+      const byStatus = excludedEntries.map(([status, count]) => `${count} ${status}`).join(', ');
+      console.log(`${TAG} ${excludedTotal} mutantes del cambio fuera del score (${byStatus}).`);
+    }
+  };
+  const printMutant = (mutant) => {
+    const { line, column } = mutant.location.start;
+    const replacement = mutant.replacement === undefined ? '' : ` → ${mutant.replacement}`;
+    console.log(
+      `  [${mutant.status}] ${mutant.path}:${line}:${column} ${mutant.mutatorName}${replacement}`,
+    );
+  };
 
   if (score === undefined) {
     console.log(
       `${TAG} ningún mutante válido toca el cambio: no hay nada que auditar (sin score, no un 100 %).`,
     );
+    printExcluded();
   } else {
     console.log(
       `${TAG} mutantes del cambio: ${valid} válidos, ${detected} detectados — ${score.toFixed(2)} %` +
         (breakAt === null ? '' : ` (umbral ${breakAt}).`),
     );
-    for (const mutant of undetected) {
-      const { line, column } = mutant.location.start;
-      const replacement = mutant.replacement === undefined ? '' : ` → ${mutant.replacement}`;
-      console.log(
-        `  [${mutant.status}] ${mutant.path}:${line}:${column} ${mutant.mutatorName}${replacement}`,
-      );
+    printExcluded();
+    // Los Timeout se listan como los supervivientes: cuentan como detectados, pero ningún test los
+    // distinguió por aserción, y uno por carga de la máquina no protege nada.
+    for (const mutant of [...undetected, ...timedOut]) {
+      printMutant(mutant);
     }
-    if (undetected.length > 0 && valid < 7) {
+    if (undetected.length > 0 && singleSurvivorBreaks(valid, breakAt)) {
       console.log(
-        `${TAG} con ${valid} mutantes, un solo superviviente equivalente ya baja del 85 %. Si lo es ` +
+        `${TAG} con ${valid} mutantes, un solo superviviente equivalente ya baja del ${breakAt} %. Si lo es ` +
           '—no hay test que pueda distinguirlo—, márcalo en el código con ' +
           '`// Stryker disable next-line <Mutador>: <motivo>` en vez de escribir un test que no ' +
           'prueba nada.',

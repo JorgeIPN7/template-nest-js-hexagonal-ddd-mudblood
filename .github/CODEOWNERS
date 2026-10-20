@@ -52,9 +52,9 @@
 # test lo nota, porque el test también leería el default nuevo.
 /src/config/                              @JorgeIPN7
 
-# Umbral de mutación: `thresholds.break: 85` es el gate que impide que un módulo nuevo
+# Umbral de mutación: `thresholds.break: 90` es el gate que impide que un módulo nuevo
 # entre sin casos. Bajarlo es el atajo obvio cuando el job se pone rojo, y es exactamente
-# lo que el gate existe para impedir. El 85 sale de un baseline medido, no de una intuición.
+# lo que el gate existe para impedir. El 90 sale de un censo medido, no de una intuición.
 /stryker.config.mjs                       @JorgeIPN7
 
 # Overrides de pnpm: cada entrada es una decisión curada a mano con su razonamiento en el

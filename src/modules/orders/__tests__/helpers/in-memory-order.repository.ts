@@ -19,7 +19,7 @@ import type { OrderRepository } from '../../domain/ports/order.repository';
  * - Los ids se comparan sin distinguir mayúsculas, como las columnas `uuid` de PostgreSQL, y
  *   vuelven en minúsculas, que es como los devuelve la base.
  * - El primer `save` guarda la fila entera; los siguientes, solo lo que el UPDATE del adaptador
- *   escribe (estado, fecha de cancelación y versión).
+ *   escribe (estado, fecha de cancelación, `updatedAt` y versión).
  */
 export class InMemoryOrderRepository implements OrderRepository {
   readonly saveCalls: { order: Order; events: readonly OrderEvent[] }[] = [];
@@ -42,6 +42,7 @@ export class InMemoryOrderRepository implements OrderRepository {
             ...stored,
             status: snapshot.status,
             cancelledAt: snapshot.cancelledAt,
+            updatedAt: snapshot.updatedAt,
             version: storedVersion + 1,
           }
         : { ...snapshot, id: key, customerId: canonical(snapshot.customerId), version: 1 },
@@ -64,7 +65,8 @@ const rehydrate = (snapshot: OrderSnapshot): Order =>
     customerId: snapshot.customerId,
     concept: OrderConcept.from(snapshot.concept),
     amount: OrderAmount.from(snapshot.amountCents),
-    placedAt: snapshot.placedAt,
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.updatedAt,
     status: snapshot.status,
     cancelledAt: snapshot.cancelledAt,
     version: snapshot.version,

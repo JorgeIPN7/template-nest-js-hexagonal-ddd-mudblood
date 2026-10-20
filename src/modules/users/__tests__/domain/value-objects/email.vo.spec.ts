@@ -80,6 +80,20 @@ describe('Email', () => {
       expect(oneTooMany).toHaveLength(255);
       expect(() => Email.from(oneTooMany)).toThrow(InvalidEmailError);
     });
+
+    // El ancla `$`: sin ella, la expresión acepta cualquier dirección que EMPIECE por una válida.
+    // Ninguna de las de arriba lleva texto detrás de un dominio válido, y las arbitrarias solo
+    // generan direcciones válidas, así que nada más en la suite la distingue.
+    it('debería rechazar una dirección válida seguida de texto extra', () => {
+      // Arrange
+      const withTrailingText = 'user@example.com@otro';
+
+      // Act
+      const act = () => Email.from(withTrailingText);
+
+      // Assert
+      expect(act).toThrow(InvalidEmailError);
+    });
   });
 
   describe('equals()', () => {

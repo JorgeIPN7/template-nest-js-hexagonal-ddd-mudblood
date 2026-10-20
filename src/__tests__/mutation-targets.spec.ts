@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import {
   addedLineRanges,
   changeScore,
@@ -6,6 +9,7 @@ import {
   isInMutationScope,
   isTestHelper,
   mutantsTouchingChange,
+  singleSurvivorBreaks,
   subjectOfSpec,
   type ChangedFile,
   type ReportMutant,
@@ -216,6 +220,28 @@ describe('scripts/mutation-targets.mjs', () => {
         'src/modules/orders/__tests__/helpers/order.factory',
         'src/modules/orders/__tests__/application/use-cases/side-effect',
       ]);
+    });
+
+    // `ALIASES` es la cuarta copia de los alias, y `tsconfig.json` la fuente de la que copian las
+    // demás. Si a `ALIASES` le falta uno, el import por ese alias se toma por un paquete, y el
+    // cambio de un helper que se importa así no arrastra sus specs a la auditoría: audita de menos
+    // sin avisar.
+    it('debería resolver cada alias de tsconfig.json hacia la carpeta que declara', () => {
+      // Arrange
+      const aliases = Object.entries(tsconfigPaths());
+      const expected = aliases.map(([alias, [target]]) => [
+        alias,
+        target.replace('./', '').replace('*', 'x'),
+      ]);
+
+      // Act
+      const resolved = aliases.map(([alias]) => [
+        alias,
+        importedPaths(`import '${alias.replace('*', 'x')}';`, 'src/a.ts')[0],
+      ]);
+
+      // Assert
+      expect(resolved).toEqual(expected);
     });
   });
 
@@ -488,12 +514,101 @@ describe('scripts/mutation-targets.mjs', () => {
       // Assert
       expect({ valid, score }).toEqual({ valid: 0, score: undefined });
     });
+
+    // Sin el recuento, quien coteja el score no ve que dos corridas del mismo cambio tienen
+    // denominadores distintos: un mutante que pasa de muerto a error sale del score sin rastro.
+    it('debería contar por estado cada mutante que deja fuera del score, también los de un estado nuevo', () => {
+      // Arrange
+      const mutants = [
+        'Killed',
+        'CompileError',
+        'RuntimeError',
+        'RuntimeError',
+        'Ignored',
+        'Pending',
+      ].map((status, index) => ({ ...mutantAt(String(index), 1, 1), status }));
+
+      // Act
+      const { excluded } = changeScore(mutants);
+
+      // Assert
+      expect(excluded).toEqual({ CompileError: 1, RuntimeError: 2, Ignored: 1, Pending: 1 });
+    });
+
+    it('debería apartar los Timeout, que cuentan como detectados sin que un test los distinga', () => {
+      // Arrange
+      const mutants = ['Killed', 'Timeout', 'Survived'].map((status, index) => ({
+        ...mutantAt(String(index), 1, 1),
+        status,
+      }));
+
+      // Act
+      const { detected, timedOut } = changeScore(mutants);
+
+      // Assert
+      expect(detected).toBe(2);
+      expect(timedOut.map((mutant) => mutant.id)).toEqual(['1']);
+    });
+  });
+
+  // El aviso de `mutate-changed.mjs` dependía de un `valid < 7` y un «85 %» escritos a mano, que
+  // un cambio de umbral dejaba mintiendo. Ahora sale del `thresholds.break` de la config.
+  describe('singleSurvivorBreaks()', () => {
+    it('debería dar por roto el cambio cuando un solo superviviente lo deja bajo el umbral', () => {
+      // Arrange
+      const cases = [
+        [9, 90],
+        [6, 85],
+      ] as const;
+
+      // Act
+      const breaks = cases.map(([valid, breakAt]) => singleSurvivorBreaks(valid, breakAt));
+
+      // Assert
+      expect(breaks).toEqual([true, true]);
+    });
+
+    it('debería tolerar un superviviente cuando el cambio tiene mutantes de sobra', () => {
+      // Arrange: los límites exactos, 9/10 = 90 % y 6/7 ≈ 85.7 %.
+      const cases = [
+        [10, 90],
+        [7, 85],
+      ] as const;
+
+      // Act
+      const breaks = cases.map(([valid, breakAt]) => singleSurvivorBreaks(valid, breakAt));
+
+      // Assert
+      expect(breaks).toEqual([false, false]);
+    });
+
+    it('debería no avisar cuando no hay umbral ni mutantes válidos', () => {
+      // Arrange
+      const cases = [
+        [3, null],
+        [0, 90],
+      ] as const;
+
+      // Act
+      const breaks = cases.map(([valid, breakAt]) => singleSurvivorBreaks(valid, breakAt));
+
+      // Assert
+      expect(breaks).toEqual([false, false]);
+    });
   });
 });
 
 // Helpers
 
 const FILE = 'src/modules/orders/domain/entities/order.entity.ts';
+
+/** Los `paths` de `tsconfig.json`, que hoy es JSON sin comentarios. */
+const tsconfigPaths = (): Record<string, [string]> =>
+  (
+    JSON.parse(readFileSync(path.resolve(__dirname, '../../tsconfig.json'), 'utf-8')) as {
+      compilerOptions: { paths: Record<string, [string]> };
+    }
+  ).compilerOptions.paths;
 
 /** Una lectura de git sin nada, de la que cada test cambia solo lo que prueba. */
 const git = (

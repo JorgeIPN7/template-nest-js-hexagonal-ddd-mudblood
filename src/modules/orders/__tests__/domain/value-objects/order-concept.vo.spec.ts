@@ -18,6 +18,21 @@ describe('OrderConcept', () => {
       // Act + Assert
       expect(() => OrderConcept.from(tooLong)).toThrow(InvalidOrderConceptError);
     });
+
+    // El límite exacto: con solo el caso de 141, un `>=` en vez de `>` pasaría desapercibido. Se
+    // afirma que no lanza, y no solo el valor, para que ese mutante caiga en la aserción y no en
+    // la línea `// Act`.
+    it('debería aceptar un concepto de exactamente 140 caracteres', () => {
+      // Arrange
+      const exact = 'a'.repeat(140);
+
+      // Act
+      const act = () => OrderConcept.from(exact);
+
+      // Assert
+      expect(act).not.toThrow();
+      expect(act().value).toBe(exact);
+    });
   });
 
   describe('from() (property-based)', () => {

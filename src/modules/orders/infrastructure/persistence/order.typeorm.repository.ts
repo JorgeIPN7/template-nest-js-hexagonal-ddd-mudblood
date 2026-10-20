@@ -80,13 +80,15 @@ export class OrderTypeOrmRepository implements OrderRepository {
           throw error;
         }
       } else {
-        // Solo lo mutable: concepto, importe y cliente no cambian después de colocar.
+        // Solo lo mutable, con el `updatedAt` que selló el dominio: concepto, importe, cliente y
+        // `createdAt` no cambian después de colocar.
         const result = await manager.update(
           OrderOrmEntity,
           { id: orderRow.id, version: orderRow.version },
           {
             status: orderRow.status,
             cancelledAt: orderRow.cancelledAt,
+            updatedAt: orderRow.updatedAt,
             version: orderRow.version + 1,
           },
         );

@@ -185,6 +185,40 @@ describe('seedAdmin (e2e)', () => {
     expect(login.body.data.user.active).toBe(true);
   });
 
+  // El otro rescate: una credencial con un id uuid válido pero no v4, que solo deja un SQL
+  // externo, hace que el login responda 500. Sin renovar el id, el seed devolvería 'promoted'
+  // —éxito aparente— y el login seguiría en 500.
+  it('debería renovar con un uuid v4 la credencial del admin cuyo id no es v4 y dejarlo entrar', async () => {
+    // Arrange
+    const corruptId = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    setEnv(ADMIN_EMAIL, ADMIN_PASSWORD);
+    await seedAdmin(dataSource);
+    await dataSource.query(
+      'UPDATE auth_credentials SET id = $1 WHERE user_id = (SELECT id FROM users WHERE email = $2)',
+      [corruptId, ADMIN_EMAIL],
+    );
+
+    // Act
+    const result = await seedAdmin(dataSource);
+
+    // Assert: la forma del v4 según RFC 4122, no la regex del dominio, que se probaría contra sí
+    // misma. La versión vive en la posición 14 y la variante en la 19.
+    expect(result).toBe('promoted');
+    const login = await request(app.getHttpServer())
+      .post(`${prefix}/auth/login`)
+      .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    expect(login.status).toBe(200);
+    const rows = await dataSource.query<{ id: string }[]>(
+      'SELECT id FROM auth_credentials WHERE user_id = (SELECT id FROM users WHERE email = $1)',
+      [ADMIN_EMAIL],
+    );
+    const renewedId = rows[0]?.id ?? '';
+    expect(renewedId).not.toBe(corruptId);
+    expect(renewedId).toHaveLength(36);
+    expect(renewedId[14]).toBe('4');
+    expect(['8', '9', 'a', 'b']).toContain(renewedId[19]);
+  });
+
   // Backlog #34: el esquema solo exigía 12 caracteres, así que 129 pasaban, el seed sembraba el
   // admin y `@MaxLength(128)` de `LoginDto` lo dejaba fuera para siempre con un 400. Ahora el
   // esquema rechaza lo que rechazaría el login, ANTES de abrir la transacción.

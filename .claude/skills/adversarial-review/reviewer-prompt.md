@@ -76,14 +76,19 @@ Agent({
 
     - **No edites, muevas ni restaures ningún archivo del repo, ni siquiera temporalmente.** Nada
       de git que escriba: ni `stash`, `checkout`, `reset`, `restore`, `commit`, `add`, `mv` ni `rm`.
-    - Para demostrar un hallazgo, trabaja en una copia NUEVA dentro de tu scratchpad, una por
-      prueba:
-      1. `copia=$(mktemp -d)`, y después
-         `rsync -a --exclude node_modules --exclude .git --exclude .stryker-tmp --exclude dist --exclude coverage --exclude coverage-e2e --exclude reports --exclude public --exclude logs <REPO>/ "$copia"/`.
+    - Para demostrar un hallazgo, trabaja en una copia NUEVA, una por prueba. La receta es Node en
+      línea porque es lo único que funciona igual en todas partes: Windows no trae `rsync`, y en
+      Git Bash `ln -s` copia la carpeta en vez de enlazarla. Medida solo en Windows con Git Bash;
+      en Linux y macOS no está probada.
+      1. Copia el árbol, con lo no confirmado, y enlaza el `node_modules` real (en Windows es una
+         unión, `junction`; en Linux y macOS, un enlace simbólico):
+         antes=$(ls <REPO>/node_modules | wc -l)
+         copia=$(mktemp -d)
+         node -e "const fs=require('fs'),path=require('path');const [repo,dst]=process.argv.slice(1);const skip=new Set(['node_modules','.git','.stryker-tmp','dist','coverage','coverage-e2e','reports','public','logs']);fs.cpSync(repo,dst,{recursive:true,filter:(src)=>!skip.has(path.relative(repo,src).split(path.sep)[0])});fs.symlinkSync(path.join(repo,'node_modules'),path.join(dst,'node_modules'),'junction');" "<REPO>" "$copia"
          Sin esas exclusiones la copia pesa unas diez veces más. No uses `git archive`: no lleva lo
          no confirmado.
-      2. `ln -s <REPO>/node_modules "$copia"/node_modules`. En una copia nueva el enlace aún no
-         existe: repetir `ln -s` sobre uno que ya existe lo crea DENTRO de `<REPO>/node_modules`.
+      2. El enlace se crea una sola vez, en el paso 1, sobre una copia nueva: no lo repitas. Un
+         segundo enlace sobre uno que ya existe acaba DENTRO de `<REPO>/node_modules`.
       3. Ejecuta las herramientas con `node`, **nunca con `pnpm <script>`**. pnpm verifica las
          dependencias antes de cada script y, a través del enlace, reescribe el `node_modules` real
          (medido con pnpm 12.7.0; si el `package.json` de la copia no cuadra, reinstala). Desde la
@@ -95,7 +100,15 @@ Agent({
          - `node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./test/jest-e2e.config.mjs <ruta>`
            para un E2E, solo si un hallazgo lo necesita. Si toca la documentación, genera antes el
            bundle en la copia con `node scripts/copy-scalar-asset.mjs`.
-      4. Borra la copia al terminar: `rm -rf "$copia"`.
+      4. Borra la copia al terminar, con el directorio actual fuera de ella (si no, Windows
+         responde `EPERM`): primero el enlace, que no toca su destino, y después el resto.
+         Comprueba que el `node_modules` real sigue entero; si el recuento cambia, para y dilo en
+         el informe.
+         cd <REPO>
+         node -e "const fs=require('fs'),path=require('path');const nm=path.join(process.argv[1],'node_modules');try{fs.lstatSync(nm);fs.unlinkSync(nm)}catch(e){if(e.code!=='ENOENT')throw e}fs.rmSync(process.argv[1],{recursive:true,force:true});" "$copia"
+         [ "$(ls <REPO>/node_modules | wc -l)" = "$antes" ] && echo "node_modules intacto"
+         Nunca borres la copia con `rm -rf` ni `rmdir /s` antes de quitar el enlace: pueden seguirlo
+         y vaciar el `node_modules` real.
     - **La copia aísla archivos, no bases de datos.** Sus E2E usan la misma base de test, ya
       migrada: una protección de esquema (un índice único, un constraint, un trigger) no se quita
       editando una migración en la copia. Razónala y dilo en el informe. Nunca ejecutes

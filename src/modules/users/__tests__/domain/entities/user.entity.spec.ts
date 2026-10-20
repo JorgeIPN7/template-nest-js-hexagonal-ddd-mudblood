@@ -4,6 +4,7 @@ import { Email } from '../../../domain/value-objects/email.vo';
 import { InvalidUserNameError } from '../../../domain/errors/user.errors';
 import { User } from '../../../domain/entities/user.entity';
 import { UserId } from '../../../domain/value-objects/user-id.vo';
+import { timestampArb } from '../../helpers/arbitraries';
 
 const NOW = new Date('2026-07-27T10:00:00.000Z');
 const LATER = new Date('2026-07-27T11:00:00.000Z');
@@ -106,6 +107,19 @@ describe('User', () => {
       expect(user.name).toBe('Nombre Original');
       expect(user.updatedAt).toEqual(NOW);
     });
+
+    // `rename` no tiene guarda de no-op, a diferencia de las otras transiciones: renombrar es
+    // siempre una escritura que el usuario pidió.
+    it('debería mover updatedAt al renombrar aunque el nombre sea el mismo', () => {
+      // Arrange
+      const user = buildUser({ name: 'María González' });
+
+      // Act
+      user.rename('María González', LATER);
+
+      // Assert
+      expect(user.updatedAt).toEqual(LATER);
+    });
   });
 
   describe('changeEmail()', () => {
@@ -161,16 +175,18 @@ describe('User', () => {
   });
 
   describe('activate()', () => {
-    it('debería reactivar a un usuario desactivado', () => {
+    it('debería reactivar a un usuario desactivado y mover updatedAt', () => {
       // Arrange
       const user = buildUser();
       user.deactivate(LATER);
+      const reactivatedAt = new Date('2026-07-27T12:00:00.000Z');
 
       // Act
-      user.activate(new Date('2026-07-27T12:00:00.000Z'));
+      user.activate(reactivatedAt);
 
       // Assert
       expect(user.active).toBe(true);
+      expect(user.updatedAt).toEqual(reactivatedAt);
     });
 
     it('debería ser idempotente si ya está activo', () => {
@@ -266,6 +282,61 @@ describe('User', () => {
       expect(user.name).toBe('A');
       expect(user.active).toBe(false);
     });
+
+    it('debería conservar el id, createdAt y updatedAt al rehidratar', () => {
+      // Arrange
+      const id = UserId.from('3f2504e0-4f89-41d3-9a0c-0305e82c3301');
+
+      // Act
+      const user = User.rehydrate({
+        id,
+        email: Email.from('rehidratado@example.com'),
+        name: 'Usuario Rehidratado',
+        role: 'user',
+        active: true,
+        createdAt: NOW,
+        updatedAt: LATER,
+      });
+
+      // Assert
+      expect(user.id.equals(id)).toBe(true);
+      expect(user.createdAt).toEqual(NOW);
+      expect(user.updatedAt).toEqual(LATER);
+    });
+  });
+
+  describe('updatedAt (property-based)', () => {
+    // Sin corregir el reloj: un instante anterior al alta también se respeta (backlog #31).
+    fcTest.prop([timestampArb, fc.constantFrom('Ana López', 'Juan Pérez', 'Eva Ruiz')])(
+      'debería fijar updatedAt en el instante exacto de cualquier renombrado válido, aunque sea anterior al alta',
+      (instant, name) => {
+        // Arrange
+        const user = buildUser();
+
+        // Act
+        user.rename(name, instant);
+
+        // Assert
+        expect(user.updatedAt).toEqual(instant);
+      },
+    );
+
+    fcTest.prop([
+      fc.constantFrom<NoOpTransition>('changeEmail', 'deactivate', 'activate', 'promoteToAdmin'),
+      timestampArb,
+    ])(
+      'debería dejar updatedAt intacto en cualquier transición que no cambia nada',
+      (transition, instant) => {
+        // Arrange
+        const user = userAlreadyAt(transition);
+
+        // Act
+        applyTransition(user, transition, instant);
+
+        // Assert
+        expect(user.updatedAt).toEqual(NOW);
+      },
+    );
   });
 
   describe('create() (property-based)', () => {
@@ -358,4 +429,36 @@ function userArbitrary() {
       }
       return user;
     });
+}
+
+/** Las transiciones con guarda de no-op: no tocan nada si el usuario ya está en su llegada. */
+type NoOpTransition = 'changeEmail' | 'deactivate' | 'activate' | 'promoteToAdmin';
+
+/** Un usuario que en `NOW` ya está en el estado al que lleva `transition`. */
+function userAlreadyAt(transition: NoOpTransition): User {
+  const user = buildUser({ email: 'llegada@example.com' });
+  if (transition === 'deactivate') {
+    user.deactivate(NOW);
+  }
+  if (transition === 'promoteToAdmin') {
+    user.promoteToAdmin(NOW);
+  }
+  return user;
+}
+
+function applyTransition(user: User, transition: NoOpTransition, now: Date): void {
+  switch (transition) {
+    case 'changeEmail':
+      user.changeEmail(Email.from('llegada@example.com'), now);
+      return;
+    case 'deactivate':
+      user.deactivate(now);
+      return;
+    case 'activate':
+      user.activate(now);
+      return;
+    case 'promoteToAdmin':
+      user.promoteToAdmin(now);
+      return;
+  }
 }

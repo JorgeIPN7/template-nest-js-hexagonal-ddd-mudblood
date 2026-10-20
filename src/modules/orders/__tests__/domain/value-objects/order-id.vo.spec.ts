@@ -32,5 +32,16 @@ describe('OrderId', () => {
       // Assert
       expect(act).toThrow(InvalidOrderIdError);
     });
+
+    it('debería aceptar un uuid v4 escrito en mayúsculas y guardarlo en minúsculas', () => {
+      // Arrange
+      const value = VALID_UUID_V4.toUpperCase();
+
+      // Act
+      const id = OrderId.from(value);
+
+      // Assert
+      expect(id.value).toBe(VALID_UUID_V4);
+    });
   });
 });

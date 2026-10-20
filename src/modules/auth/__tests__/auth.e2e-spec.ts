@@ -262,17 +262,43 @@ describe('Auth (e2e)', () => {
       );
       expect(counts[0]).toEqual({ users: 1, credentials: 1 });
     });
+
+    // El perfil que ya tiene ese email guarda un id que no es v4, escrito por SQL externo: la
+    // comprobación previa del alta lo lee, el mapper falla cerrado y la fachada lo relanza porque
+    // no es un rechazo de negocio. Antes era un 400 `invalid-profile` con el id de la otra cuenta;
+    // ahora el 500 lo sanea el filtro global en production y staging, pero en development y test
+    // su `message` todavía lleva ese id (la spec del contrato de módulo, §9, lo acepta así).
+    it('debería responder 500 sin escribir credencial cuando el perfil existente con ese email está corrupto', async () => {
+      // Arrange
+      await dataSource.query(
+        "INSERT INTO users (id, email, name) VALUES ('3f2504e0-4f89-11d3-9a0c-0305e82c3301', 'perfil.corrupto@example.com', 'Perfil Corrupto')",
+      );
+
+      // Act
+      const response = await postRegister({
+        email: 'perfil.corrupto@example.com',
+        name: 'Otra Persona',
+        password: DEFAULT_PASSWORD,
+      });
+
+      // Assert
+      expect(response.status).toBe(500);
+      const counts = await dataSource.query<{ count: number }[]>(
+        'SELECT COUNT(*)::int AS count FROM auth_credentials',
+      );
+      expect(counts[0]?.count).toBe(0);
+    });
   });
 
   /**
    * La compensación del registro, ejercitada de verdad.
    *
    * **Mecanismo elegido y por qué es honesto:** se ocupa la PK de la credencial con una fila
-   * envenenada. `auth_credentials.id` lo acuña `Credential.create()` con `randomUUID()`, así
-   * que no se puede predecir; lo que sí se puede es dejar la tabla en un estado donde
-   * CUALQUIER inserción falla — un trigger `BEFORE INSERT` que lanza. Es un fallo real del
-   * motor en la segunda escritura, exactamente la forma que tendría un disco lleno o una
-   * violación de constraint, y no un `jest.mock` del repositorio: mockear el adaptador
+   * envenenada. `auth_credentials.id` lo acuña `Credential.create()` con
+   * `CredentialId.generate()`, así que no se puede predecir; lo que sí se puede es dejar la tabla
+   * en un estado donde CUALQUIER inserción falla — un trigger `BEFORE INSERT` que lanza. Es un
+   * fallo real del motor en la segunda escritura, exactamente la forma que tendría un disco lleno
+   * o una violación de constraint, y no un `jest.mock` del repositorio: mockear el adaptador
    * probaría el mock, no la transacción entre dos contextos.
    *
    * Alternativas descartadas: (a) forzar un hash inválido — imposible sin tocar el hasher
@@ -418,6 +444,32 @@ describe('Auth (e2e)', () => {
       // Assert
       expect(login.status).toBe(401);
       expect(login.body.message).toBe('Invalid credentials');
+    });
+
+    // Una credencial con un id que no es v4 solo puede dejarla un SQL externo. El camino entero
+    // —mapper, caso de uso, filtro de auth y filtro global— tiene que dar el 500 documentado, sin
+    // el id en el cuerpo: el spec unitario del filtro no ve el `@UseFilters` del controller.
+    it('debería responder el 500 documentado sin publicar el id cuando la credencial tiene un id que no es uuid v4', async () => {
+      // Arrange
+      const path = `${prefix}/auth/login`;
+      const corruptId = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+      const registered = await postRegister({
+        email: 'credencial.corrupta@example.com',
+        name: 'Credencial Corrupta',
+        password: DEFAULT_PASSWORD,
+      }).expect(201);
+      await dataSource.query('UPDATE auth_credentials SET id = $1 WHERE user_id = $2', [
+        corruptId,
+        registered.body.data.user.id,
+      ]);
+
+      // Act
+      const response = await postLogin('credencial.corrupta@example.com', DEFAULT_PASSWORD);
+
+      // Assert
+      expect(response.status).toBe(500);
+      expectDocumentedError(response.body, 500, { path, message: 'Internal server error' });
+      expect(JSON.stringify(response.body)).not.toContain(corruptId);
     });
 
     it('debería acuñar en el token la misma expiración que anuncia la respuesta', async () => {

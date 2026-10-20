@@ -2,19 +2,14 @@ import { STATUS_CODES } from 'node:http';
 
 import type { ErrorPayload } from '../filters/all-exceptions.filter';
 
-/**
- * Fija los campos que no aportan nada al leer un ejemplo, para que dos ejemplos de endpoints
- * distintos solo difieran en lo que de verdad los distingue.
- */
-const TIMESTAMP = '2026-08-01T10:15:00.000Z';
-const REQUEST_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+import { EXAMPLE_REQUEST_ID, EXAMPLE_TIMESTAMP } from './example-meta.factory';
 
 /**
  * Status cuyo `error` **no** es el nombre canónico del status, con el motivo medido.
  *
  * `AllExceptionsFilter` calcula `error` como `body.error ?? exception.name`. Cuando una
  * `HttpException` se construye con un string —`new ConflictException('...')`, que es lo que hace
- * `UserDomainExceptionFilter`— Nest rellena `body.error` con el nombre canónico, así que el
+ * `UsersDomainExceptionFilter`— Nest rellena `body.error` con el nombre canónico, así que el
  * nombre de la clase de dominio nunca llega al cliente. Estas dos son las excepciones reales:
  *
  * - **429:** `ThrottlerException` se construye con un string suelto, así que el filtro entra en
@@ -76,7 +71,7 @@ export const buildErrorExample = (
   statusCode: status,
   message,
   error: expectedErrorName(status),
-  timestamp: TIMESTAMP,
+  timestamp: EXAMPLE_TIMESTAMP,
   path,
-  requestId: REQUEST_ID,
+  requestId: EXAMPLE_REQUEST_ID,
 });

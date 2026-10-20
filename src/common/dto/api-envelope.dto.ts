@@ -8,16 +8,17 @@ import {
   type ApiResponseOptions,
 } from '@nestjs/swagger';
 
+import { EXAMPLE_REQUEST_ID, EXAMPLE_TIMESTAMP } from './example-meta.factory';
 import { PaginatedResponseDto, PaginationMetaDto } from './paginated-response.dto';
 
 export class RequestMetaDto {
-  @ApiProperty({ example: '2026-07-28T10:15:00.000Z' })
+  @ApiProperty({ example: EXAMPLE_TIMESTAMP })
   timestamp!: string;
 
   @ApiProperty({ example: '/api/v1/users' })
   path!: string;
 
-  @ApiProperty({ example: '3f2504e0-4f89-41d3-9a0c-0305e82c3301' })
+  @ApiProperty({ example: EXAMPLE_REQUEST_ID })
   requestId!: string;
 }
 

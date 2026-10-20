@@ -10,11 +10,14 @@ import { captureError } from '@test/helpers/capture-error';
 import {
   AuthDomainError,
   EmailAlreadyRegisteredError,
+  InvalidCredentialIdError,
   InvalidCredentialsError,
   InvalidPasswordHashError,
   InvalidProfileError,
 } from '../../../domain/errors/auth.errors';
 import { AuthDomainExceptionFilter } from '../../../infrastructure/http/auth-domain-exception.filter';
+
+const V1_CREDENTIAL_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
 
 describe('AuthDomainExceptionFilter', () => {
   describe('catch()', () => {
@@ -40,16 +43,23 @@ describe('AuthDomainExceptionFilter', () => {
     // del usuario sino una fila corrupta, y ahora es un 500 (ver los dos casos de más abajo).
     // La forma `it.each` se conserva porque el fallback de 400 sigue siendo el destino por
     // defecto de todo error de dominio nuevo.
-    it.each([['InvalidProfileError', new InvalidProfileError('"x" is not a valid email address')]])(
-      'debería traducir %s a 400',
-      (_caso, error) => {
-        // Arrange
-        const filter = new AuthDomainExceptionFilter();
+    //
+    // La tabla lleva factorías, no errores: construido al recolectar, un error de dominio que
+    // lanza (un mutante de su constructor) tumba la carga del archivo, y Stryker lo cuenta como
+    // error en vez de como muerto.
+    it.each([
+      ['InvalidProfileError', () => new InvalidProfileError('"x" is not a valid email address')],
+    ])('debería traducir %s a 400', (_caso, buildError) => {
+      // Arrange
+      const filter = new AuthDomainExceptionFilter();
+      const error = buildError();
 
-        // Act + Assert
-        expect(() => filter.catch(error)).toThrow(BadRequestException);
-      },
-    );
+      // Act
+      const act = () => filter.catch(error);
+
+      // Assert
+      expect(act).toThrow(BadRequestException);
+    });
 
     it('debería traducir InvalidPasswordHashError a 500', () => {
       // Arrange
@@ -88,6 +98,28 @@ describe('AuthDomainExceptionFilter', () => {
       });
       expect(JSON.stringify(published)).not.toContain('argon2');
       expect(thrown.cause).toBe(domainError);
+    });
+
+    // Otra fila corrupta, no una entrada del usuario: con el 400 por defecto, el id de la
+    // credencial saldría en el cuerpo. Solo puede viajar como `cause`, que ve el logger.
+    it('debería traducir InvalidCredentialIdError al 500 saneado, sin el id y con el cause intacto', () => {
+      // Arrange
+      const filter = new AuthDomainExceptionFilter();
+      const domainError = new InvalidCredentialIdError(V1_CREDENTIAL_ID);
+
+      // Act
+      const thrown = captureError(() => filter.catch(domainError));
+
+      // Assert
+      expect(thrown).toBeInstanceOf(InternalServerErrorException);
+      const published = (thrown as InternalServerErrorException).getResponse();
+      expect(published).toEqual({
+        statusCode: 500,
+        message: 'Internal server error',
+        error: 'InternalServerError',
+      });
+      expect(JSON.stringify(published)).not.toContain(V1_CREDENTIAL_ID);
+      expect((thrown as InternalServerErrorException).cause).toBe(domainError);
     });
 
     it('debería tratar un error de dominio sin mapeo como 400', () => {

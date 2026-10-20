@@ -20,7 +20,7 @@ import {
   DEFAULT_AMOUNT_CENTS,
   DEFAULT_CONCEPT,
   DEFAULT_CUSTOMER_ID,
-  DEFAULT_PLACED_AT,
+  DEFAULT_CREATED_AT,
   rehydrateOrder,
 } from '../../helpers/order.factory';
 
@@ -41,12 +41,18 @@ describe('OrderMapper', () => {
       expect(row.customerId).toBe(DEFAULT_CUSTOMER_ID);
       expect(row.concept).toBe(DEFAULT_CONCEPT);
       expect(row.amountCents).toBe(DEFAULT_AMOUNT_CENTS);
-      expect(row.placedAt).toEqual(DEFAULT_PLACED_AT);
+      expect(row.createdAt).toEqual(DEFAULT_CREATED_AT);
+      expect(row.updatedAt).toEqual(DEFAULT_CREATED_AT);
     });
 
-    it('debería volcar el estado, la fecha de cancelación y la versión de un pedido cancelado', () => {
-      // Arrange
-      const order = rehydrateOrder({ status: 'cancelled', cancelledAt: CANCELLED_AT, version: 4 });
+    it('debería volcar el estado, las fechas y la versión de un pedido cancelado', () => {
+      // Arrange: las dos fechas distintas, para que un mapper que las cruzara falle.
+      const order = rehydrateOrder({
+        status: 'cancelled',
+        cancelledAt: CANCELLED_AT,
+        updatedAt: CANCELLED_AT,
+        version: 4,
+      });
 
       // Act
       const row = OrderMapper.toPersistence(order);
@@ -54,6 +60,8 @@ describe('OrderMapper', () => {
       // Assert
       expect(row.status).toBe('cancelled');
       expect(row.cancelledAt).toEqual(CANCELLED_AT);
+      expect(row.createdAt).toEqual(DEFAULT_CREATED_AT);
+      expect(row.updatedAt).toEqual(CANCELLED_AT);
       expect(row.version).toBe(4);
     });
   });
@@ -72,7 +80,8 @@ describe('OrderMapper', () => {
         customerId: row.customerId,
         concept: row.concept,
         amountCents: row.amountCents,
-        placedAt: row.placedAt,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
         status: 'cancelled',
         cancelledAt: CANCELLED_AT,
         version: 4,
@@ -160,20 +169,22 @@ describe('OrderMapper', () => {
       fc.record({
         concept: orderConceptArb,
         amountCents: orderAmountCentsArb,
-        placedAt: timestampArb,
+        createdAt: timestampArb,
+        updatedAt: timestampArb,
         lifecycle: orderLifecycleArb,
         version: persistedVersionArb,
       }),
     ])(
       'debería preservar el snapshot para cualquier orden del dominio',
-      ({ concept, amountCents, placedAt, lifecycle, version }) => {
+      ({ concept, amountCents, createdAt, updatedAt, lifecycle, version }) => {
         // Arrange
         const original = Order.rehydrate({
           id: OrderId.generate(),
           customerId: DEFAULT_CUSTOMER_ID,
           concept: OrderConcept.from(concept),
           amount: OrderAmount.from(amountCents),
-          placedAt,
+          createdAt,
+          updatedAt,
           status: lifecycle.status,
           cancelledAt: lifecycle.cancelledAt,
           version,
@@ -210,7 +221,8 @@ const buildRow = ({
   row.customerId = DEFAULT_CUSTOMER_ID;
   row.concept = 'Fila persistida';
   row.amountCents = amountCents;
-  row.placedAt = DEFAULT_PLACED_AT;
+  row.createdAt = DEFAULT_CREATED_AT;
+  row.updatedAt = CANCELLED_AT;
   row.status = status;
   row.cancelledAt = cancelledAt;
   row.version = version;

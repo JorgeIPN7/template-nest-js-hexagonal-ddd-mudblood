@@ -46,7 +46,7 @@ describe('CancelOrderUseCase', () => {
 
     it('debería devolver el pedido cancelado con su fecha de cancelación', async () => {
       // Arrange: reloj fijo, para exigir el instante exacto y no solo «una Date» — con
-      // `toBeInstanceOf(Date)`, un `order.cancel(order.placedAt)` pasaba la suite entera.
+      // `toBeInstanceOf(Date)`, un `order.cancel(order.createdAt)` pasaba la suite entera.
       jest.useFakeTimers({ now: NOW });
       const { useCase, repository } = buildUseCase([CUSTOMER_ID]);
       const orderId = await seedPlacedOrder(repository, CUSTOMER_ID);
@@ -60,7 +60,7 @@ describe('CancelOrderUseCase', () => {
       expect(order.cancelledAt).toEqual(NOW);
     });
 
-    it('debería devolver tal cual un pedido ya cancelado, con su fecha original y sin guardar nada', async () => {
+    it('debería devolver tal cual un pedido ya cancelado, con su fecha de cancelación y su updatedAt originales y sin guardar nada', async () => {
       // Arrange
       const { useCase, repository } = buildUseCase([CUSTOMER_ID]);
       const orderId = await seedCancelledOrder(repository, CUSTOMER_ID, FIRST_CANCELLED_AT);
@@ -72,6 +72,7 @@ describe('CancelOrderUseCase', () => {
       // Assert
       expect(order.status).toBe('cancelled');
       expect(order.cancelledAt).toEqual(FIRST_CANCELLED_AT);
+      expect(order.updatedAt).toEqual(FIRST_CANCELLED_AT);
       expect(repository.saveCalls).toHaveLength(savesBefore);
     });
 
@@ -85,6 +86,21 @@ describe('CancelOrderUseCase', () => {
 
       // Assert
       await expect(act).rejects.toThrow(OrderNotFoundError);
+    });
+
+    it('debería rechazar como inexistente un id escrito en mayúsculas, citándolo tal como llegó', async () => {
+      // Arrange
+      const { useCase } = buildUseCase([CUSTOMER_ID]);
+      const upperId = OrderId.generate().value.toUpperCase();
+
+      // Act
+      const error = await captureRejection(
+        useCase.execute({ customerId: CUSTOMER_ID, orderId: upperId }),
+      );
+
+      // Assert
+      expect(error).toBeInstanceOf(OrderNotFoundError);
+      expect(error.message).toBe(`Order ${upperId} was not found`);
     });
 
     fcTest.prop([fc.uuid({ version: 4 }), fc.uuid({ version: 4 })])(

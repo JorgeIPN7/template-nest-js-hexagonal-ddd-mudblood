@@ -8,7 +8,10 @@ import { createTestApp } from '@test/helpers/create-test-app';
 
 import { Credential } from '../../../domain/entities/credential.entity';
 import { CredentialRepository } from '../../../domain/ports/credential.repository';
+import { CredentialId } from '../../../domain/value-objects/credential-id.vo';
 import { PasswordHash } from '../../../domain/value-objects/password-hash.vo';
+
+const CREATED_AT = new Date('2026-08-07T10:00:00.000Z');
 
 /**
  * El adaptador de persistencia se prueba contra PostgreSQL real, nunca con
@@ -46,11 +49,29 @@ describe('CredentialTypeOrmRepository (e2e)', () => {
       // Assert: fila cruda, no releída por el mismo mapper que la escribió.
       const rows = await dataSource.query<{ user_id: string; password_hash: string }[]>(
         'SELECT user_id, password_hash FROM auth_credentials WHERE id = $1',
-        [credential.id],
+        [credential.id.value],
       );
       expect(rows).toEqual([
         { user_id: credential.userId, password_hash: credential.passwordHash.value },
       ]);
+    });
+
+    it('debería guardar y devolver las fechas que fija el dominio', async () => {
+      // Arrange
+      const credential = buildCredential();
+
+      // Act
+      await repository.save(credential);
+
+      // Assert: la fila cruda y la relectura llevan la fecha del dominio, no la de la base.
+      const rows = await dataSource.query<{ createdAt: Date; updatedAt: Date }[]>(
+        'SELECT "createdAt", "updatedAt" FROM auth_credentials WHERE id = $1',
+        [credential.id.value],
+      );
+      expect(rows).toEqual([{ createdAt: CREATED_AT, updatedAt: CREATED_AT }]);
+      const found = await repository.findByUserId(credential.userId);
+      expect(found?.createdAt).toEqual(CREATED_AT);
+      expect(found?.updatedAt).toEqual(CREATED_AT);
     });
 
     // El índice único de la migración es lo que garantiza «una cuenta, una credencial», y
@@ -74,8 +95,9 @@ describe('CredentialTypeOrmRepository (e2e)', () => {
       // Act
       const found = await repository.findByUserId(credential.userId);
 
-      // Assert
-      expect(found?.id).toBe(credential.id);
+      // Assert: dos instancias distintas del mismo id, así que se comparan por valor.
+      expect(found?.id).toBeInstanceOf(CredentialId);
+      expect(found?.id.equals(credential.id)).toBe(true);
       expect(found?.passwordHash.value).toBe(credential.passwordHash.value);
     });
 
@@ -127,5 +149,5 @@ const buildCredential = ({ userId = randomUUID() }: { userId?: string } = {}): C
   Credential.create({
     userId,
     passwordHash: PasswordHash.from('$argon2id$fake$repository'),
-    now: new Date('2026-08-07T10:00:00.000Z'),
+    now: CREATED_AT,
   });

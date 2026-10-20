@@ -86,7 +86,7 @@ constante usa el hasher de producción.
 | Cambio en una respuesta que ya existe (campo nuevo, código nuevo)   | Exprés                       | ⚠️ en la sección «Contrato» de la spec; actualiza README y `CLAUDE.md`                                                 |
 | Migración aditiva (`ADD COLUMN`, tabla nueva) dentro de una feature | Exprés                       | Con `DEFAULT` si la columna es `NOT NULL`: las réplicas viejas siguen insertando                                       |
 | Migración que borra o renombra                                      | Completo                     | Expand/contract obligatorio (`CLAUDE.md`, «Destructive migrations»)                                                    |
-| Bounded context nuevo                                               | Completo                     | El plan termina con el wiring: módulo, `AppModule` y scope de commitlint                                               |
+| Bounded context nuevo                                               | Completo                     | El plan termina con el wiring: módulo, `AppModule` y scope de commitlint, y el test de contrato en verde               |
 | Cambio entre contextos (fachada, puerto nuevo en `users.module.ts`) | Completo                     | Las puertas se segregan por intención (`UsersLookup`, `UsersProvisioning`)                                             |
 | Auth, credenciales, tokens, permisos, guards                        | Completo                     | Tests de guarda obligatorios, con su prueba sin la protección                                                          |
 | Refactor grande o transversal                                       | Completo                     | Si no cambia comportamiento, la tabla de casos se sustituye por «la suite sigue verde» y la mutación no baja           |
@@ -393,7 +393,7 @@ quedaban fuera, y un cambio así podía dar cero mutantes y salir en verde.
 - Un mutante equivalente —ningún test puede distinguirlo— se marca en el código con
   `// Stryker disable next-line <Mutador>: <motivo>` y se cita en el informe. Sin marcar cuenta
   como superviviente, y con pocos mutantes uno solo basta para bajar del umbral.
-- El `thresholds.break: 85` de la config se aplica a los mutantes del cambio. Sin mutantes
+- El `thresholds.break: 90` de la config se aplica a los mutantes del cambio. Sin mutantes
   válidos el script lo dice y sale con 0: no hay nada que auditar, que no es un 100 %.
 - Las filas `P` (propiedad, `@fast-check/jest`) matan mutantes bajo Stryker porque
   `test/stryker-setup.ts` fija la semilla de fast-check en esas corridas. Sin ella, el título del

@@ -88,24 +88,65 @@ describe('UserId', () => {
       );
     });
 
-    it('debería aceptar indistintamente mayúsculas y minúsculas', () => {
+    // `fc.uuid` genera el hexadecimal en minúsculas, así que `value` es la forma canónica.
+    it('debería aceptar un UUID v4 en mayúsculas y guardarlo en minúsculas', () => {
       fc.assert(
         fc.property(fc.uuid({ version: 4 }), (value) => {
-          // Act + Assert
-          expect(() => UserId.from(value.toUpperCase())).not.toThrow();
+          // Arrange
+          const upper = value.toUpperCase();
+
+          // Act
+          const id = UserId.from(upper);
+
+          // Assert
+          expect(id.value).toBe(value);
         }),
       );
     });
 
+    it('debería rechazar un UUID v4 con cualquier texto delante', () => {
+      fc.assert(
+        fc.property(fc.uuid({ version: 4 }), fc.string({ minLength: 1 }), (value, prefix) => {
+          // Arrange
+          const prefixed = `${prefix}${value}`;
+
+          // Act
+          const act = () => UserId.from(prefixed);
+
+          // Assert
+          expect(act).toThrow(InvalidUserIdError);
+        }),
+      );
+    });
+
+    it('debería rechazar un UUID v4 con cualquier texto detrás', () => {
+      fc.assert(
+        fc.property(fc.uuid({ version: 4 }), fc.string({ minLength: 1 }), (value, suffix) => {
+          // Arrange
+          const suffixed = `${value}${suffix}`;
+
+          // Act
+          const act = () => UserId.from(suffixed);
+
+          // Assert
+          expect(act).toThrow(InvalidUserIdError);
+        }),
+      );
+    });
+
+    // La arbitraria se construye y no se filtra: un UUID tiene 36 caracteres justos, así que
+    // ninguna cadena de 35 o menos puede tener su forma.
     it('debería rechazar cualquier cadena que no tenga la forma de un UUID', () => {
       fc.assert(
-        fc.property(
-          fc.string().filter((value) => !/^[0-9a-f-]{36}$/i.test(value)),
-          (value) => {
-            // Act + Assert
-            expect(() => UserId.from(value)).toThrow(InvalidUserIdError);
-          },
-        ),
+        fc.property(fc.string({ maxLength: 35 }), (value) => {
+          // Arrange
+
+          // Act
+          const act = () => UserId.from(value);
+
+          // Assert
+          expect(act).toThrow(InvalidUserIdError);
+        }),
       );
     });
   });

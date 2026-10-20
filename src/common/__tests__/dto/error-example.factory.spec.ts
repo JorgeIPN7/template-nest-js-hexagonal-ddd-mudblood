@@ -14,6 +14,7 @@ import type { PinoLogger } from 'nestjs-pino';
 
 import { REQUEST_TIMEOUT_MESSAGE } from '../../decorators/timeout.decorator';
 import { buildErrorExample, VERIFIED_ERROR_STATUSES } from '../../dto/error-example.factory';
+import { EXAMPLE_REQUEST_ID, EXAMPLE_TIMESTAMP } from '../../dto/example-meta.factory';
 import { AllExceptionsFilter, type ErrorPayload } from '../../filters/all-exceptions.filter';
 
 /**
@@ -101,6 +102,17 @@ describe('buildErrorExample', () => {
       documented,
     );
     expect(actual.message).toBe('Internal server error');
+  });
+
+  // Las filas de arriba igualan `timestamp` y `requestId` a los del ejemplo antes de comparar,
+  // así que no ven de dónde salen: esta fija que son los literales compartidos.
+  it('debería sellar timestamp y requestId con los literales compartidos de example-meta.factory', () => {
+    // Arrange
+    const options = { path: PATH, message: 'User abc was not found' };
+    // Act
+    const example = buildErrorExample(404, options);
+    // Assert
+    expect(example).toMatchObject({ timestamp: EXAMPLE_TIMESTAMP, requestId: EXAMPLE_REQUEST_ID });
   });
 });
 

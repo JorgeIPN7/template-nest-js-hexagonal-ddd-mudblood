@@ -209,8 +209,119 @@
  * El umbral se queda en `break: 85`: hacen falta ≥284 detectados (85 % de 333), así que caben 38
  * kills perdidos antes del rojo. Subirlo sigue aplazado hasta que los 11 supervivientes tengan casos
  * aprobados.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Remedición del 2026-10-19 (contrato base de módulo: el kernel gana `DomainError`, `Entity` y
+ * `UuidIdentifier`, y `users`, `orders` y `auth` pasan al contrato). Cambia el código que muta el
+ * scope en los cuatro módulos, que es el evento que esta cabecera manda remedir. Medido con
+ * `pnpm test:mutation --concurrency 6` y la máquina sin otra carga: con la concurrencia por
+ * defecto (11 workers de ~1,8 GB) la corrida se quedó sin memoria y no terminó. Copiado de la
+ * salida de Stryker: **99.15 %** global — 346 killed, 6 timeout, 3 survived, 0 sin cobertura,
+ * 5 error (352/355).
+ *
+ *     auth     100.00 %   57/57     ( 57 válidos, 16.1 % del censo)
+ *     users     99.33 %  149/150    (150 válidos, 42.3 %)
+ *     orders    97.78 %   88/90     ( 90 válidos, 25.4 %)
+ *     shared   100.00 %   58/58     ( 58 válidos, 16.3 %)
+ *
+ * Los supervivientes bajan de 11 a 3:
+ *
+ * - `users.facade.ts` pasa de 5 a 0. Uno ya había muerto antes de esta remedición (la primera
+ *   pasada de `test:mutation:changed` de hoy daba 4); por el diff, lo mata el caso de la Task 7
+ *   que fija que una búsqueda previa con un error que no es de dominio se relanza. Otro lo mata un
+ *   caso nuevo: un email malformado no llega a consultar el repositorio, cuyo fake en memoria
+ *   tapaba el `catch` vacío. Los otros tres son equivalentes y van marcados con `Stryker disable`: el `if (true)` de los dos
+ *   `catch` (`Email.from` y `UserId.from` solo lanzan su propio error) y el `catch` vacío de
+ *   `parseUserId`, que devuelve `undefined` y sus llamadores tratan como `null`. La directiva
+ *   excluye también el `if (false)` de esas dos líneas, que sí muere: por eso hay 2 válidos menos
+ *   de los que quita la equivalencia.
+ * - `user-id.vo.ts` pasa de 2 a 0: la regex se fue a `uuid-identifier.base.ts`, donde los casos
+ *   del kernel matan sus anclas.
+ * - `user.errors.ts` (1) y `order.errors.ts` (1) pasan a 0: sus specs fijan ya cada mensaje.
+ * - Siguen `order-concept.vo.ts` 1 (`> 140` → `>= 140`) y `order-amount.vo.ts` 1 (el tope).
+ * - **Aparece `email.vo.ts` 1**, el `$` de la regex: ningún caso fijo lleva texto válido seguido
+ *   de algo más (`user@example.com@otro`). El 2026-10-01 estaba muerto. Hipótesis, sin medir: lo
+ *   mataba por azar una fila de propiedad, y las propiedades nuevas de este cambio desplazaron la
+ *   secuencia de la semilla fija (`test/stryker-setup.ts`). Este cambio no tocó ese archivo.
+ *
+ * El censo crece en 22 válidos (333 → 355). Por módulo, los conteos están medidos y el reparto
+ * sale de leer el diff, no de comparar mutante a mutante: `shared` gana 35 con las tres bases
+ * nuevas; `users` pierde 13 y `orders` 10, porque la regex y el `randomUUID()` de `UserId` y
+ * `OrderId` pasan a `UuidIdentifier`, el `this.name = new.target.name` de sus raíces pasa a
+ * `DomainError`, `placedAt` desaparece y la fachada deja 5 ignorados; `auth` gana 10 con
+ * `CredentialId` e `InvalidCredentialIdError`. Los timeouts bajan de 34 a 6 por la concurrencia
+ * menor: es la familia sensible a la carga de arriba.
+ *
+ * El umbral se queda en `break: 85`: hacen falta ≥302 detectados (85 % de 355), así que caben 50
+ * kills perdidos antes del rojo. Para tumbar el global él solo:
+ *
+ * - `users` tendría que caer de 99.33 % a ~65 %;
+ * - `orders`, de 97.78 % a ~41 %;
+ * - `shared`, a ~12 %;
+ * - `auth`, a ~11 %.
+ *
+ * Subirlo sigue aplazado hasta que los 3 supervivientes tengan casos aprobados.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Remedición del 2026-10-19, cierre del contrato de módulo: los casos de los 3 supervivientes (el
+ * `$` de `email.vo.ts` con `user@example.com@otro`, el concepto de 140 y el tope de 10 000 000),
+ * las factorías de los specs que construían errores al recolectar y la config de abajo
+ * (`concurrency` y `timeoutMS`). Medido con `pnpm test:mutation` SIN flag y la máquina sin otra
+ * carga: la concurrencia la pone ya la config (6 workers en esta máquina de 12 CPU), y la corrida
+ * terminó en 13 min 11 s. Copiado de la salida de Stryker: **100.00 %** global — 354 killed,
+ * 6 timeout, 0 survived, 0 sin cobertura, 0 error (360/360).
+ *
+ *     auth     100.00 %   61/61     ( 61 válidos, 16.9 % del censo)
+ *     users    100.00 %  150/150    (150 válidos, 41.7 %)
+ *     orders   100.00 %   90/90     ( 90 válidos, 25.0 %)
+ *     shared   100.00 %   59/59     ( 59 válidos, 16.4 %)
+ *
+ * - Los 3 supervivientes mueren con sus casos nuevos; el rojo por aserción de cada uno se comprobó
+ *   aplicando el mutante a mano.
+ * - Los 5 errores pasan a válidos y muertos (`auth` gana 4 y `shared` 1): los specs construían el
+ *   error o el VO al recolectar, y un mutante que lanzaba tumbaba la carga del archivo.
+ * - Siguen 6 timeouts, pero no los mismos. Los 3 de `user.errors.ts` salen ahora muertos; quedan 4
+ *   de `entity.base.ts` (líneas 49, 53, 57 y 58), el constructor vacío de `domain-error.ts`, que
+ *   antes era uno de los errores, y el `throw` vaciado de `email.vo.ts:18`. No son cuelgues ni
+ *   tests lentos, medido: aplicados a mano, en Jest sin Stryker los seis caen en segundos (7-9 s de
+ *   pared para todos los specs relacionados, ningún test pasa de 0,7 s), casi todos por aserción,
+ *   y `entity.base.ts` solo, con `--timeoutMS 60000`, da 18 de 18 muertos. Lo lento es la corrida
+ *   dentro de Stryker con el censo entero cargando la máquina; la causa exacta en el runner no está
+ *   aislada (Stryker no guarda la duración de cada mutante). El presupuesto no sube más: cuentan
+ *   como detectados igual, ya se sabe qué test mata a cada uno, y subirlo solo alargaría un cuelgue
+ *   de verdad.
+ *
+ * Dos correcciones a la entrada anterior, sin reescribirla:
+ *
+ * - Ninguna fila de propiedad pudo matar nunca el `$` de `email.vo.ts`, por mucho que la semilla
+ *   se desplazara: las arbitrarias solo generan direcciones válidas, y el mutante es estático. Lo
+ *   compatible con los datos es que el 2026-10-01 saliera Timeout y contara como detectado (aquel
+ *   día hubo 34), pero no queda informe para comprobarlo.
+ * - Los 6 timeouts de aquella corrida no eran «la familia sensible a la carga de arriba»: estaban
+ *   en `entity.base.ts` (3) y `user.errors.ts` (3), no en los VOs. Que bajaran de 34 a 6 por la
+ *   concurrencia menor tampoco está medido: la corrida del 2026-10-01 no dejó constancia de la
+ *   suya.
+ *
+ * El umbral sube a `break: 90`, con `high: 95` y `low: 90`: hacen falta ≥324 detectados (90 % de
+ * 360), así que caben 36 kills perdidos antes del rojo. Para tumbar el global él solo:
+ *
+ * - `users` tendría que caer de 100 % a ~75 %;
+ * - `orders`, a ~59 %;
+ * - `auth`, a ~39 %;
+ * - `shared`, a ~37 %.
+ *
+ * `pnpm test:mutation:changed` aplica el mismo umbral a los mutantes de un cambio: con 90, un solo
+ * superviviente lo tumba con 9 válidos o menos (con 85 era con 6 o menos). El aviso de ese caso
+ * sale ya de este número (`singleSurvivorBreaks` en `scripts/mutation-targets.mjs`), no de un 85
+ * escrito a mano.
  */
+import { availableParallelism } from 'node:os';
+
 import unitJestConfig from './jest.config.mjs';
+
+const cpus = availableParallelism();
 
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {
@@ -254,9 +365,22 @@ const config = {
     // nadie probara nada más, que es exactamente el fallo de un auditor mal apuntado.
     'src/shared/domain/**/*.ts',
   ],
+  // Techo de workers. El default de Stryker 10 es n-1 con más de 4 CPU: en una máquina de 12
+  // son 11 workers de ~1,8 GB, y el 2026-10-19 la corrida completa se quedó sin memoria y no
+  // terminó (cabecera, «Remedición del 2026-10-19»); con 6 terminó. Se replica la fórmula del
+  // default y solo se le pone techo, así que con pocas CPU no cambia nada: el runner público de
+  // GitHub (4 CPU según su documentación) sigue en 4, donde un `'50%'` lo habría bajado a 2. Lo
+  // heredan `test:mutation:changed` y todas las skills, y `--concurrency N` sigue mandando.
+  concurrency: Math.min(6, cpus > 4 ? cpus - 1 : cpus),
+  // Presupuesto fijo por mutante, por encima del default de 5000 ms (el total es
+  // `timeoutFactor × netTime + timeoutMS` más el overhead del dry run). Con la máquina cargada,
+  // mutantes que mueren por aserción en pocos segundos se pasaban de tiempo y salían Timeout: se
+  // contaban como detectados sin que ningún test los distinguiera (cabecera, remedición del
+  // cierre). Solo alarga la corrida en un mutante que cuelgue de verdad.
+  timeoutMS: 10_000,
   coverageAnalysis: 'perTest',
   reporters: ['clear-text', 'progress', 'html'],
-  thresholds: { high: 90, low: 80, break: 85 },
+  thresholds: { high: 95, low: 90, break: 90 },
   tempDirName: '.stryker-tmp',
   // `true` (el default) solo borra los sandboxes tras una corrida con éxito, y una que no llega al
   // umbral cuenta como fallida: cada `break` dejaba una copia del repo en `.stryker-tmp/`.

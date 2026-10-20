@@ -22,11 +22,12 @@ Cada bounded context vive bajo `src/modules/<context>/` con sus capas **dentro**
 src/
 ├── main.ts                        # Proceso: applyGlobals(), listen y apagado
 ├── app.module.ts                  # Importa los módulos de contexto y la config global; sin lógica
+├── __tests__/                     # Tests de arquitectura: contrato de módulo, fronteras, idioma
 ├── bootstrap/                     # Documento OpenAPI y UI de Scalar
-├── common/                        # Cross-cutting: filters, interceptors, decorators, dto, auth, logger
+├── common/                        # Cross-cutting: filters (con la base DomainExceptionFilter), interceptors, decorators, dto, auth, logger, persistence (failClosed)
 ├── config/                        # Configuración validada con Zod (registerAs)
 ├── database/                      # DataSource, migraciones, seeds, relay del outbox
-├── shared/domain/                 # Kernel compartido: AggregateRoot, ValueObject
+├── shared/domain/                 # Kernel compartido: DomainError, Entity, AggregateRoot, UuidIdentifier, ValueObject
 └── modules/
     └── <context>/                 # p. ej. users, auth, orders
         ├── domain/                # ❌ sin @nestjs/*, typeorm, axios, class-validator ni pino
@@ -40,7 +41,7 @@ src/
         │   └── <context>.facade.ts                  # solo si otro contexto consume este
         ├── infrastructure/        # ✅ la única capa que toca librerías externas
         │   ├── http/<resource>.controller.ts        # driver adapter
-        │   ├── http/<aggregate>-domain-exception.filter.ts
+        │   ├── http/<context>-domain-exception.filter.ts   # uno por contexto
         │   ├── http/dto/<name>.dto.ts
         │   ├── persistence/<name>.orm-entity.ts     # decoradores de TypeORM
         │   ├── persistence/<name>.mapper.ts
@@ -60,6 +61,7 @@ Otras carpetas de `infrastructure/` aparecen cuando hay algo que meter: `auth` t
 - Controllers viven en `infrastructure/http/` (son driver adapters), no en una carpeta paralela.
 - **Sin barrels**: no existe ningún `index.ts` en `src/`. Cada import apunta al archivo concreto.
 - **Dentro de un módulo se importa en relativo** (`../../domain/…`); **entre módulos, solo el `<context>.module.ts` ajeno** es importable, y solo desde `infrastructure/` o la raíz del módulo.
+- **La forma del contexto la verifica `src/__tests__/module-contract.spec.ts`** sobre todo `src/modules/*`, salvo la lista cerrada `FLAT_MODULES` (`health`): las cuatro carpetas y el module file, la raíz de errores sobre `DomainError`, el filtro `<context>-domain-exception.filter.ts` sobre `DomainExceptionFilter` y aplicado con `@UseFilters` en cada controller, las entidades sobre `Entity` o `AggregateRoot`, los VOs sobre `ValueObject` o `UuidIdentifier`, la forma de los casos de uso, los sufijos y las entidades ORM sin relaciones ni columnas que rellene TypeORM. Un módulo copiado de esta referencia lo pasa en cuanto tiene sus tests (`structure` pide un `.ts` en `__tests__/`), y compila: lo verifica `src/__tests__/nestjs-mapping.spec.ts`, que extrae los bloques `billing` de este documento, los pasa por el contrato y los compila con el `tsconfig.json` del repo contra el kernel y `common/` reales. ESLint y Prettier no pasan por ellos. El porqué de cada clave está en `docs/architecture.md`, «El contrato de módulo».
 
 ## 2. Puertos: `abstract class`, tipo y token a la vez (obligatorio)
 
@@ -124,7 +126,9 @@ Los `type` de datos que viajan con un puerto (`UserPage`, `FindUsersCriteria`, `
 
 ## 3. Entidades y Value Objects en TS 6.0
 
-**Sin decoradores Nest ni de ORM dentro del dominio.** Los VOs extienden `ValueObject<T>` del kernel (`@shared/domain/value-object.base`), que aporta `protected constructor`, `equals()` y `toString()`; cada VO solo añade su validación en una factoría estática `from()` (y `generate()` para identidades). La validación lanza un error de dominio, nunca un `Error` genérico.
+**Sin decoradores Nest ni de ORM dentro del dominio.** Los VOs extienden `ValueObject<T>` del kernel (`@shared/domain/value-object.base`), que aporta `protected constructor`, `equals()` y `toString()`; cada VO solo añade su validación en una factoría estática `from()`. La validación lanza un error de dominio, nunca un `Error` genérico. Ningún VO declara un constructor público.
+
+**Las identidades extienden `UuidIdentifier<'<Clase>'>`** (`@shared/domain/uuid-identifier.base`), y la marca es el nombre de la clase: con ella, un `OrderId` ya no entra donde se espera un `UserId`, y el test de contrato comprueba que nadie copie la marca de otro id. La base normaliza a minúsculas y ofrece dos helpers protegidos, `isUuidV4` y `newUuid`; con ellos cada id escribe su propio `from()`, que lanza el error de **su** contexto, y su `generate()`. El id de una entidad de otro contexto (`Order.customerId`) es un `string`, porque ningún módulo puede importar el id de otro.
 
 ```ts
 // src/modules/billing/domain/value-objects/invoice-amount.vo.ts
@@ -144,52 +148,99 @@ export class InvoiceAmount extends ValueObject<number> {
 }
 ```
 
+```ts
+// src/modules/billing/domain/value-objects/invoice-id.vo.ts
+// Calca: src/modules/orders/domain/value-objects/order-id.vo.ts
+import { UuidIdentifier } from '@shared/domain/uuid-identifier.base';
+
+import { InvalidInvoiceIdError } from '../errors/invoice.errors';
+
+export class InvoiceId extends UuidIdentifier<'InvoiceId'> {
+  static generate(): InvoiceId {
+    return new InvoiceId(UuidIdentifier.newUuid());
+  }
+
+  static from(value: string): InvoiceId {
+    if (!UuidIdentifier.isUuidV4(value)) {
+      throw new InvalidInvoiceIdError(value);
+    }
+    return new InvoiceId(value);
+  }
+}
+```
+
+Los estados posibles son una constante y la unión que se deriva de ella, en una sola fuente: la leen la entidad, el mapper que los valida al leer y el DTO que los publica en OpenAPI.
+
+```ts
+// src/modules/billing/domain/value-objects/invoice-status.ts
+// Calca: src/modules/orders/domain/value-objects/order-status.ts
+/** Ciclo de vida de la factura. Unión y no enum, con el mismo patrón que `ORDER_STATUSES`. */
+export const INVOICE_STATUSES = ['draft', 'issued'] as const;
+export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
+```
+
 `ValueObject` compara con `===`: todos los VOs del repo envuelven un primitivo. Uno que envolviera un objeto tendría que sobrescribir `equals()`.
 
-**Aggregate root:** constructor privado, una factoría que aplica las reglas de creación y otra, `rehydrate()`, que reconstituye desde persistencia sin reaplicarlas ni re-emitir eventos; `toSnapshot()` entrega primitivos al mapper. Si emite eventos, extiende `AggregateRoot<TEvent>` (`@shared/domain/aggregate-root`), que aporta `record()` (protegido) y `pullEvents()` (drena). **Si tiene transiciones que se guardan** (`issue()`, `cancel()`), lleva la `version` con la que se leyó —0 si aún no se ha guardado—: es la versión esperada del `UPDATE` condicionado del adaptador (§6). Sin ella, dos peticiones concurrentes emiten dos eventos.
+**Toda entidad extiende `Entity<TId>`** (`@shared/domain/entity.base`): su constructor protegido recibe `BaseEntityProps<TId>` —`{ id, createdAt, updatedAt }`— y aporta `id`, `createdAt`, el getter `updatedAt`, `touch(now)` (protegido) y `equals()`, que compara la clase y después el id. **Si emite eventos, extiende `AggregateRoot<TId, TEvent>`** (`@shared/domain/aggregate-root`), una `Entity` que además aporta `record()` (protegido) y `pullEvents()` (drena). Nada de props-bag: el resto del estado vive en los campos privados de cada entidad, que solo cambian sus métodos de intención.
+
+**Aggregate root:** constructor privado `(base: BaseEntityProps<XId>, …estado propio)` que llama a `super(base)`, una factoría que aplica las reglas de creación y otra, `rehydrate()`, que reconstituye desde persistencia sin reaplicarlas ni re-emitir eventos; `toSnapshot()` entrega primitivos al mapper. **Nunca redeclara `id`, `createdAt` ni `updatedAt`**: un campo redeclarado no compila, pero una parameter property redeclarada sí, sin aviso, y dejaría dos fuentes de verdad. La factoría de creación sella `createdAt = updatedAt = now`, y cada método de intención llama a `touch(now)` **después** de su guarda, de modo que lo que no cambia nada no mueve la fecha. **Si tiene transiciones que se guardan** (`issue()`, `cancel()`), lleva la `version` con la que se leyó —0 si aún no se ha guardado—: es la versión esperada del `UPDATE` condicionado del adaptador (§6). Sin ella, dos peticiones concurrentes emiten dos eventos.
 
 ```ts
 // src/modules/billing/domain/entities/invoice.entity.ts
 // Calca: src/modules/orders/domain/entities/order.entity.ts
 import { AggregateRoot } from '@shared/domain/aggregate-root';
+import type { BaseEntityProps } from '@shared/domain/entity.base';
 
 import { InvoiceNotDraftError } from '../errors/invoice.errors';
 import { InvoiceIssued } from '../events/invoice-issued.event';
 import type { InvoiceAmount } from '../value-objects/invoice-amount.vo';
 import type { InvoiceId } from '../value-objects/invoice-id.vo';
-
-export type InvoiceStatus = 'draft' | 'issued';
+import type { InvoiceStatus } from '../value-objects/invoice-status';
 
 export type InvoiceSnapshot = {
   id: string;
   amountCents: number;
+  createdAt: Date;
+  updatedAt: Date;
   status: InvoiceStatus;
   version: number;
 };
 
-export class Invoice extends AggregateRoot<InvoiceIssued> {
+export class Invoice extends AggregateRoot<InvoiceId, InvoiceIssued> {
   private constructor(
-    readonly id: InvoiceId,
+    base: BaseEntityProps<InvoiceId>,
     readonly amount: InvoiceAmount,
     private status: InvoiceStatus,
     /** La versión con la que se LEYÓ (0 = aún no guardada), no un contador: `issue()` no la toca. */
     readonly version: number,
   ) {
-    super();
+    super(base);
   }
 
-  static draft(params: { id: InvoiceId; amount: InvoiceAmount }): Invoice {
-    return new Invoice(params.id, params.amount, 'draft', 0);
+  static draft(params: { id: InvoiceId; amount: InvoiceAmount; now: Date }): Invoice {
+    return new Invoice(
+      { id: params.id, createdAt: params.now, updatedAt: params.now },
+      params.amount,
+      'draft',
+      0,
+    );
   }
 
   /** Reconstituye desde persistencia: ni reglas de creación ni eventos, ya ocurrieron. */
   static rehydrate(params: {
     id: InvoiceId;
     amount: InvoiceAmount;
+    createdAt: Date;
+    updatedAt: Date;
     status: InvoiceStatus;
     version: number;
   }): Invoice {
-    return new Invoice(params.id, params.amount, params.status, params.version);
+    return new Invoice(
+      { id: params.id, createdAt: params.createdAt, updatedAt: params.updatedAt },
+      params.amount,
+      params.status,
+      params.version,
+    );
   }
 
   issue(now: Date): void {
@@ -197,6 +248,7 @@ export class Invoice extends AggregateRoot<InvoiceIssued> {
       throw new InvoiceNotDraftError(this.id.value);
     }
     this.status = 'issued';
+    this.touch(now);
     this.record(new InvoiceIssued(this.id.value, this.amount.value, now));
   }
 
@@ -204,6 +256,8 @@ export class Invoice extends AggregateRoot<InvoiceIssued> {
     return {
       id: this.id.value,
       amountCents: this.amount.value,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
       status: this.status,
       version: this.version,
     };
@@ -269,12 +323,12 @@ import { Auth } from '@common/decorators/auth.decorator';
 
 import { IssueInvoiceUseCase } from '../../application/use-cases/issue-invoice.use-case';
 
+import { BillingDomainExceptionFilter } from './billing-domain-exception.filter';
 import { InvoiceResponseDto } from './dto/invoice-response.dto';
-import { InvoiceDomainExceptionFilter } from './invoice-domain-exception.filter';
 
 @ApiTags('Invoices')
 @Controller('invoices')
-@UseFilters(InvoiceDomainExceptionFilter)
+@UseFilters(BillingDomainExceptionFilter)
 export class InvoicesController {
   constructor(private readonly issueInvoice: IssueInvoiceUseCase) {}
 
@@ -287,14 +341,211 @@ export class InvoicesController {
 }
 ```
 
+El DTO de respuesta es el único que se serializa: el agregado nunca sale tal cual. Lleva un `@ApiProperty` por campo, con su ejemplo, y construye la respuesta desde `toSnapshot()`.
+
+```ts
+// src/modules/billing/infrastructure/http/dto/invoice-response.dto.ts
+// Calca: src/modules/orders/infrastructure/http/dto/order-response.dto.ts
+import { ApiProperty } from '@nestjs/swagger';
+
+import type { Invoice } from '../../../domain/entities/invoice.entity';
+import { INVOICE_STATUSES, type InvoiceStatus } from '../../../domain/value-objects/invoice-status';
+
+export class InvoiceResponseDto {
+  @ApiProperty({
+    description: 'Identificador de la factura.',
+    example: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    format: 'uuid',
+  })
+  id!: string;
+
+  @ApiProperty({ description: 'Importe en céntimos.', example: 149_900 })
+  amountCents!: number;
+
+  @ApiProperty({
+    description: 'Estado de la factura. Una factura `issued` no vuelve a `draft`.',
+    enum: [...INVOICE_STATUSES],
+    example: 'issued',
+  })
+  status!: InvoiceStatus;
+
+  // `type: String` + `format` explícitos: el tipo de diseño de un `Date` no basta para el esquema.
+  @ApiProperty({
+    description: 'Momento en que se creó el borrador, en UTC.',
+    example: '2026-08-01T10:15:00.000Z',
+    type: String,
+    format: 'date-time',
+  })
+  createdAt!: Date;
+
+  @ApiProperty({
+    description: 'Última modificación, en UTC: al emitirla, el instante de la emisión.',
+    example: '2026-08-01T12:30:00.000Z',
+    type: String,
+    format: 'date-time',
+  })
+  updatedAt!: Date;
+
+  /** El dominio nunca se serializa directamente: siempre pasa por este DTO. */
+  static fromDomain(invoice: Invoice): InvoiceResponseDto {
+    const snapshot = invoice.toSnapshot();
+    const dto = new InvoiceResponseDto();
+    dto.id = snapshot.id;
+    dto.amountCents = snapshot.amountCents;
+    dto.status = snapshot.status;
+    dto.createdAt = snapshot.createdAt;
+    dto.updatedAt = snapshot.updatedAt;
+    return dto;
+  }
+}
+```
+
 - **La ruta no lleva versión ni prefijo.** `applyGlobals()` (`src/main.ts`) pone el prefijo global y `enableVersioning({ type: VersioningType.URI, defaultVersion })`: `@Controller('invoices')` queda en `/api/v1/invoices`.
 - **⚠️ Dos rutas que puedan casar la misma petición abortan el arranque.** `NEST_APP_OPTIONS` (`src/main.ts`, compartido con `createTestApp()`) fija `routeConflictPolicy: { duplicate: 'error', shadow: 'error' }`, opción nueva de Nest 12 que por defecto vale `'off'` (`@nestjs/common/interfaces/nest-application-options.interface.d.ts`). Un `GET invoices/:id` junto a un `GET invoices/pending` hace fallar `app.init()` en cualquier orden. Si el patrón hace falta, se baja `shadow` a `'warn'` con el motivo escrito; nunca se quita la política.
 - **Autenticación segura por defecto.** `JwtAuthGuard` es `APP_GUARD` global (registrado en `auth.module.ts`): sin decorador, el endpoint ya exige JWT. `@Auth()` / `@Auth('admin')` declara el rol y adjunta la documentación de 401/403; `@Public()` lo abre; `@CurrentUser()` inyecta los claims.
-- **⚠️ El ejemplo omite a propósito los decoradores OpenAPI de la operación**, y así no pasaría la build: `src/bootstrap/__tests__/openapi-contract.e2e-spec.ts` recorre cada operación y exige `@ApiOperation` con `operationId`, `summary` y `description`, `@ApiEnvelope` con ejemplo, `@ApiStandardErrors()`, cada error del endpoint con ejemplo de `buildErrorExample()`, `@ApiParam`/`@ApiQuery`/`@ApiBody` con ejemplo. La lista completa está en `CLAUDE.md`, «Endpoint documentation»; copia `UsersController`.
+- **⚠️ El ejemplo omite a propósito los decoradores OpenAPI de la operación**, y así no pasaría la build: `src/bootstrap/__tests__/openapi-contract.e2e-spec.ts` recorre cada operación y exige `@ApiOperation` con `operationId`, `summary` y `description`, `@ApiEnvelope` con ejemplo, `@ApiStandardErrors()`, cada error del endpoint con ejemplo de `buildErrorExample()`, `@ApiParam`/`@ApiQuery`/`@ApiBody` con ejemplo. La lista completa está en `CLAUDE.md`, «Endpoint documentation»; copia `UsersController`. En el `example` del sobre, el `request` se construye con `buildRequestMetaExample(path)` (`@common/dto/example-meta.factory`) y cada error con `buildErrorExample()`: los literales comunes (`timestamp`, `requestId`) tienen una sola fuente.
 
 ## 6. Driven adapters (persistencia)
 
 **Dos modelos, nunca uno.** La entidad de dominio es una clase plana con invariantes; la entidad ORM (`<name>.orm-entity.ts`, con los decoradores de TypeORM) vive en `infrastructure/persistence/` y se descubre sola por el glob `*.orm-entity.ts`. Un mapper —objeto con `toDomain` y `toPersistence`— es el único puente: al leer usa `rehydrate`, al escribir usa `toSnapshot()`.
+
+**El mapper falla cerrado.** Envuelve `rehydrate` en `failClosed(rebuild, isDomainError, describe)` (`@common/persistence/fail-closed`): una fila que los VOs de hoy rechazan es un dato corrupto, no una entrada inválida, y como error de dominio el filtro del contexto la publicaría como 400 con el valor dentro. `failClosed` la convierte en un `Error` con el original como `cause`, que el filtro global responde con un 500. La excepción es un contexto cuyo filtro ya sanea ese error en un 500 propio (`auth`, con `InvalidCredentialIdError`): ahí `failClosed` dejaría ver el mensaje en el cuerpo en development y test. Calca: `src/modules/users/infrastructure/persistence/user.mapper.ts`.
+
+**El dominio es el dueño de las fechas.** Las columnas de fecha son `@Column({ type: 'timestamptz', default: () => 'now()' })`; ninguna entidad ORM usa `CreateDateColumn`, `UpdateDateColumn`, `DeleteDateColumn` ni `VersionColumn`, que TypeORM rellena por su cuenta (un `UpdateDateColumn` taparía un `touch()` olvidado). Tampoco decoradores de relación (`ManyToOne`, `OneToMany`, `JoinColumn`…): el esquema no tiene claves foráneas, para que los contextos puedan dejar de compartir base. Las dos prohibiciones las verifican las claves `orm-managed-columns` y `orm-relations` del test de contrato.
+
+```ts
+// src/modules/billing/infrastructure/persistence/invoice.orm-entity.ts
+// Calca: src/modules/orders/infrastructure/persistence/order.orm-entity.ts
+import { Column, Entity, PrimaryColumn } from 'typeorm';
+
+@Entity({ name: 'invoices' })
+export class InvoiceOrmEntity {
+  @PrimaryColumn({ type: 'uuid' })
+  id!: string;
+
+  @Column({ name: 'amount_cents', type: 'int' })
+  amountCents!: number;
+
+  // Las sella el dominio y el adaptador las escribe siempre: el DEFAULT solo cubre un INSERT
+  // que no las nombre.
+  @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
+  createdAt!: Date;
+
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'now()' })
+  updatedAt!: Date;
+
+  @Column({ type: 'varchar', length: 20, default: 'draft' })
+  status!: string;
+
+  @Column({ type: 'int', default: 1 })
+  version!: number;
+}
+```
+
+El outbox es del contexto: tabla propia, `billing_outbox`, y su entidad ORM vive aquí, no en un genérico compartido (§7).
+
+```ts
+// src/modules/billing/infrastructure/persistence/invoice-outbox-message.orm-entity.ts
+// Calca: src/modules/orders/infrastructure/persistence/outbox-message.orm-entity.ts
+import { Column, Entity, PrimaryColumn } from 'typeorm';
+
+/** Sin FK a `invoices`: la fila es autosuficiente (el payload lleva todo) y el relay no necesita join. */
+@Entity({ name: 'billing_outbox' })
+export class InvoiceOutboxMessageOrmEntity {
+  @PrimaryColumn({ type: 'uuid' })
+  id!: string;
+
+  @Column({ name: 'event_type', type: 'varchar', length: 120 })
+  eventType!: string;
+
+  @Column({ type: 'jsonb' })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: 'occurred_at', type: 'timestamptz' })
+  occurredAt!: Date;
+
+  @Column({ name: 'processed_at', type: 'timestamptz', nullable: true })
+  processedAt!: Date | null;
+}
+```
+
+```ts
+// src/modules/billing/infrastructure/persistence/invoice.mapper.ts
+// Calca: src/modules/orders/infrastructure/persistence/order.mapper.ts
+import { failClosed } from '@common/persistence/fail-closed';
+
+import { Invoice } from '../../domain/entities/invoice.entity';
+import { InvoiceDomainError } from '../../domain/errors/invoice.errors';
+import { InvoiceAmount } from '../../domain/value-objects/invoice-amount.vo';
+import { InvoiceId } from '../../domain/value-objects/invoice-id.vo';
+import { INVOICE_STATUSES, type InvoiceStatus } from '../../domain/value-objects/invoice-status';
+
+import { InvoiceOrmEntity } from './invoice.orm-entity';
+
+const isInvoiceStatus = (value: string): value is InvoiceStatus =>
+  (INVOICE_STATUSES as readonly string[]).includes(value);
+
+// Predicado local y no exportado desde `invoice.errors.ts`: ese archivo solo puede exportar clases
+// (clave `errors` del test de contrato de módulo).
+const isInvoiceDomainError = (error: unknown): error is InvoiceDomainError =>
+  error instanceof InvoiceDomainError;
+
+/**
+ * La columna tiene `DEFAULT 1` pero ningún `CHECK`. Una fila con versión 0 —que solo puede venir
+ * de fuera del código: un arreglo a mano, un backfill— haría que el adaptador tomara la factura
+ * por una sin guardar: su `save` iría por el INSERT, chocaría con su propio id y respondería un
+ * 409 en cada intento, sin forma de emitirla nunca.
+ */
+const readVersion = (row: InvoiceOrmEntity): number => {
+  if (row.version < 1) {
+    throw new Error(
+      `La factura ${row.id} tiene una versión imposible para una fila guardada: ${row.version}`,
+    );
+  }
+  return row.version;
+};
+
+/**
+ * Única frontera entre la fila y el agregado: `rehydrate` al leer, que no re-emite eventos, y
+ * `toSnapshot()` al escribir. Falla cerrado: un `status` que este código no conoce (la columna es
+ * un `varchar` sin `CHECK`), una `version` menor que 1 o una fila que los VOs de hoy rechazan es
+ * un dato corrupto, y sale como 500, nunca como un 400 con el valor dentro.
+ */
+export const InvoiceMapper = {
+  toDomain(row: InvoiceOrmEntity): Invoice {
+    const { status } = row;
+    if (!isInvoiceStatus(status)) {
+      throw new Error(`La factura ${row.id} tiene un estado desconocido: "${status}"`);
+    }
+    const version = readVersion(row);
+    return failClosed(
+      () =>
+        Invoice.rehydrate({
+          id: InvoiceId.from(row.id),
+          amount: InvoiceAmount.from(row.amountCents),
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          status,
+          version,
+        }),
+      isInvoiceDomainError,
+      (error) => `La factura ${row.id} tiene datos que el dominio rechaza: ${error.message}`,
+    );
+  },
+
+  toPersistence(invoice: Invoice): InvoiceOrmEntity {
+    const snapshot = invoice.toSnapshot();
+    const row = new InvoiceOrmEntity();
+    row.id = snapshot.id;
+    row.amountCents = snapshot.amountCents;
+    row.createdAt = snapshot.createdAt;
+    row.updatedAt = snapshot.updatedAt;
+    row.status = snapshot.status;
+    row.version = snapshot.version;
+    return row;
+  },
+};
+```
 
 ```ts
 // src/modules/billing/infrastructure/persistence/invoice.typeorm.repository.ts
@@ -363,11 +614,16 @@ export class InvoiceTypeOrmRepository implements InvoiceRepository {
           throw error;
         }
       } else {
-        // Solo lo mutable, y solo si la fila sigue en la versión que se leyó.
+        // Solo lo mutable, con el `updatedAt` que selló el dominio, y solo si la fila sigue en
+        // la versión que se leyó.
         const result = await manager.update(
           InvoiceOrmEntity,
           { id: invoiceRow.id, version: invoiceRow.version },
-          { status: invoiceRow.status, version: invoiceRow.version + 1 },
+          {
+            status: invoiceRow.status,
+            updatedAt: invoiceRow.updatedAt,
+            version: invoiceRow.version + 1,
+          },
         );
         if (result.affected !== 1) {
           throw new InvoiceVersionConflictError(invoiceRow.id);
@@ -412,15 +668,18 @@ El flujo es el de `orders`, y no hay bus en memoria (`@nestjs/event-emitter` y `
 
 ## 8. Errores de dominio
 
-Cada contexto tiene una jerarquía en `domain/errors/<aggregate>.errors.ts`: una base abstracta y errores concretos que guardan el dato ofensor. **No heredan de `HttpException` ni conocen códigos HTTP.**
+Cada contexto tiene una jerarquía en `domain/errors/<aggregate>.errors.ts`: una raíz abstracta y errores concretos que guardan el dato ofensor. **No heredan de `HttpException` ni conocen códigos HTTP.** La raíz extiende `DomainError` del kernel (`@shared/domain/domain-error`) y no declara constructor: el protegido y el `name` de la clase concreta (`new.target.name`) los pone la base. Cada contexto conserva su propia raíz porque es la que atrapa el `@Catch` de su filtro; `DomainError` no puede serlo, ya que atraparía también los errores ajenos.
 
 ```ts
 // src/modules/billing/domain/errors/invoice.errors.ts
 // Calca: src/modules/users/domain/errors/user.errors.ts
-export abstract class InvoiceDomainError extends Error {
-  protected constructor(message: string) {
-    super(message);
-    this.name = new.target.name;
+import { DomainError } from '@shared/domain/domain-error';
+
+export abstract class InvoiceDomainError extends DomainError {}
+
+export class InvalidInvoiceIdError extends InvoiceDomainError {
+  constructor(readonly value: string) {
+    super(`"${value}" is not a valid invoice id`);
   }
 }
 
@@ -450,18 +709,17 @@ export class InvoiceVersionConflictError extends InvoiceDomainError {
 }
 ```
 
-La traducción a HTTP es de un filtro **del propio contexto**, en `infrastructure/http/`, aplicado con `@UseFilters` en su controller (§5). Relanza una excepción de Nest y el `AllExceptionsFilter` global (`APP_FILTER` en `app.module.ts`) da forma a la respuesta.
+La traducción a HTTP es de **un filtro por contexto**, `infrastructure/http/<context>-domain-exception.filter.ts`, aplicado con `@UseFilters` en cada controller del contexto (§5). Extiende `DomainExceptionFilter<Raíz>` (`@common/filters/domain-exception.filter`) y solo declara su tabla `mappings`: **gana la primera coincidencia** por `instanceof`, en el orden de la tabla, y lo no mapeado es el 400 de la base (un error de dominio sin mapeo es entrada inválida, no un fallo del servidor). La base siempre relanza una excepción de Nest, y el `AllExceptionsFilter` global (`APP_FILTER` en `app.module.ts`) da forma a la respuesta.
 
 ```ts
-// src/modules/billing/infrastructure/http/invoice-domain-exception.filter.ts
-// Calca: src/modules/users/infrastructure/http/user-domain-exception.filter.ts
+// src/modules/billing/infrastructure/http/billing-domain-exception.filter.ts
+// Calca: src/modules/users/infrastructure/http/users-domain-exception.filter.ts
+import { Catch, ConflictException, NotFoundException } from '@nestjs/common';
+
 import {
-  BadRequestException,
-  Catch,
-  ConflictException,
-  NotFoundException,
-  type ExceptionFilter,
-} from '@nestjs/common';
+  DomainExceptionFilter,
+  type DomainErrorMapping,
+} from '@common/filters/domain-exception.filter';
 
 import {
   InvoiceDomainError,
@@ -471,40 +729,35 @@ import {
 } from '../../domain/errors/invoice.errors';
 
 @Catch(InvoiceDomainError)
-export class InvoiceDomainExceptionFilter implements ExceptionFilter {
-  catch(exception: InvoiceDomainError): never {
-    if (exception instanceof InvoiceNotFoundError) {
-      throw new NotFoundException(exception.message);
-    }
-    if (
-      exception instanceof InvoiceNotDraftError ||
-      exception instanceof InvoiceVersionConflictError
-    ) {
-      throw new ConflictException(exception.message);
-    }
-    // Un error de dominio sin mapeo explícito es entrada inválida, no fallo del servidor.
-    throw new BadRequestException(exception.message);
-  }
+export class BillingDomainExceptionFilter extends DomainExceptionFilter<InvoiceDomainError> {
+  protected readonly mappings: readonly DomainErrorMapping<InvoiceDomainError>[] = [
+    { error: InvoiceNotFoundError, toHttp: (error) => new NotFoundException(error.message) },
+    { error: InvoiceNotDraftError, toHttp: (error) => new ConflictException(error.message) },
+    { error: InvoiceVersionConflictError, toHttp: (error) => new ConflictException(error.message) },
+  ];
 }
 ```
 
+- **Cada subclase lleva su propio `@Catch(<raíz>)`, con un solo argumento, y la base no lleva ninguno**: Nest lee esos metadatos recorriendo la cadena de prototipos, así que las subclases heredarían el de la base, y ningún valor sirve a todas. Un filtro sin `@Catch` lo atrapa todo y, en las rutas de su controller, convertiría en 400 el 401 del guard JWT, el 403 de roles, el 408 del timeout y el 429 del throttler: de ese olvido protege la clave `filter` del test de contrato.
+- **La anotación de `mappings` es obligatoria** (sin ella cada flecha da `TS7006`), las entradas son funciones flecha (`unbound-method`) y **el filtro no declara constructor**: Nest lo crea como injectable del módulo y no hay nada que inyectar. La raíz no puede ser una entrada (su constructor protegido da `TS2322`): ya la cubre el 400.
 - **Construye la excepción de Nest con un string, no con un objeto.** Medido con `@nestjs/common` 12.1.0: `new NotFoundException('…').getResponse()` da `{ message, error: 'Not Found', statusCode: 404 }`, con el nombre canónico que `buildErrorExample()` deriva del status; con un objeto, el cuerpo es ese objeto tal cual y `error` desaparece. El nombre de la clase de dominio nunca llega al cliente.
 - Nunca se importa `HttpException` (ni sus subclases) en `domain/` ni en `application/`.
 - **Entre contextos no viajan excepciones**: un módulo no puede importar los errores de otro, así que la fachada devuelve un resultado (`{ ok: false, reason: 'email-taken' }`) y el consumidor lo traduce a un error suyo (§10).
 
 ## 9. Tests por capa
 
-| Capa                          | Tipo               | Herramienta                                                 | Qué prueba                                                                             |
-| ----------------------------- | ------------------ | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Domain                        | Unitario puro      | Jest, sin mocks                                             | Invariantes de entidades y VOs                                                         |
-| Application                   | Unitario con fakes | Jest + fakes in-memory escritos a mano                      | Casos de uso contra puertos fake                                                       |
-| Infrastructure (traducción)   | Unitario           | Jest, sin base (PBT en los round-trips de mapper)           | Mappers, filtros de dominio, controllers, guards, DTOs, adaptadores ACL y de seguridad |
-| Infrastructure (persistencia) | Integración        | Jest contra PostgreSQL real (base de test, `pnpm test:e2e`) | Repositorios TypeORM (`*.typeorm.repository.e2e-spec.ts`)                              |
-| HTTP                          | E2E                | Jest + Supertest sobre el `AppModule` real                  | Endpoint completo: pipes, guard, filtros, base                                         |
+| Capa                                      | Tipo               | Herramienta                                                 | Qué prueba                                                                             |
+| ----------------------------------------- | ------------------ | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Domain (y el kernel `src/shared/domain/`) | Unitario puro      | Jest, sin mocks                                             | Invariantes de entidades y VOs; las bases del kernel con dobles de prueba              |
+| Application                               | Unitario con fakes | Jest + fakes in-memory escritos a mano                      | Casos de uso contra puertos fake                                                       |
+| Infrastructure (traducción)               | Unitario           | Jest, sin base (PBT en los round-trips de mapper)           | Mappers, filtros de dominio, controllers, guards, DTOs, adaptadores ACL y de seguridad |
+| Infrastructure (persistencia)             | Integración        | Jest contra PostgreSQL real (base de test, `pnpm test:e2e`) | Repositorios TypeORM (`*.typeorm.repository.e2e-spec.ts`)                              |
+| HTTP                                      | E2E                | Jest + Supertest sobre el `AppModule` real                  | Endpoint completo: pipes, guard, filtros, base                                         |
+| Arquitectura                              | Unitario           | Jest + la API de TypeScript, sin type-check salvo esta referencia | Contrato de módulo, fronteras de ESLint, cero claves foráneas en las migraciones y que esta referencia cumpla el contrato y compile (`nestjs-mapping.spec.ts`) |
 
 **Importante:** los tests de dominio no levantan `Test.createTestingModule`. Son `Invoice.draft(...)` puro.
 
-**En `infrastructure/` la base la pide lo que toca el SUT, no la carpeta.** De los 18 specs que hay hoy bajo `__tests__/infrastructure/` de los tres contextos, solo los 3 `*.typeorm.repository.e2e-spec.ts` corren en `pnpm test:e2e`. Los otros 15 son `*.spec.ts` de `pnpm test` y no abren conexión: mappers, filtros, controllers, guard, DTO, hasher, signer y adaptadores ACL.
+**En `infrastructure/` la base la pide lo que toca el SUT, no la carpeta.** De los specs bajo `__tests__/infrastructure/` de los tres contextos, solo los `*.typeorm.repository.e2e-spec.ts` corren en `pnpm test:e2e`. Los demás son `*.spec.ts` de `pnpm test` y no abren conexión: mappers, filtros, controllers, guard, DTOs, hasher, signer y adaptadores ACL.
 
 **Convenciones de archivo y mocking** se rigen por el skill `javascript-typescript-jest`:
 
@@ -515,7 +768,7 @@ export class InvoiceDomainExceptionFilter implements ExceptionFilter {
 - **Application:** fakes escritos a mano de los puertos en `__tests__/helpers/` (p. ej. `in-memory-user.repository.ts`, que hace `implements UserRepository` con `import type`); nunca `jest.mock` contra rutas de módulo.
 - **Infrastructure:** sin base todo lo que solo traduce:
   - el mapper, con un round-trip PBT (`user.mapper.spec.ts`);
-  - el filtro, con errores de dominio reales y la excepción de Nest esperada (`user-domain-exception.filter.spec.ts`);
+  - el filtro, con errores de dominio reales y la excepción de Nest esperada (`users-domain-exception.filter.spec.ts`);
   - el controller, con sus casos de uso reales sobre los fakes (`users.controller.spec.ts`);
   - el adaptador ACL, con la puerta ajena como objeto literal (`users-customer.directory.spec.ts`).
 
@@ -525,7 +778,7 @@ export class InvoiceDomainExceptionFilter implements ExceptionFilter {
 
 **Property-based testing (PBT) con `fast-check` + `@fast-check/jest`** — los invariantes de dominio (importe siempre positivo, `issue` solo desde `draft`) y el round-trip del mapper en infraestructura son el caso ideal. Las arbitrarias se **construyen**, nunca se `.filter()`-an sobre `fc.string()`. Ver la subsección «Property-based testing» del skill `javascript-typescript-jest`.
 
-**La mutación es gate**: `thresholds.break` en `stryker.config.mjs` y job propio en CI. Un módulo nuevo sin casos no entra en silencio. Para auditar solo lo que cambió una rama, `pnpm test:mutation:changed [base]`; para un módulo entero, `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"` (sin llaves: Stryker parte `--mutate` por comas antes de expandirlas y daría cero mutantes en verde).
+**La mutación es gate**: `thresholds.break` en `stryker.config.mjs` y job propio en CI. Un módulo nuevo sin casos no entra en silencio. Para auditar solo lo que cambió una rama, `pnpm test:mutation:changed [base]`; para un módulo entero, `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"` (sin llaves: Stryker parte `--mutate` por comas antes de expandirlas y daría cero mutantes en verde). El kernel se audita con `pnpm test:mutation --mutate "src/shared/domain/**/*.ts"`, con objetivo del 100 %: todo contexto hereda de él.
 
 ## 10. Composición entre contextos
 
@@ -533,6 +786,8 @@ export class InvoiceDomainExceptionFilter implements ExceptionFilter {
 - **Puertas segregadas por intención.** Una sola implementación (`UsersFacadeImpl`) detrás de varios tokens con `useExisting` —con dos `useClass` habría dos instancias—. Quien solo consulta inyecta `UsersLookup` y no puede llamar a `deleteProfile` porque el tipo que recibe no lo declara.
 - **El consumidor define su propio puerto** (`orders/domain/ports/customer.directory.ts`) y lo implementa un adaptador ACL en su `infrastructure/` (`users-customer.directory.ts`), que inyecta la puerta importada del module file ajeno. El módulo consumidor importa el módulo ajeno en `imports`.
 - **Las puertas devuelven primitivos o resultados, nunca el agregado** ni excepciones de negocio.
+- **Los ids de otro contexto viajan como `string`** (`Order.customerId`, `Credential.userId`): la regla 3 de las fronteras prohíbe importar `UserId` fuera de `users`.
+- **El puerto del consumidor es la costura para extraer al proveedor.** Si `users` pasara a ser un servicio, `CustomerDirectory` y `UserDirectory` recibirían un adaptador HTTP o RPC y ni el dominio ni la aplicación del consumidor cambiarían: ver `docs/architecture.md`, «Extraer un módulo a un servicio».
 - **Dirección única.** `auth → users` y `orders → users`; si `users` importara a quien lo consume nacería un ciclo. Lo compartido por varios (`@Public`, `@Auth`, `@CurrentUser`, `AuthenticatedUser`) vive en `common/`.
 - **Guard global desde un módulo.** `APP_GUARD` es multi-provider: `auth.module.ts` lo registra y protege toda la app sin que `AppModule` importe internos de ningún módulo.
 - El root `AppModule` solo importa los módulos de contexto y la configuración global; no contiene lógica.
@@ -541,13 +796,18 @@ export class InvoiceDomainExceptionFilter implements ExceptionFilter {
 ## 11. Checklist al diseñar un nuevo módulo
 
 - [ ] Defino el aggregate root y sus VOs antes de pensar en endpoints
+- [ ] La raíz de errores extiende `DomainError`; las entidades, `Entity<TId>` o `AggregateRoot<TId, TEvent>`; el id, `UuidIdentifier<'<Clase>'>`, con su `from()` y su `generate()`
+- [ ] Cada método de intención llama a `touch(now)` después de su guarda, y ninguna entidad redeclara `id`, `createdAt` ni `updatedAt`
 - [ ] Cada puerto es una `abstract class` en `domain/ports/`, solo con miembros `abstract` públicos
 - [ ] Cada adaptador hace `implements` del puerto y se cablea con `{ provide: Puerto, useClass: Adaptador }`
 - [ ] Ningún archivo con decoradores importa un puerto con `import type`
 - [ ] Un caso de uso por archivo en `application/use-cases/`, con su `…Input` y un único `execute()`
 - [ ] El controller vive en `infrastructure/http/`, llama a `execute({ … })` y lleva la documentación OpenAPI completa
 - [ ] La entidad ORM y el mapper viven en `infrastructure/persistence/`; el dominio no tiene decoradores
-- [ ] Errores de dominio tipados, traducidos por el filtro del contexto con excepciones construidas con string
+- [ ] Las fechas de la entidad ORM son `@Column({ type: 'timestamptz', default: () => 'now()' })`, sin columnas que rellene TypeORM ni decoradores de relación
+- [ ] El mapper envuelve `rehydrate` en `failClosed`, salvo que el filtro del contexto ya sanee el error
+- [ ] Errores de dominio tipados, traducidos por `<context>-domain-exception.filter.ts`: una subclase de `DomainExceptionFilter` con su `@Catch(<raíz>)` y su tabla `mappings`, con excepciones construidas con string
 - [ ] Tests en `__tests__/` espejo, 1:1; dominio puro, aplicación con fakes, repositorios contra PostgreSQL
 - [ ] Ningún archivo de `domain/` importa de `@nestjs/*` ni de `infrastructure/`
+- [ ] `pnpm test src/__tests__/module-contract.spec.ts` en verde, sin añadir el contexto a `FLAT_MODULES`
 - [ ] El módulo está en `imports` de `AppModule`, su scope en `commitlint.config.cjs` y, si hay tablas, su migración generada

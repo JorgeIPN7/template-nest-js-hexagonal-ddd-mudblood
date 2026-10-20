@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
  *
  *   - **No borra los bounded contexts de ejemplo** (`users`, `auth`, `orders`). Quitar uno
  *     toca su carpeta, `app.module.ts`, las migraciones que ya crearon sus tablas, el
- *     `scope-enum` de commitlint, los umbrales de `stryker.config.mjs` —el 85 está calibrado
+ *     `scope-enum` de commitlint, los umbrales de `stryker.config.mjs` —el 90 está calibrado
  *     sobre el peso en mutantes de los módulos ACTUALES— y varias secciones de README,
  *     CLAUDE.md y docs/. Un script que lo hiciera a ciegas entregaría un repo que no compila, y el
  *     autor lo descubriría en el primer `pnpm build`. La checklist manual, por módulo, está

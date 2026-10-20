@@ -1,17 +1,26 @@
+import { DomainError } from '@shared/domain/domain-error';
+
 /**
- * Errores de dominio de `auth`: de negocio, no de transporte. No heredan de `HttpException`
- * ni conocen códigos HTTP — traducirlos es tarea de
- * `infrastructure/http/auth-domain-exception.filter.ts`. Mismo contrato que `user.errors.ts`
- * y `order.errors.ts`.
+ * Raíz de los errores de dominio de `auth`: la que atrapa el `@Catch` de su filtro. Sin
+ * constructor propio: el protegido y el `name` de la clase concreta los pone `DomainError`, la
+ * base del kernel. Son errores de negocio, no de transporte: traducirlos a una respuesta es tarea
+ * de `infrastructure/http/auth-domain-exception.filter.ts`.
  *
  * `InvalidCredentialsError` e `InvalidPasswordHashError` VIVÍAN en `users`: se mudaron aquí
  * con la credencial. `users` ya no sabe qué es una contraseña, así que tampoco puede tener
  * los errores que hablan de ella.
  */
-export abstract class AuthDomainError extends Error {
-  protected constructor(message: string) {
-    super(message);
-    this.name = new.target.name;
+export abstract class AuthDomainError extends DomainError {}
+
+/**
+ * La fila de `auth_credentials` tiene un id que no es un uuid v4: solo puede dejarlo un SQL
+ * externo a la aplicación. El mensaje lleva el valor, como `InvalidUserIdError`, porque un id de
+ * credencial no es un secreto; aun así solo llega al log, porque el filtro responde un 500
+ * saneado.
+ */
+export class InvalidCredentialIdError extends AuthDomainError {
+  constructor(readonly value: string) {
+    super(`"${value}" is not a valid credential id`);
   }
 }
 

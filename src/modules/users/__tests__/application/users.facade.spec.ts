@@ -1,6 +1,9 @@
+import { captureRejection } from '@test/helpers/capture-error';
+
 import { UsersFacadeImpl } from '../../application/users.facade';
 import { CreateUserUseCase } from '../../application/use-cases/create-user.use-case';
 import type { User } from '../../domain/entities/user.entity';
+import type { Email } from '../../domain/value-objects/email.vo';
 import { UserId } from '../../domain/value-objects/user-id.vo';
 import { InMemoryUserRepository } from '../helpers/in-memory-user.repository';
 import { buildInactiveUser, buildUser, buildUserWithEmail } from '../helpers/user.factory';
@@ -28,6 +31,8 @@ import { buildInactiveUser, buildUser, buildUserWithEmail } from '../helpers/use
  * | F13 | findByEmail    | Email malformado                         | `null` sin lanzar                                   |
  * | F14 | deleteProfile  | Id existente                             | Borra la fila                                       |
  * | F15 | deleteProfile  | Id inexistente o malformado              | No lanza y no borra nada                            |
+ * | F16 | createProfile  | Búsqueda previa con error no de dominio  | Lo relanza intacto, nunca `invalid-profile`         |
+ * | F17 | findByEmail    | Email malformado                         | `null` sin consultar el repositorio                 |
  */
 describe('UsersFacadeImpl', () => {
   describe('userExists()', () => {
@@ -181,6 +186,23 @@ describe('UsersFacadeImpl', () => {
       expect(user).not.toHaveProperty('toSnapshot');
       expect(user).not.toHaveProperty('passwordHash');
     });
+
+    // Es lo que hace que una fila corrupta dé un 500 del alta y no un `invalid-profile` con el
+    // dato de otra cuenta: el mapper la convierte en un `Error` plano, que no es de dominio.
+    it('debería propagar intacto un error que no es de dominio al crear el perfil, sin convertirlo en invalid-profile', async () => {
+      // Arrange
+      const failure = new Error('fila corrupta');
+      const repository = new FailingLookupUserRepository(failure);
+      const facade = new UsersFacadeImpl(repository, new CreateUserUseCase(repository));
+
+      // Act
+      const error = await captureRejection(
+        facade.createProfile({ email: 'perfil.nuevo@example.com', name: 'Perfil Nuevo' }),
+      );
+
+      // Assert
+      expect(error).toBe(failure);
+    });
   });
 
   describe('findByEmail()', () => {
@@ -220,6 +242,24 @@ describe('UsersFacadeImpl', () => {
       // Assert
       expect(result).toBeNull();
     });
+
+    // El fake en memoria responde `null` también a una consulta con el email `undefined`, así que
+    // la fila anterior no ve si la fachada llega a consultar; el repositorio TypeORM, sí: lanzaría
+    // al leer `email.value`, y el login respondería 500 en vez de 401.
+    it('debería devolver null ante un email malformado sin consultar el repositorio', async () => {
+      // Arrange
+      const repository = new RecordingLookupUserRepository();
+      const facade = new UsersFacadeImpl(repository, new CreateUserUseCase(repository));
+
+      // Act
+      const result = await facade.findByEmail('sin-arroba');
+
+      // Assert
+      expect(result).toBeNull();
+      // `toHaveLength` y no `toEqual([])`: `toEqual` ignora los `undefined` de un array, y la
+      // consulta que se escapa lleva justo un email `undefined`.
+      expect(repository.queried).toHaveLength(0);
+    });
   });
 
   describe('deleteProfile()', () => {
@@ -257,3 +297,24 @@ const build = (seed: User[] = []) => {
   const repository = new InMemoryUserRepository(seed);
   return { repository, facade: new UsersFacadeImpl(repository, new CreateUserUseCase(repository)) };
 };
+
+/** Un repositorio cuya búsqueda por email falla como ante una fila corrupta: con un `Error` plano. */
+class FailingLookupUserRepository extends InMemoryUserRepository {
+  constructor(private readonly failure: Error) {
+    super();
+  }
+
+  findByEmail(): Promise<User | null> {
+    return Promise.reject(this.failure);
+  }
+}
+
+/** Un repositorio que registra cada email con que se le consulta por `findByEmail`. */
+class RecordingLookupUserRepository extends InMemoryUserRepository {
+  readonly queried: Email[] = [];
+
+  findByEmail(email: Email): Promise<User | null> {
+    this.queried.push(email);
+    return super.findByEmail(email);
+  }
+}

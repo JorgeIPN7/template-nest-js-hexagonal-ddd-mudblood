@@ -2,9 +2,9 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 /**
  * Modelo de persistencia, deliberadamente distinto del agregado `Order` — dos modelos,
- * un mapper (convención del repo). Sin `CreateDateColumn`: `placed_at` lo sella el
- * dominio en `Order.place()`, no la base. Sin `updatedAt`: el único cambio posible, la
- * cancelación, ya queda sellado en `cancelled_at`.
+ * un mapper (convención del repo). Sin `CreateDateColumn` ni `UpdateDateColumn`: `created_at`
+ * y `updated_at` los sella el dominio (`Order.place()` y `Order.cancel()`), no la base, y el
+ * adaptador los escribe siempre. El `DEFAULT now()` solo cubre un INSERT que no las nombre.
  *
  * `version` es una columna normal y no un `@VersionColumn`: TypeORM la incrementaría en su
  * `save()` sin comprobar nada. La comprobación es el `WHERE version = …` que escribe el
@@ -24,8 +24,11 @@ export class OrderOrmEntity {
   @Column({ name: 'amount_cents', type: 'int' })
   amountCents!: number;
 
-  @Column({ name: 'placed_at', type: 'timestamptz' })
-  placedAt!: Date;
+  @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
+  createdAt!: Date;
+
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'now()' })
+  updatedAt!: Date;
 
   // Los DEFAULT no son decorativos: con ellos la migración es aditiva y una réplica vieja,
   // cuyo INSERT solo enumera las columnas que conoce, sigue insertando durante el despliegue.

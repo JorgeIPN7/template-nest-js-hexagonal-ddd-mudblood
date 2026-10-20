@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
@@ -253,6 +255,37 @@ describe('Users (e2e)', () => {
     });
   });
 
+  // Una fila que el dominio rechaza es un fallo del servidor, no una entrada inválida: 500 y log
+  // `fatal`, nunca un 400 con el dato dentro. Solo se mira el status, porque en test el cuerpo
+  // lleva el mensaje envuelto; en producción y staging lleva el genérico.
+  describe('fila corrupta', () => {
+    it.each([
+      ['GET /users/:id', 'user'],
+      ['GET /users', 'admin'],
+      ['DELETE /users/:id', 'admin'],
+    ] as const)(
+      'debería responder 500 en %s cuando la fila del usuario está corrupta',
+      async (route, role) => {
+        // Arrange: el email no tiene arroba y la columna, sin CHECK, lo admite. El id sí es un
+        // UUID v4, para pasar el `UserId.from` del path.
+        const id = randomUUID();
+        await dataSource.query(
+          "INSERT INTO users (id, email, name) VALUES ($1, 'sin-arroba', 'Fila Corrupta')",
+          [id],
+        );
+        // El token se resuelve aquí y no en la tabla: lo asigna el `beforeAll`, y la tabla se
+        // evalúa antes, al recolectar la suite.
+        const token = role === 'admin' ? adminToken : userToken;
+
+        // Act
+        const response = await requestFor(route, id).set('Authorization', `Bearer ${token}`);
+
+        // Assert
+        expect(response.status).toBe(500);
+      },
+    );
+  });
+
   describe('autenticación y autorización', () => {
     it('debería responder 401 en GET /users sin token', async () => {
       // Act
@@ -358,6 +391,17 @@ describe('Users (e2e)', () => {
 
   const postRegister = (payload: Record<string, unknown>) =>
     request(app.getHttpServer()).post(`${prefix}/auth/register`).send(payload);
+
+  /** La petición de una fila de `fila corrupta` sobre el usuario `id`, sin el token todavía. */
+  const requestFor = (route: 'GET /users/:id' | 'GET /users' | 'DELETE /users/:id', id: string) => {
+    const server = request(app.getHttpServer());
+    if (route === 'GET /users') {
+      return server.get(`${prefix}/users`);
+    }
+    return route === 'GET /users/:id'
+      ? server.get(`${prefix}/users/${id}`)
+      : server.delete(`${prefix}/users/${id}`);
+  };
 
   const truncateAccounts = async (): Promise<void> => {
     await dataSource.query('TRUNCATE TABLE auth_credentials');

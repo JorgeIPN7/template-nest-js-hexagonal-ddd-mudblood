@@ -1,4 +1,5 @@
 import { AggregateRoot } from '@shared/domain/aggregate-root';
+import type { BaseEntityProps } from '@shared/domain/entity.base';
 
 import { OrderCancelled } from '../events/order-cancelled.event';
 import { OrderPlaced } from '../events/order-placed.event';
@@ -14,7 +15,8 @@ export type OrderSnapshot = {
   customerId: string;
   concept: string;
   amountCents: number;
-  placedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
   status: OrderStatus;
   cancelledAt: Date | null;
   version: number;
@@ -31,19 +33,24 @@ export type OrderSnapshot = {
  * `version` es la versión con la que se LEYÓ el pedido (0 = aún no guardado), no un contador
  * de cambios: `cancel()` no la toca. Es la versión esperada que el adaptador compara en el
  * `UPDATE … WHERE version = …` de la concurrencia optimista.
+ *
+ * `id`, `createdAt` y `updatedAt` vienen de `Entity`: colocar un pedido es crearlo, así que
+ * `place()` sella las dos fechas con `now`, y `cancel()` llama a `touch(now)` después de su
+ * guarda de idempotencia, de modo que el segundo cancel no mueve nada. No se corrige el reloj con
+ * un `max(now, createdAt)`: una cancelación anterior a la colocación se guarda tal cual
+ * (backlog #31).
  */
-export class Order extends AggregateRoot<OrderEvent> {
+export class Order extends AggregateRoot<OrderId, OrderEvent> {
   private constructor(
-    readonly id: OrderId,
+    base: BaseEntityProps<OrderId>,
     readonly customerId: string,
     readonly concept: OrderConcept,
     readonly amount: OrderAmount,
-    readonly placedAt: Date,
     private _status: OrderStatus,
     private _cancelledAt: Date | null,
     readonly version: number,
   ) {
-    super();
+    super(base);
   }
 
   static place(params: {
@@ -54,11 +61,10 @@ export class Order extends AggregateRoot<OrderEvent> {
     now: Date;
   }): Order {
     const order = new Order(
-      params.id,
+      { id: params.id, createdAt: params.now, updatedAt: params.now },
       params.customerId,
       params.concept,
       params.amount,
-      params.now,
       'placed',
       null,
       0,
@@ -75,17 +81,17 @@ export class Order extends AggregateRoot<OrderEvent> {
     customerId: string;
     concept: OrderConcept;
     amount: OrderAmount;
-    placedAt: Date;
+    createdAt: Date;
+    updatedAt: Date;
     status: OrderStatus;
     cancelledAt: Date | null;
     version: number;
   }): Order {
     return new Order(
-      params.id,
+      { id: params.id, createdAt: params.createdAt, updatedAt: params.updatedAt },
       params.customerId,
       params.concept,
       params.amount,
-      params.placedAt,
       params.status,
       params.cancelledAt,
       params.version,
@@ -110,6 +116,7 @@ export class Order extends AggregateRoot<OrderEvent> {
     }
     this._status = 'cancelled';
     this._cancelledAt = now;
+    this.touch(now);
     this.record(new OrderCancelled(this.id.value, this.customerId, now));
   }
 
@@ -119,7 +126,8 @@ export class Order extends AggregateRoot<OrderEvent> {
       customerId: this.customerId,
       concept: this.concept.value,
       amountCents: this.amount.value,
-      placedAt: this.placedAt,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
       status: this._status,
       cancelledAt: this._cancelledAt,
       version: this.version,

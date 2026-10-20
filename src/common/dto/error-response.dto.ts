@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 
+import { EXAMPLE_REQUEST_ID, EXAMPLE_TIMESTAMP } from './example-meta.factory';
+
 /**
  * Contrato de error que realmente devuelve `AllExceptionsFilter`. Antes no existía en el
  * OpenAPI: el documento publicado describía únicamente los caminos felices, así que un SDK
@@ -23,7 +25,7 @@ export class ErrorResponseDto {
   /**
    * Medido, no supuesto: `AllExceptionsFilter` toma `body.error ?? exception.name`, y cuando el
    * error viene de una `HttpException` construida con un string —que es lo que hace
-   * `UserDomainExceptionFilter`— Nest ya rellena `body.error` con el nombre canónico del status.
+   * `UsersDomainExceptionFilter`— Nest ya rellena `body.error` con el nombre canónico del status.
    * Así que aquí sale `Conflict`, `Not Found` o `Bad Request`, **nunca** el nombre de la clase de
    * dominio: `UserNotFoundError` no llega jamás al cliente. Poner ese ejemplo, como estaba antes,
    * anunciaba un valor imposible e invitaba a bifurcar por algo que no existe.
@@ -36,14 +38,14 @@ export class ErrorResponseDto {
   })
   error!: string;
 
-  @ApiProperty({ example: '2026-08-01T10:15:00.000Z', format: 'date-time' })
+  @ApiProperty({ example: EXAMPLE_TIMESTAMP, format: 'date-time' })
   timestamp!: string;
 
   @ApiProperty({ example: '/api/v1/users/9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012' })
   path!: string;
 
   @ApiProperty({
-    example: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+    example: EXAMPLE_REQUEST_ID,
     description:
       'Correlaciona la respuesta con la traza en los logs. Inclúyelo al reportar una incidencia.',
   })

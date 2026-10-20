@@ -1,5 +1,9 @@
 import { Credential } from '../../../domain/entities/credential.entity';
-import { InvalidPasswordHashError } from '../../../domain/errors/auth.errors';
+import {
+  InvalidCredentialIdError,
+  InvalidPasswordHashError,
+} from '../../../domain/errors/auth.errors';
+import { CredentialId } from '../../../domain/value-objects/credential-id.vo';
 import { PasswordHash } from '../../../domain/value-objects/password-hash.vo';
 import { CredentialMapper } from '../../../infrastructure/persistence/credential.mapper';
 import { CredentialOrmEntity } from '../../../infrastructure/persistence/credential.orm-entity';
@@ -20,7 +24,7 @@ describe('CredentialMapper', () => {
 
       // Assert
       expect(row).toBeInstanceOf(CredentialOrmEntity);
-      expect(row.id).toBe(credential.id);
+      expect(row.id).toBe(credential.id.value);
       expect(row.userId).toBe(USER_ID);
       expect(row.passwordHash).toBe(HASH_VALUE);
       expect(row.createdAt).toEqual(CREATED_AT);
@@ -36,7 +40,8 @@ describe('CredentialMapper', () => {
       const credential = CredentialMapper.toDomain(row);
 
       // Assert
-      expect(credential.id).toBe(row.id);
+      expect(credential.id).toBeInstanceOf(CredentialId);
+      expect(credential.id.value).toBe(row.id);
       expect(credential.userId).toBe(row.userId);
       expect(credential.passwordHash.value).toBe(row.passwordHash);
       expect(credential.updatedAt).toEqual(UPDATED_AT);
@@ -50,6 +55,19 @@ describe('CredentialMapper', () => {
 
       // Act + Assert
       expect(() => CredentialMapper.toDomain(row)).toThrow(InvalidPasswordHashError);
+    });
+
+    // Sin `failClosed`: el error de dominio llega tal cual al filtro de auth, que responde el 500
+    // saneado. Un `Error` envuelto no sería instancia de esta clase.
+    it('debería propagar InvalidCredentialIdError sin envolverlo cuando el id de la fila no es un uuid v4', () => {
+      // Arrange
+      const row = buildRow({ id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301' });
+
+      // Act
+      const act = () => CredentialMapper.toDomain(row);
+
+      // Assert
+      expect(act).toThrow(InvalidCredentialIdError);
     });
   });
 

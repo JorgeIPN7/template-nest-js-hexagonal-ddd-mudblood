@@ -1,3 +1,5 @@
+import { failClosed } from '@common/persistence/fail-closed';
+
 import { Order } from '../../domain/entities/order.entity';
 import { OrderDomainError } from '../../domain/errors/order.errors';
 import { OrderAmount } from '../../domain/value-objects/order-amount.vo';
@@ -9,6 +11,11 @@ import { OrderOrmEntity } from './order.orm-entity';
 
 const isOrderStatus = (value: string): value is OrderStatus =>
   (ORDER_STATUSES as readonly string[]).includes(value);
+
+// Predicado local y no exportado desde `order.errors.ts`: ese archivo solo puede exportar clases
+// (clave `errors` del test de contrato de módulo).
+const isOrderDomainError = (error: unknown): error is OrderDomainError =>
+  error instanceof OrderDomainError;
 
 /**
  * La columna es un `varchar` sin `CHECK`, así que el mapper **falla cerrado**. Un estado que este
@@ -58,36 +65,35 @@ const readVersion = (row: OrderOrmEntity): number => {
 /**
  * Única frontera entre la fila y el agregado. Al reconstituir usa `rehydrate`, no `place`:
  * los datos persistidos ya eran válidos al guardarse y reconstruir no re-emite eventos.
+ *
+ * Las fechas pasan tal cual en los dos sentidos, sin regla de fallo cerrado propia: las dos
+ * columnas son `NOT NULL` y cualquier orden entre ellas es válido (backlog #31).
+ *
+ * Falla cerrado también ante una fila que los VOs de hoy rechazan (un importe que admitía una
+ * versión futura, por ejemplo): es un dato corrupto para este código, no una entrada inválida.
+ * Como error de dominio, el filtro la publicaría como 400 con el valor en el mensaje;
+ * `failClosed` la convierte en un `Error` con el original como `cause`, y es un 500.
  */
 export const OrderMapper = {
   toDomain(row: OrderOrmEntity): Order {
     const status = readStatus(row);
     const version = readVersion(row);
-    try {
-      return Order.rehydrate({
-        id: OrderId.from(row.id),
-        customerId: row.customerId,
-        concept: OrderConcept.from(row.concept),
-        amount: OrderAmount.from(row.amountCents),
-        placedAt: row.placedAt,
-        status,
-        cancelledAt: row.cancelledAt,
-        version,
-      });
-    } catch (error) {
-      // Una fila que los VOs de hoy rechazan (un importe que admitía una versión futura, por
-      // ejemplo) es un dato corrupto para este código, no una entrada inválida: como error de
-      // dominio, el filter la publicaría como 400 con el valor en el mensaje. Falla cerrado, 500.
-      if (error instanceof OrderDomainError) {
-        throw new Error(
-          `El pedido ${row.id} tiene datos que el dominio rechaza: ${error.message}`,
-          {
-            cause: error,
-          },
-        );
-      }
-      throw error;
-    }
+    return failClosed(
+      () =>
+        Order.rehydrate({
+          id: OrderId.from(row.id),
+          customerId: row.customerId,
+          concept: OrderConcept.from(row.concept),
+          amount: OrderAmount.from(row.amountCents),
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          status,
+          cancelledAt: row.cancelledAt,
+          version,
+        }),
+      isOrderDomainError,
+      (error) => `El pedido ${row.id} tiene datos que el dominio rechaza: ${error.message}`,
+    );
   },
 
   toPersistence(order: Order): OrderOrmEntity {
@@ -97,7 +103,8 @@ export const OrderMapper = {
     row.customerId = snapshot.customerId;
     row.concept = snapshot.concept;
     row.amountCents = snapshot.amountCents;
-    row.placedAt = snapshot.placedAt;
+    row.createdAt = snapshot.createdAt;
+    row.updatedAt = snapshot.updatedAt;
     row.status = snapshot.status;
     row.cancelledAt = snapshot.cancelledAt;
     row.version = snapshot.version;

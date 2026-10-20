@@ -1,0 +1,8 @@
+# Falsos positivos de gitleaks (security.yml), uno por huella: <commit>:<archivo>:<regla>:<línea>.
+# Una huella ignora solo ese hallazgo de ese commit: si el commit se reescribe (rebase, reword), deja
+# de casar y el hallazgo vuelve. Cada bloque dice por qué no es un secreto.
+
+# El UUID v1 de ejemplo del RFC 4122 (3f2504e0-…) en dos `UPDATE auth_credentials SET id = …` del
+# plan del contrato de módulo: `generic-api-key` dispara por «credentials» junto a un literal.
+65a4fdba9a5d274c7588df7fd078e73e45e7a2d9:docs/plans/2026-10-17-module-contract-kernel.md:generic-api-key:2139
+65a4fdba9a5d274c7588df7fd078e73e45e7a2d9:docs/plans/2026-10-17-module-contract-kernel.md:generic-api-key:2147

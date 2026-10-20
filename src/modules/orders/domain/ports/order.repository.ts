@@ -12,6 +12,10 @@ import type { OrderId } from '../value-objects/order-id.vo';
  * guarda dos veces: conserva la versión con la que se leyó, así que para volver a escribir
  * hay que releerla.
  *
+ * Al actualizar, `save` persiste también `updatedAt`, el instante que el dominio selló en el
+ * cambio, y nunca `createdAt`: un adaptador que lo olvidara devolvería en la relectura la fecha de
+ * la colocación.
+ *
  * La lectura lleva el cliente: `findByIdAndCustomer` devuelve el pedido solo si es suyo, y
  * `null` tanto si no existe como si es de otro. El dueño se filtra en la consulta y no después
  * a propósito: una fila ajena nunca llega al mapper, que falla cerrado con un 500 ante datos
