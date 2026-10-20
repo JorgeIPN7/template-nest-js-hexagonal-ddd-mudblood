@@ -10,6 +10,8 @@ import { ARGON2_PARAMS } from '../../config/auth.config';
 import { envSchema } from '../../config/env.schema';
 import cliDataSource from '../data-source';
 
+import { formatSeedError } from './format-seed-error';
+
 const ADMIN_NAME = 'Administrator';
 
 /**
@@ -32,7 +34,8 @@ const ADMIN_NAME = 'Administrator';
  *
  * Nunca loguea el password ni el hash (security-auth-jwt): el único `console.log` de
  * este módulo, en el bloque CLI de más abajo, imprime el resultado ('created' |
- * 'promoted'), no las credenciales.
+ * 'promoted'), no las credenciales, y su `console.error` imprime el error ya pasado por
+ * `formatSeedError`.
  */
 export async function seedAdmin(dataSource: DataSource): Promise<'created' | 'promoted'> {
   const env = envSchema.parse(process.env);
@@ -119,7 +122,9 @@ if (require.main === module) {
       return cliDataSource.destroy();
     })
     .catch((error: unknown) => {
-      console.error('[seed:admin] failed:', error);
+      // Nunca el `error` tal cual: `util.inspect` volcaría su `detail` y sus `parameters`, que
+      // llevan el hash (backlog #40).
+      console.error('[seed:admin] failed:', formatSeedError(error));
       process.exit(1);
     });
 }

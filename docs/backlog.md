@@ -1785,6 +1785,23 @@ el 2026-10-19.
 
 ## 40. `pnpm seed:admin` imprime el hash del admin cuando falla
 
+**Resuelto (2026-10-20, por `/feature`; spec en
+`docs/specs/2026-10-20-seed-admin-salida-y-user-id.md`).** Se aplicó el criterio de abajo tal
+cual. El CLI imprime `formatSeedError(error)`: el mensaje y, si es texto, el código. La función
+vive en `src/database/seeds/format-seed-error.ts` y no en el seed, porque importar el seed carga
+`data-source.ts`, que lee el `.env` al importarse. Para `DB_LOGGING` se eligió el logger:
+`ParameterFreeLogger` (`src/database/parameter-free-logger.ts`) imprime la consulta sin sus
+parámetros, también la del INSERT de cada `POST /auth/register`. Lee `logging` del objeto de
+opciones en cada llamada, porque TypeORM devuelve tal cual una instancia en `logger` y cada
+comando de su CLI fija el suyo con `setOptions`. Con el valor del constructor, `pnpm
+migration:show` salía con 0 sin listar nada (lo encontró la revisión adversarial). Comparadas con
+la base, las salidas de `migration:show`, `migration:run` y `schema:log` no cambian, salvo por los
+parámetros que ya no se imprimen. El E2E
+lanza el CLI real con un `CHECK … NOT VALID` temporal que rechaza los hashes, así que el error
+lleva el hash en `detail` y en `parameters`, y con `DB_LOGGING=true`. Medido antes del arreglo:
+la salida traía `Failing row contains (…, $argon2id$v=1…`. Se pone rojo sin el formateo y, por
+separado, sin el logger.
+
 **Qué pasa.** El bloque CLI de `src/database/seeds/seed-admin.ts` (desde `8721f48`) hace
 `console.error('[seed:admin] failed:', error)`. Si falla la escritura de la credencial, `error`
 es un `QueryFailedError` de TypeORM, que guarda `parameters`, y `util.inspect` los imprime enteros,
@@ -1827,6 +1844,26 @@ de auth, así que entra con su fila aprobada, por el flujo que toque.
 
 **Cómo se sabrá que está hecho.** Un E2E del seed con un perfil de admin con id v1 falla con ese
 mensaje y sin tocar `auth_credentials`, y se pone rojo sin la comprobación.
+
+---
+
+## 42. Con la base parada, `pnpm seed:admin` no dice a qué host ni puerto intentó conectar
+
+**Qué pasa.** Desde #40, el CLI imprime solo `error.message` y `error.code`. Si la base no
+responde, Node lanza un `AggregateError`, con un intento por familia de direcciones, y su
+`message` está vacío. La salida queda en `[seed:admin] failed:  (código ECONNREFUSED)` (medido el
+2026-10-20 con `DB_PORT=1`). Antes de #40, el `util.inspect` del error enseñaba cada intento
+(`connect ECONNREFUSED ::1:1`). El código basta para saber que la base rechazó la conexión, pero
+no a qué host y puerto se intentó, que es lo primero que hay que mirar cuando el `.env` apunta
+mal. Lo encontró la revisión adversarial de #40.
+
+**Propuesta, sin decidir.** Cuando el error sea un `AggregateError` con el `message` vacío,
+`formatSeedError` añade los `message` de sus `errors`, que solo llevan dirección y puerto. Cambia
+el criterio de #40 («solo `message` y `code`»), que no se reabrió en su sesión: por eso queda
+aquí y no se aplicó.
+
+**Cómo se sabrá que está hecho.** Una fila de `format-seed-error.spec.ts` con un `AggregateError`
+de `message` vacío cuya salida lleva el host y el puerto, en rojo sin el cambio.
 
 ---
 
