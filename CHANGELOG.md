@@ -151,6 +151,11 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
     punto de la API de arriba.
   - **Lo que queda fuera**, con su decisión en el backlog: `errorCode` (#37), el generador
     `pnpm module:new` (#38) y unificar los nombres de columna (#39).
+  - **El umbral de mutación sube de 85 a 90** (`high: 95`, `low: 90`), con el censo al 100 %
+    (360/360, sin supervivientes): un fork con un score entre 85 y 90 verá rojo el job `mutation`.
+    `stryker.config.mjs` fija además `concurrency`, con un techo de 6 workers (con 11, la corrida
+    completa se quedaba sin memoria), y `timeoutMS: 10000`. `pnpm test:mutation:changed` cuenta
+    por estado lo que deja fuera del score y lista los Timeout.
   - Spec en `docs/specs/2026-10-17-module-contract-kernel-design.md`; plan en
     `docs/plans/2026-10-17-module-contract-kernel.md`.
 - **`CLAUDE.md`, de 64 510 a 35 408 bytes: cada regla en una línea, con su porqué y, donde el largo salió, un enlace**

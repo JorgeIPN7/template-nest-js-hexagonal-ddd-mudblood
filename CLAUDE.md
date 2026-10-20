@@ -28,7 +28,7 @@ pnpm lint # eslint --fix
 pnpm format:check # prettier --check
 pnpm test # unit, *.spec.ts under src/
 pnpm test:e2e # *.e2e-spec.ts via ./test/jest-e2e.config.mjs (needs the DB up)
-pnpm test:mutation # Stryker over domain/ + application/ of every module and the kernel, src/shared/domain/ (CI gate, break: 85)
+pnpm test:mutation # Stryker over domain/ + application/ of every module and the kernel, src/shared/domain/ (CI gate, break: 90)
 pnpm test:mutation:changed [base] # only what changed since base (default: merge-base with main)
 pnpm build # nest build (SWC)
 pnpm start:dev # watch mode
@@ -112,7 +112,7 @@ Definición vigente del modelo ([historia](docs/testing.md#modelo-de-colaboraci�
 2. **Ejecución (IA):** stub del SUT → tests en ROJO 1:1 con la tabla (el texto del `it` es el caso), **fallando por aserción** y no por «Cannot find module» → verde → refactor. **Prohibido implementar sin rojo previo.** Un caso nuevo se consulta, agrupado, nunca se añade en silencio; sin confirmación rutinaria antes de cada tarea (medido: no cambió nada).
 3. **Validación:** `pnpm test:mutation:changed <base>`, `adversarial-review` y la DoD. El humano coteja tabla ↔ suite verde, el score y el informe de la revisión, sin leer el diff línea a línea.
 
-- **La mutación es gate, no sugerencia:** `thresholds.break: 85` en `stryker.config.mjs` (racional en su cabecera) y job `mutation` en `ci.yml`; un módulo sin casos no entra en silencio ([historia](docs/testing.md#la-mutación-como-gate)).
+- **La mutación es gate, no sugerencia:** `thresholds.break: 90` en `stryker.config.mjs` (racional en su cabecera) y job `mutation` en `ci.yml`; un módulo sin casos no entra en silencio ([historia](docs/testing.md#la-mutación-como-gate)).
 - **Un módulo entero:** `pnpm test:mutation --mutate "src/modules/<context>/domain/**/*.ts,src/modules/<context>/application/**/*.ts"`. ⚠️ Sin llaves: `{domain,application}` da cero mutantes, un score `NaN` que pasa cualquier umbral y salida 0.
 - **Infra, config, wiring y docs quedan exentas de la tabla;** el resto de convenciones de testing no cambia.
 - **«Tabla D…R», «fila R11», «caso E5» o «spec §N» en `src/`** citan planes perdidos (backlog #29): no los busques; el caso vive en el texto del `it`.

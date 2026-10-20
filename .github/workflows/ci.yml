@@ -296,7 +296,7 @@ jobs:
           if-no-files-found: ignore
 
   # El auditor del modelo «casos primero» deja de ser una corrida manual por ciclo y pasa a
-  # ser gate (backlog #9): `thresholds.break: 85` en stryker.config.mjs rompe este job si el
+  # ser gate (backlog #9): `thresholds.break: 90` en stryker.config.mjs rompe este job si el
   # score global cae. Va en un job APARTE del de calidad, no como un step más, por tres
   # razones: (1) no necesita PostgreSQL —`mutate` cubre solo domain/ y application/, que se
   # ejercitan con la config unitaria—, así que arrastrar el servicio sería puro coste;

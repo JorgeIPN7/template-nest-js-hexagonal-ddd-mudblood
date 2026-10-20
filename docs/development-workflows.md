@@ -393,7 +393,7 @@ quedaban fuera, y un cambio así podía dar cero mutantes y salir en verde.
 - Un mutante equivalente —ningún test puede distinguirlo— se marca en el código con
   `// Stryker disable next-line <Mutador>: <motivo>` y se cita en el informe. Sin marcar cuenta
   como superviviente, y con pocos mutantes uno solo basta para bajar del umbral.
-- El `thresholds.break: 85` de la config se aplica a los mutantes del cambio. Sin mutantes
+- El `thresholds.break: 90` de la config se aplica a los mutantes del cambio. Sin mutantes
   válidos el script lo dice y sale con 0: no hay nada que auditar, que no es un 100 %.
 - Las filas `P` (propiedad, `@fast-check/jest`) matan mutantes bajo Stryker porque
   `test/stryker-setup.ts` fija la semilla de fast-check en esas corridas. Sin ella, el título del

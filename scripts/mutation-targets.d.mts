@@ -44,4 +44,8 @@ export declare function changeScore(mutants: readonly ReportMutant[]): {
   undetected: ReportMutant[];
   valid: number;
   score: number | undefined;
+  excluded: Record<string, number>;
+  timedOut: ReportMutant[];
 };
+
+export declare function singleSurvivorBreaks(valid: number, breakAt: number | null): boolean;

@@ -43,14 +43,15 @@ vive en el texto del `it`; de esas tablas, la suite es la única fuente que qued
 
 Regla
 ([`CLAUDE.md`, «Modelo de colaboración»](../CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor)):
-la mutación es gate, no sugerencia: `thresholds.break: 85` en
+la mutación es gate, no sugerencia: `thresholds.break: 90` en
 [`stryker.config.mjs`](../stryker.config.mjs) y job `mutation` propio en
 [`ci.yml`](../.github/workflows/ci.yml).
 
 - **Desde cuándo:** 2026-08-06 (backlog #9).
-- **De dónde sale el 85:** del baseline medido —90.14 % global—, y el margen está dominado por el
-  peso de cada módulo en mutantes, no por su score. El racional completo, con la aritmética, vive
-  en el comentario de cabecera de [`stryker.config.mjs`](../stryker.config.mjs).
+- **De dónde sale el 90:** el 85 original salió del baseline medido el 2026-08-06 —90.14 %
+  global—, y el margen está dominado por el peso de cada módulo en mutantes, no por su score.
+  Subió a 90 el 2026-10-19, con el censo al 100 % y sin supervivientes. El racional completo, con
+  la aritmética, vive en el comentario de cabecera de [`stryker.config.mjs`](../stryker.config.mjs).
 - **Qué protege:** bajar el score por debajo del umbral rompe la CI, así que un módulo nuevo sin
   casos no entra en silencio.
 

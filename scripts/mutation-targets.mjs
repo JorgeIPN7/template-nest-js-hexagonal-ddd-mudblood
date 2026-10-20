@@ -231,17 +231,39 @@ export function mutantsTouchingChange(report, surface) {
  * válidos (detectados más `Survived` y `NoCoverage`). Los errores de compilación o de ejecución y
  * los ignorados no cuentan. Sin mutantes válidos, `score` es `undefined`: no hay nada que auditar,
  * y Stryker lo habría llamado `NaN` y lo habría dado por bueno contra cualquier umbral.
+ *
+ * Lo que no entra en el score no desaparece: `excluded` lo cuenta por su `status` real (también
+ * uno que el esquema añada mañana, como `Pending`), y `timedOut` aparta los `Timeout`, que cuentan
+ * como detectados aunque ningún test los distinguiera.
  */
 export function changeScore(mutants) {
   const isDetected = (mutant) => mutant.status === 'Killed' || mutant.status === 'Timeout';
   const isUndetected = (mutant) => mutant.status === 'Survived' || mutant.status === 'NoCoverage';
+  const isExcluded = (mutant) => !isDetected(mutant) && !isUndetected(mutant);
   const detected = mutants.filter(isDetected).length;
   const undetected = mutants.filter(isUndetected);
   const valid = detected + undetected.length;
+  const excluded = {};
+  for (const { status } of mutants.filter(isExcluded)) {
+    excluded[status] = (excluded[status] ?? 0) + 1;
+  }
   return {
     detected,
     undetected,
     valid,
     score: valid === 0 ? undefined : (detected / valid) * 100,
+    excluded,
+    timedOut: mutants.filter((mutant) => mutant.status === 'Timeout'),
   };
+}
+
+/**
+ * ¿Basta un solo superviviente para que el cambio baje de `breakAt`? Pasa con pocos mutantes:
+ * con 9 válidos, 8 detectados son el 88.9 %. Sin umbral no hay nada que bajar.
+ */
+export function singleSurvivorBreaks(valid, breakAt) {
+  if (breakAt === null || valid === 0) {
+    return false;
+  }
+  return ((valid - 1) / valid) * 100 < breakAt;
 }

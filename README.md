@@ -330,7 +330,7 @@ Para cada módulo que quites:
 4. Quita su scope del `scope-enum` de [`commitlint.config.cjs`](commitlint.config.cjs).
 5. Si era `orders`, quita también `pnpm outbox:relay` de `package.json` y `src/database/outbox/`.
 6. Revisa las secciones que lo describen en este README, en [`CLAUDE.md`](CLAUDE.md) y en [`docs/`](docs/) (`architecture.md`, `database.md`, `api-contract.md`, `testing.md`).
-7. **Vuelve a medir la mutación.** `stryker.config.mjs` apunta por globs, así que no hay que editarlo, pero el umbral `break: 85` está calibrado sobre el peso en mutantes de los módulos actuales: quitar uno mueve el score global. Corre `pnpm test:mutation` y ajusta el umbral con el número nuevo, no a ojo.
+7. **Vuelve a medir la mutación.** `stryker.config.mjs` apunta por globs, así que no hay que editarlo, pero el umbral `break: 90` está calibrado sobre el peso en mutantes de los módulos actuales: quitar uno mueve el score global. Corre `pnpm test:mutation` y ajusta el umbral con el número nuevo, no a ojo.
 8. **El test de contrato de módulo no se edita.** `src/__tests__/module-contract.spec.ts` descubre todo `src/modules/*` salvo la lista cerrada `FLAT_MODULES` (`health`). Si quitas los tres contextos, su fila de descubrimiento se pone roja hasta que exista uno propio, y lo mismo la fila «debería tener al menos una migración que revisar» de `src/database/__tests__/migration-conventions.spec.ts`, porque el paso 3 borra todas las migraciones; un módulo plano nuevo entra en `FLAT_MODULES` con su porqué.
 9. Definition of Done completo: `typecheck` → `lint:check` → `format:check` → `test` → `test:e2e` → `build`.
 
@@ -548,7 +548,7 @@ src/modules/users/
 - **Property-based con `fast-check`** en value objects, funciones puras y round-trips de mapeo. Los arbitrarios se **construyen**, nunca se filtran con `.filter()`.
 - Helpers compartidos por un módulo en `<módulo>/__tests__/helpers/`; los transversales en `test/helpers/`, importados por `@test/`.
 
-**Cómo se decide qué se prueba:** el modelo de colaboración —tabla de casos acordados, TDD con rojo por aserción y mutación como auditor— está en [`CLAUDE.md`](./CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor), y cómo lo aplica cada flujo de trabajo, en [`docs/development-workflows.md`](./docs/development-workflows.md). La mutación es un gate real: `pnpm test:mutation` con `break: 85` y job propio en CI; `pnpm test:mutation:changed` audita solo el código nuevo de una rama.
+**Cómo se decide qué se prueba:** el modelo de colaboración —tabla de casos acordados, TDD con rojo por aserción y mutación como auditor— está en [`CLAUDE.md`](./CLAUDE.md#modelo-de-colaboración--casos-primero-tdd-después-mutación-como-auditor), y cómo lo aplica cada flujo de trabajo, en [`docs/development-workflows.md`](./docs/development-workflows.md). La mutación es un gate real: `pnpm test:mutation` con `break: 90` y job propio en CI; `pnpm test:mutation:changed` audita solo el código nuevo de una rama.
 
 ### Base de datos de los tests
 
@@ -583,7 +583,7 @@ El umbral de `branches` (50) es más bajo que el resto a propósito: SWC instrum
 | `pnpm test:cov` / `test:ci`    | Unit tests con cobertura y umbrales                                           |
 | `pnpm test:e2e`                | E2E — **requiere la base levantada y migrada**                                |
 | `pnpm test:e2e:ci`             | E2E para CI, con su propia cobertura                                          |
-| `pnpm test:mutation`           | Stryker. `break: 85` es un gate, no una sugerencia                            |
+| `pnpm test:mutation`           | Stryker. `break: 90` es un gate, no una sugerencia                            |
 | `pnpm test:mutation:changed`   | Stryker solo sobre lo que cambió desde una base (por defecto, desde `main`)   |
 | `pnpm db:up` / `db:down`       | Levanta / detiene PostgreSQL. `db:up` bloquea hasta que la base responde      |
 | `pnpm db:reset`                | Borra el volumen, arranca limpio y **migra las dos bases**                    |
