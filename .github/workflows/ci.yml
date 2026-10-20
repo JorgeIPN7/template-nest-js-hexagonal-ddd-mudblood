@@ -25,23 +25,25 @@ permissions:
 # que hay debajo; hay que dar un salto más por `git/tags/<sha>` para obtenerlo. Anotar o no es
 # una decisión POR TAG de quien publica, no una propiedad del repositorio, así que la única
 # respuesta fiable es mirar `object.type` en cada bump — no fiarse de cómo salió la vez anterior
-# ni de esta lista, que es una foto del 2026-08-19 y no una regla:
+# ni de esta lista, que es una foto del 2026-10-19 y no una regla:
 #
-#   anotados (doble salto):  pnpm/action-setup@v6.0.10        ff378ebe → 0977fd99
+#   anotados (doble salto):  pnpm/action-setup@v6.1.0          d9184bf1 → ea17c68d
 #                            aquasecurity/trivy-action@v0.36.0  a9c7b0f0 → ed142fd0
-#   ligeros  (salto único):  actions/checkout@v7.0.1, actions/setup-node@v7.0.0,
-#                            actions/upload-artifact@v7.0.1, gitleaks/gitleaks-action@v3.0.0
+#   ligeros  (salto único):  actions/checkout@v7.0.1, actions/setup-node@v7.1.0,
+#                            actions/upload-artifact@v7.0.2, gitleaks/gitleaks-action@v3.0.0
 #
-# Los seis se reverificaron contra la API el 2026-08-19 y los seis SHA de abajo y de
+# Los seis se reverificaron contra la API el 2026-10-19 y los seis SHA de abajo y de
 # `security.yml` coinciden. Equivocarse aquí no da un error legible: el runner no resuelve la
 # action.
 #
-# ⚠️ Lo que sí estaba mal hasta esa fecha eran las ETIQUETAS de esta lista, no los pines: decía
-# `checkout@v5` y `setup-node@v5` cuando `93923d3` y `22ae48e` ya los habían movido a v7.0.1 y
-# v7.0.0. No es cosmético — este bloque ES el procedimiento para resolver el SHA siguiente, así
-# que quien siguiera la tabla anotado/ligero equivocada resolvería el objeto que no es, y el
-# síntoma es el que dice la línea de arriba. Cada bump reescribe este bloque, no solo la línea
-# del `uses:`.
+# ⚠️ Lo que sí estaba mal hasta el 2026-08-19 eran las ETIQUETAS de esta lista, no los pines:
+# decía `checkout@v5` y `setup-node@v5` cuando `93923d3` y `22ae48e` ya los habían movido a
+# v7.0.1 y v7.0.0. No es cosmético — este bloque ES el procedimiento para resolver el SHA
+# siguiente, así que quien siguiera la tabla anotado/ligero equivocada resolvería el objeto que
+# no es, y el síntoma es el que dice la línea de arriba. Cada bump reescribe este bloque, no solo
+# la línea del `uses:`. Volvió a pasar: el 2026-10-19 la lista seguía en `action-setup@v6.0.10`,
+# `setup-node@v7.0.0` y `upload-artifact@v7.0.1` cuando `b700c8d`, `0a5f92c` y `d9ccee5` ya los
+# habían movido. Renovate solo reescribe el `uses:`: el bloque lo pone al día quien revisa su PR.
 #
 # Bump del 2026-08-14, motivo común: GitHub anunció la retirada de Node 20 en los runners
 # (aviso «Node.js 20 is deprecated … forced to run on Node.js 24»). El runtime lo declara el
