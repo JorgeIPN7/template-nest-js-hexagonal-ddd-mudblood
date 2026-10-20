@@ -95,12 +95,11 @@ Cuando la respuesta sea para otro equipo, envuélvela entre `====RESPUESTA PARA 
 
 ## Skills and development flows
 
-Five skills live in `.claude/skills/`. **Pick the level of the change before touching code** (full guide: [`docs/development-workflows.md`](docs/development-workflows.md)).
+Two skills live in `.claude/skills/`. **Pick the level of the change before touching code** (full guide: [`docs/development-workflows.md`](docs/development-workflows.md)).
 
-- **Trivial** — typo, docs, non-security config, dependency bump, a one-line bug with an obvious test → no skill: the change, its test if it has behaviour, the DoD.
-- **Express** (default for features) — a feature or behavioural bug inside ONE existing bounded context, ≤ ~8 tasks, at most an additive migration → `/express`: ≤ 2 rounds of grouped questions → spec ≤ 150 lines with the case table and the contract → TDD, red by assertion → `pnpm test:mutation:changed` → `adversarial-review` → DoD.
-- **Full** — a new bounded context; a change across contexts (facades, shared ports); a destructive migration; auth, credentials, tokens or permissions — their config included, even one line; > ~10 tasks; work someone else continues → `/brainstorming` → `writing-plans` (plan WITHOUT production code) → `executing-plans` in a new session → `adversarial-review` → DoD.
-- **Doubt between trivial and express → express; between express and full → ask the user, with your recommendation:** the full flow costs several times more (52.54 vs 11.82 USD, measured) and that's their call.
+- **Directo** (default) — typo, docs, non-security config, dependency bump, a bug with an obvious test → no skill: the change, its test if it has behaviour, the DoD; `adversarial-review` only on request.
+- **`/feature`** — a new endpoint or use case, a migration, logic in `domain/` or `application/`, or anything on the risk list: auth, credentials, tokens or permissions — their config included, even one line; a change across contexts (facades, shared ports); a destructive migration; a new bounded context → one round of ≤ 4 questions → case table (and contract table) approved in the chat → TDD, red by assertion → `pnpm test:mutation:changed` once → `adversarial-review` → DoD. Big mode (> ~8 tasks, a new context, work someone else continues): a spec with 2–3 approaches and ~400-line slices, one per session.
+- **Doubt between Directo and `/feature` → ask the user, with your recommendation.**
 - **Every flow runs two checks** (each caught a real defect): every declared response is producible today, its contract-table row naming the input and code path («Endpoint documentation»), and every guard test fails without its protection («A test must fail without the fix»).
 - **Skill descriptions say when each applies** (they load every session, so not repeated here). **[`docs/nestjs-mapping.md`](docs/nestjs-mapping.md) is the source of truth for code shape:** read only the section the work needs (an artifact type its module doesn't have yet, or a new context); for conventions this file is enough.
 

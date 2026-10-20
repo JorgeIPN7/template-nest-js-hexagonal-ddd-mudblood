@@ -1,5 +1,10 @@
 # Flujos de desarrollo con IA
 
+> **⚠️ Desde el 2026-10-20, `express`, `brainstorming`, `writing-plans` y `executing-plans` están
+> retirados:** los sustituye [`/feature`](../.claude/skills/feature/SKILL.md), y lo que no lo
+> necesita va en modo Directo, sin skill (`CLAUDE.md`, «Skills and development flows»). Lo que
+> sigue describe los flujos anteriores y conserva sus mediciones como historia.
+
 Cómo se trabaja en este repositorio con un asistente de IA (Claude Code y las skills de
 [`.claude/skills/`](../.claude/skills/)): qué flujo usar según la tarea, cómo se invoca, qué
 hace el asistente, qué te toca a ti y qué deja escrito cada uno. Al final están las mediciones que

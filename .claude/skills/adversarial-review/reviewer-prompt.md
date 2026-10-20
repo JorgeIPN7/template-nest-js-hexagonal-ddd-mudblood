@@ -7,7 +7,7 @@ antes de lanzarlo:
 | --------------- | ------------------------------------------------------------------------- |
 | `<REPO>`        | `git rev-parse --show-toplevel`                                           |
 | `<BASE>`        | el commit base del flujo                                                  |
-| `<SPEC_O_PLAN>` | la ruta de la spec o del plan, o «no hay: juzga por el código y CLAUDE.md» |
+| `<SPEC_O_TABLAS>` | la ruta de la spec; si no hay, las tablas de casos y de contrato aprobadas en el chat, tal cual; si tampoco, «no hay: juzga por el código y CLAUDE.md» |
 | `<ALCANCE>`     | vacío, o «Limítate a estos archivos: …» en una segunda pasada o por tarea |
 
 No añadas quién escribió el código ni qué «ya se revisó». El valor de esta revisión está en que no
@@ -29,7 +29,7 @@ Agent({
       `git status --porcelain --untracked-files=all` marca con `??`. Sin `--untracked-files=all`,
       una carpeta nueva sale como una sola línea y sus archivos no se ven. Lee entero cada archivo
       nuevo: ningún diff te lo enseña. <ALCANCE>
-    - Qué se pidió y qué se decidió: <SPEC_O_PLAN>. Te dice qué debería hacer el código; no
+    - Qué se pidió y qué se decidió: <SPEC_O_TABLAS>. Te dice qué debería hacer el código; no
       prueba que lo haga.
 
     ## Qué buscar
@@ -45,8 +45,8 @@ Agent({
     3. **Tests de guarda.** Un test de guarda protege una garantía: concurrencia, propiedad o
        visibilidad, autorización, atomicidad, anti-enumeración o idempotencia. Por cada uno,
        responde: ¿se pondría rojo si se quitara la protección?
-       - Si puedes, demuéstralo en una copia (ver «Reglas»): quita la protección y ejecuta el
-         test.
+       - Razónalo sobre el código: qué aserción fallaría sin la protección. No la quites (ver
+         «Reglas»).
        - Un test que sigue en verde sin su protección es un hallazgo importante.
     4. **Huecos de test.**
        - Comportamiento nuevo sin su caso.
@@ -76,44 +76,11 @@ Agent({
 
     - **No edites, muevas ni restaures ningún archivo del repo, ni siquiera temporalmente.** Nada
       de git que escriba: ni `stash`, `checkout`, `reset`, `restore`, `commit`, `add`, `mv` ni `rm`.
-    - Para demostrar un hallazgo, trabaja en una copia NUEVA, una por prueba. La receta es Node en
-      línea porque es lo único que funciona igual en todas partes: Windows no trae `rsync`, y en
-      Git Bash `ln -s` copia la carpeta en vez de enlazarla. Medida solo en Windows con Git Bash;
-      en Linux y macOS no está probada.
-      1. Copia el árbol, con lo no confirmado, y enlaza el `node_modules` real (en Windows es una
-         unión, `junction`; en Linux y macOS, un enlace simbólico):
-         antes=$(ls <REPO>/node_modules | wc -l)
-         copia=$(mktemp -d)
-         node -e "const fs=require('fs'),path=require('path');const [repo,dst]=process.argv.slice(1);const skip=new Set(['node_modules','.git','.stryker-tmp','dist','coverage','coverage-e2e','reports','public','logs']);fs.cpSync(repo,dst,{recursive:true,filter:(src)=>!skip.has(path.relative(repo,src).split(path.sep)[0])});fs.symlinkSync(path.join(repo,'node_modules'),path.join(dst,'node_modules'),'junction');" "<REPO>" "$copia"
-         Sin esas exclusiones la copia pesa unas diez veces más. No uses `git archive`: no lleva lo
-         no confirmado.
-      2. El enlace se crea una sola vez, en el paso 1, sobre una copia nueva: no lo repitas. Un
-         segundo enlace sobre uno que ya existe acaba DENTRO de `<REPO>/node_modules`.
-      3. Ejecuta las herramientas con `node`, **nunca con `pnpm <script>`**. pnpm verifica las
-         dependencias antes de cada script y, a través del enlace, reescribe el `node_modules` real
-         (medido con pnpm 12.7.0; si el `package.json` de la copia no cuadra, reinstala). Desde la
-         copia, lo mismo que hacen los scripts de `package.json`:
-         - `node node_modules/typescript/bin/tsc --noEmit`;
-         - `node node_modules/eslint/bin/eslint.js <archivos>`;
-         - `node --experimental-vm-modules node_modules/jest/bin/jest.js <ruta>` para los
-           unitarios;
-         - `node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./test/jest-e2e.config.mjs <ruta>`
-           para un E2E, solo si un hallazgo lo necesita. Si toca la documentación, genera antes el
-           bundle en la copia con `node scripts/copy-scalar-asset.mjs`.
-      4. Borra la copia al terminar, con el directorio actual fuera de ella (si no, Windows
-         responde `EPERM`): primero el enlace, que no toca su destino, y después el resto.
-         Comprueba que el `node_modules` real sigue entero; si el recuento cambia, para y dilo en
-         el informe.
-         cd <REPO>
-         node -e "const fs=require('fs'),path=require('path');const nm=path.join(process.argv[1],'node_modules');try{fs.lstatSync(nm);fs.unlinkSync(nm)}catch(e){if(e.code!=='ENOENT')throw e}fs.rmSync(process.argv[1],{recursive:true,force:true});" "$copia"
-         [ "$(ls <REPO>/node_modules | wc -l)" = "$antes" ] && echo "node_modules intacto"
-         Nunca borres la copia con `rm -rf` ni `rmdir /s` antes de quitar el enlace: pueden seguirlo
-         y vaciar el `node_modules` real.
-    - **La copia aísla archivos, no bases de datos.** Sus E2E usan la misma base de test, ya
-      migrada: una protección de esquema (un índice único, un constraint, un trigger) no se quita
-      editando una migración en la copia. Razónala y dilo en el informe. Nunca ejecutes
-      `migration:*`, `db:*` ni `seed:*`, tampoco desde la copia: apuntan a la base de DESARROLLO,
-      y su efecto sobrevive a borrar la copia.
+    - **Solo lectura, sin Stryker.** Lees código y ejecutas sobre el árbol tal cual solo
+      `pnpm typecheck`, `pnpm lint:check`, `pnpm test <ruta>` y, si un hallazgo lo necesita,
+      `pnpm test:e2e <ruta>`. Nada de `test:mutation*`, ni de `migration:*`, `db:*` o `seed:*`, que
+      apuntan a la base de desarrollo. Lo que no puedas demostrar así, razónalo y dilo en el
+      informe.
     - La base de test es compartida, pero la sesión principal está parada esperando tu informe.
     - Si las herramientas fallan antes de ejecutar nada (por la versión de Node), dilo en el
       informe y sigue leyendo código. No gastes turnos en arreglar el entorno.
