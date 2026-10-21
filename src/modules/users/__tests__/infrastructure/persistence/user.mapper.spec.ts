@@ -185,8 +185,11 @@ describe('UserMapper', () => {
       // Arrange
       const adminRow = buildRow({ role: 'admin' });
 
-      // Act + Assert
-      expect(UserMapper.toDomain(adminRow).role).toBe('admin');
+      // Act
+      const restoredAdmin = UserMapper.toDomain(adminRow);
+
+      // Assert
+      expect(restoredAdmin.role).toBe('admin');
     });
   });
 });

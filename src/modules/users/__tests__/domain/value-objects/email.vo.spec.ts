@@ -7,6 +7,8 @@ import { emailArb } from '../../helpers/arbitraries';
 describe('Email', () => {
   describe('from()', () => {
     it('debería aceptar una dirección válida', () => {
+      // Arrange
+
       // Act
       const email = Email.from('maria.gonzalez@empresa.com.mx');
 
@@ -15,6 +17,8 @@ describe('Email', () => {
     });
 
     it('debería normalizar a minúsculas', () => {
+      // Arrange
+
       // Act
       const email = Email.from('Maria.Gonzalez@Empresa.COM');
 
@@ -23,6 +27,8 @@ describe('Email', () => {
     });
 
     it('debería recortar los espacios de los extremos', () => {
+      // Arrange
+
       // Act
       const email = Email.from('  user@example.com  ');
 
@@ -31,6 +37,8 @@ describe('Email', () => {
     });
 
     it('debería aceptar el signo + usado para alias', () => {
+      // Arrange
+
       // Act
       const email = Email.from('jgarcia+test@empresa.com.mx');
 
@@ -46,16 +54,24 @@ describe('Email', () => {
       ['con espacios internos', 'user name@example.com'],
       ['vacío', ''],
     ])('debería rechazar un email %s', (_caso, value) => {
-      // Act + Assert
-      expect(() => Email.from(value)).toThrow(InvalidEmailError);
+      // Arrange
+
+      // Act
+      const act = () => Email.from(value);
+
+      // Assert
+      expect(act).toThrow(InvalidEmailError);
     });
 
     it('debería rechazar una dirección que supera los 254 caracteres', () => {
       // Arrange
       const tooLong = `${'a'.repeat(250)}@example.com`;
 
-      // Act + Assert
-      expect(() => Email.from(tooLong)).toThrow(InvalidEmailError);
+      // Act
+      const act = () => Email.from(tooLong);
+
+      // Assert
+      expect(act).toThrow(InvalidEmailError);
     });
 
     // El límite exacto: la suite solo probaba 262 caracteres, así que un off-by-one en la
@@ -76,9 +92,12 @@ describe('Email', () => {
       // Arrange
       const oneTooMany = `${'a'.repeat(243)}@example.com`;
 
-      // Act + Assert
+      // Act
+      const act = () => Email.from(oneTooMany);
+
+      // Assert
       expect(oneTooMany).toHaveLength(255);
-      expect(() => Email.from(oneTooMany)).toThrow(InvalidEmailError);
+      expect(act).toThrow(InvalidEmailError);
     });
 
     // El ancla `$`: sin ella, la expresión acepta cualquier dirección que EMPIECE por una válida.
@@ -128,6 +147,8 @@ describe('Email', () => {
     it('debería ser idempotente al normalizar', () => {
       fc.assert(
         fc.property(emailArb, (raw) => {
+          // Arrange
+
           // Act
           const once = Email.from(raw).value;
           const twice = Email.from(once).value;
@@ -142,6 +163,8 @@ describe('Email', () => {
     it('debería considerar iguales dos emails que solo difieren en mayúsculas', () => {
       fc.assert(
         fc.property(emailArb, (raw) => {
+          // Arrange
+
           // Act
           const result = Email.from(raw).equals(Email.from(raw.toUpperCase()));
 
@@ -154,6 +177,8 @@ describe('Email', () => {
     it('debería ignorar los espacios de los extremos sea cual sea la dirección', () => {
       fc.assert(
         fc.property(emailArb, fc.stringMatching(/^[ \t]{0,4}$/), (raw, padding) => {
+          // Arrange
+
           // Act
           const padded = Email.from(`${padding}${raw}${padding}`);
 

@@ -84,7 +84,8 @@ describe('ValueObject', () => {
 
   describe('value', () => {
     it('debería exponer el valor que recibió el constructor', () => {
-      // Arrange + Act
+      // Arrange
+      // Act
       const vo = NumberVo.of(42);
       // Assert
       expect(vo.value).toBe(42);

@@ -31,10 +31,11 @@ describe('DeactivateUserUseCase', () => {
       // Arrange
       const { useCase } = buildUseCase();
 
-      // Act + Assert
-      await expect(useCase.execute({ userId: UserId.generate().value })).rejects.toThrow(
-        UserNotFoundError,
-      );
+      // Act
+      const act = useCase.execute({ userId: UserId.generate().value });
+
+      // Assert
+      await expect(act).rejects.toThrow(UserNotFoundError);
     });
 
     // `UserId` guarda el valor en minúsculas: si el error citara el id normalizado, el 404 no

@@ -171,7 +171,7 @@ const act = () => OrderAmount.from(-1);
 expect(act).toThrow(InvalidOrderAmountError);
 ```
 
-Unos 200 tests heredados son anteriores a esta regla (conteo heurístico, backlog #30).
+Los 194 tests heredados que la incumplían se pusieron al día el 2026-10-20 (backlog #30).
 
 ### Un spec por archivo (1:1), dentro de `__tests__/`
 
@@ -185,7 +185,7 @@ varios SUT en un archivo.
   mutar; si el archivo del puerto exporta algo más (`DUMMY_PASSWORD_HASH` en `password-hasher.ts`),
   lleva su spec 1:1.
 - **Por qué los errores y los eventos no lo están:** llevan mensajes y datos que Stryker muta. Los
-  huecos heredados están listados en backlog #30.
+  huecos heredados se cerraron el 2026-10-19 (backlog #30).
 
 ### Fixtures compartidos
 

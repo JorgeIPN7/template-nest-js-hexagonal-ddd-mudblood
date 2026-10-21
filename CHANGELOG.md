@@ -109,6 +109,12 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **Los tests heredados cumplen ya AAA estricto** (2026-10-20, backlog #30). Los 194 tests de 45
+  specs que no llevaban los tres marcadores en líneas propias ya los llevan: un `// Arrange` vacío
+  donde faltaba, cada `// Arrange + Act` partido en sus dos marcadores, y cada `// Act + Assert`
+  partido en `const act = …` bajo `// Act` y la aserción bajo `// Assert`. Solo cambia la forma:
+  quedan las mismas suites y los mismos tests, con los mismos nombres, y los mismos mutantes
+  detectados.
 - **Contrato base de módulo: un kernel compartido y un test que verifica la forma de cada
   contexto** (2026-10-19). `users`, `orders` y `auth` heredan de las mismas bases, para que un
   módulo nuevo sea fácil de crear y uno existente, fácil de reemplazar.

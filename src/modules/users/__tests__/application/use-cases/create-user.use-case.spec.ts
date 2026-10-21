@@ -48,10 +48,11 @@ describe('CreateUserUseCase', () => {
       // Arrange
       const { useCase } = buildUseCase([buildUserWithEmail('taken@example.com')]);
 
-      // Act + Assert
-      await expect(
-        useCase.execute({ email: 'taken@example.com', name: 'Otro Usuario' }),
-      ).rejects.toThrow(EmailAlreadyTakenError);
+      // Act
+      const act = useCase.execute({ email: 'taken@example.com', name: 'Otro Usuario' });
+
+      // Assert
+      await expect(act).rejects.toThrow(EmailAlreadyTakenError);
     });
 
     // La comparación va contra el email ya normalizado, no contra la cadena cruda.
@@ -59,20 +60,22 @@ describe('CreateUserUseCase', () => {
       // Arrange
       const { useCase } = buildUseCase([buildUserWithEmail('taken@example.com')]);
 
-      // Act + Assert
-      await expect(
-        useCase.execute({ email: 'TAKEN@EXAMPLE.COM', name: 'Otro Usuario' }),
-      ).rejects.toThrow(EmailAlreadyTakenError);
+      // Act
+      const act = useCase.execute({ email: 'TAKEN@EXAMPLE.COM', name: 'Otro Usuario' });
+
+      // Assert
+      await expect(act).rejects.toThrow(EmailAlreadyTakenError);
     });
 
     it('debería no guardar nada cuando el email es inválido', async () => {
       // Arrange
       const { useCase, repository } = buildUseCase();
 
-      // Act + Assert
-      await expect(useCase.execute({ email: 'no-arroba', name: 'Nombre' })).rejects.toThrow(
-        InvalidEmailError,
-      );
+      // Act
+      const act = useCase.execute({ email: 'no-arroba', name: 'Nombre' });
+
+      // Assert
+      await expect(act).rejects.toThrow(InvalidEmailError);
       expect(repository.size()).toBe(0);
     });
 
