@@ -72,6 +72,45 @@ describe('nestjs-mapping.md', () => {
       // Assert
       expect(uncovered).toEqual([]);
     });
+
+    it('debería extraer cada valla de TypeScript del md, sin saltarse ninguna', () => {
+      // Arrange
+      const markdown = referenceMarkdown();
+
+      // Act
+      const skipped = unextractedFences(markdown);
+
+      // Assert
+      expect(skipped).toEqual([]);
+    });
+
+    it.each([
+      { variant: '```typescript', block: ['```typescript', '```'], skipped: '5: ```typescript' },
+      { variant: '```tsx', block: ['```tsx', '```'], skipped: '5: ```tsx' },
+      {
+        variant: '```ts title="…"',
+        block: ['```ts title="invoice.ts"', '```'],
+        skipped: '5: ```ts title="invoice.ts"',
+      },
+      {
+        variant: '```ts sangrado en una lista',
+        block: ['- Paso:', '', '  ```ts', '  ```'],
+        skipped: '7: ```ts',
+      },
+      { variant: '``` ts', block: ['``` ts', '```'], skipped: '5: ``` ts' },
+      { variant: '~~~ts', block: ['~~~ts', '~~~'], skipped: '5: ~~~ts' },
+      { variant: '````ts', block: ['````ts', '````'], skipped: '5: ````ts' },
+      { variant: '```TS', block: ['```TS', '```'], skipped: '5: ```TS' },
+    ])('debería señalar la valla $variant que el extractor no extrae', ({ block, skipped }) => {
+      // Arrange: un bloque `ts` que sí se extrae (líneas 1 a 3) y, debajo, la variante.
+      const markdown = ['```ts', `// ${BILLING}domain/x.ts`, '```', '', ...block].join('\n');
+
+      // Act
+      const result = unextractedFences(markdown);
+
+      // Assert
+      expect(result).toEqual([skipped]);
+    });
   });
 
   describe('el contrato de módulo', () => {
@@ -128,25 +167,30 @@ describe('nestjs-mapping.md', () => {
 
 // Helpers
 
-type Block = { path: string | undefined; source: string };
+/** `opening` es la línea, contando desde 1, de la valla que abre el bloque. */
+type Block = { opening: number; path: string | undefined; source: string };
 
 /**
  * Cada valla `ts` del md, con la ruta de su primera línea (`// src/modules/billing/…`). Parte
- * por `\r?\n`: un clon con `core.autocrlf=true` tendría el md en CRLF.
+ * por `\r?\n`: un clon con `core.autocrlf=true` tendría el md en CRLF. Solo abre con
+ * `` ```ts `` en la columna 0; las demás formas las vigila `unextractedFences`.
  */
 const extractBlocks = (markdown: string): Block[] => {
   const blocks: Block[] = [];
   let current: string[] | undefined;
-  for (const line of markdown.split(/\r?\n/)) {
+  let opening = 0;
+  for (const [index, line] of markdown.split(/\r?\n/).entries()) {
     if (current === undefined) {
       if (/^```ts\s*$/.test(line)) {
         current = [];
+        opening = index + 1;
       }
       continue;
     }
     if (/^```\s*$/.test(line)) {
       const [first = ''] = current;
       blocks.push({
+        opening,
         path: /^\/\/ (src\/modules\/billing\/\S+\.ts)$/.exec(first)?.[1],
         source: current.join('\n'),
       });
@@ -158,11 +202,33 @@ const extractBlocks = (markdown: string): Block[] => {
   return blocks;
 };
 
+/**
+ * Una valla de TypeScript en cualquiera de las formas que CommonMark acepta: `typescript` o `tsx`,
+ * atributos tras el lenguaje, sangría, tildes, más de tres acentos graves o mayúsculas.
+ */
+const TS_FENCE = /^\s*(?:`{3,}|~{3,})\s*(?:ts|typescript|tsx)\b/i;
+
+/**
+ * Las vallas de TypeScript que no abrieron un bloque extraído, como `línea: valla`. Sin esto, un
+ * bloque escrito de otra forma se saltaría en silencio el contrato y la compilación.
+ */
+const unextractedFences = (markdown: string): string[] => {
+  const opened = new Set(extractBlocks(markdown).map((block) => block.opening));
+  return markdown
+    .split(/\r?\n/)
+    .flatMap((line, index) =>
+      TS_FENCE.test(line) && !opened.has(index + 1) ? [`${index + 1}: ${line.trim()}`] : [],
+    );
+};
+
+let cachedMarkdown: string | undefined;
 let cachedBlocks: Block[] | undefined;
 let cachedProgram: ts.Program | undefined;
 
-const referenceBlocks = (): Block[] =>
-  (cachedBlocks ??= extractBlocks(readFileSync(path.join(ROOT, REFERENCE), 'utf-8')));
+const referenceMarkdown = (): string =>
+  (cachedMarkdown ??= readFileSync(path.join(ROOT, REFERENCE), 'utf-8'));
+
+const referenceBlocks = (): Block[] => (cachedBlocks ??= extractBlocks(referenceMarkdown()));
 
 /** Los bloques con ruta, como el mapa `ruta → fuente` que leen el checker y el compilador. */
 const referenceSources = (): ReadonlyMap<string, string> =>

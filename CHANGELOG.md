@@ -456,6 +456,13 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **La guarda de NESTJS-MAPPING ya no se salta en silencio un bloque de TypeScript con otra
+  valla** (2026-10-20, M3 de la revisión del PR #144). Su extractor solo abre con ` ```ts ` en
+  la columna 0, así que un bloque ` ```typescript `, ` ```tsx `, ` ```ts title=… `,
+  sangrado en una lista, con espacio tras los acentos, con tildes, con cuatro acentos o en
+  mayúsculas no pasaba por el contrato de módulo, y `tsc` solo lo veía si otro bloque lo
+  importaba. Ahora `src/__tests__/nestjs-mapping.spec.ts` se pone rojo con la línea de cada valla
+  de TypeScript que no extrae. En `docs/nestjs-mapping.md` no había ninguna.
 - **`pnpm seed:admin` ya no declara `promoted` a un admin cuyo `users.id` no es v4** (2026-10-20,
   #41). Si un SQL externo dejaba ese id en otra versión, el seed actualizaba el rol, renovaba la
   credencial e imprimía `promoted`, y el login seguía en 500 porque `UserMapper` falla cerrado.
