@@ -135,9 +135,9 @@ body:
     attributes:
       label: Versión de pnpm
       description: >-
-        Salida de `pnpm --version`. El repo fija `12.13.0` en `packageManager`; sin
+        Salida de `pnpm --version`. El repo fija `12.14.0` en `packageManager`; sin
         `corepack enable` tu pnpm global puede ser otro.
-      placeholder: 12.13.0
+      placeholder: 12.14.0
     validations:
       required: true
 
