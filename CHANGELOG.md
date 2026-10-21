@@ -106,6 +106,10 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 - **Gobernanza del repositorio** (2026-08-08). `LICENSE` (MIT), `SECURITY.md`, `CHANGELOG.md`,
   `.github/CODEOWNERS` y plantillas de issue en formato de formulario, de cara a la creación del
   primer remoto.
+- **Guarda de la convención AAA** (2026-10-20, backlog #30). `src/__tests__/aaa-convention.spec.ts`
+  se pone rojo con cualquier test de `src/` o `test/` al que le falte `// Arrange`, `// Act` o
+  `// Assert` en su propia línea, o que lleve un marcador combinado. Lee los comentarios del AST,
+  así que el texto de una plantilla no cuenta como marcador.
 
 ### Changed
 

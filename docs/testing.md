@@ -171,7 +171,9 @@ const act = () => OrderAmount.from(-1);
 expect(act).toThrow(InvalidOrderAmountError);
 ```
 
-Los 194 tests heredados que la incumplían se pusieron al día el 2026-10-20 (backlog #30).
+Los 194 tests heredados que la incumplían se pusieron al día el 2026-10-20 (backlog #30), y desde
+entonces la verifica `src/__tests__/aaa-convention.spec.ts`: se pone rojo con cualquier test de
+`src/` o `test/` al que le falte un marcador o que lleve uno combinado.
 
 ### Un spec por archivo (1:1), dentro de `__tests__/`
 

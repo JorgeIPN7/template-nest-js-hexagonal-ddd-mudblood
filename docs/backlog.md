@@ -1467,6 +1467,20 @@ donde arriba dice 1010. En `2169523`, el `main` de partida, eran los mismos 194 
   del PR #144; M3 solo añade tests a `nestjs-mapping.spec.ts`, que no ejecutan `domain/` ni
   `application/`.
 
+**La guarda llegó con el cierre.** `src/__tests__/aaa-convention.spec.ts` pasa el escáner de
+`helpers/aaa-scanner.ts` por cada spec de `src/` y `test/`, y se pone rojo con cualquier test al
+que le falte uno de los tres marcadores en su propia línea o que lleve uno combinado. No es el
+contador del cierre, por dos diferencias:
+
+- lee los comentarios del AST y no el texto, así que una plantilla con `// Arrange` dentro no
+  cuenta como marcador;
+- toma la función del segundo argumento, no del último, así que también ve el test de
+  `seed-admin.e2e-spec.ts` que lleva un timeout detrás. El contador lo saltaba.
+
+Ve 1043 tests y ninguno incumple. Cada protección del escáner tiene una fila que cae por aserción
+sin ella. No comprueba el orden de las fases, y el «debería» y el 1:1 siguen sin guarda
+(`docs/development-workflows.md`, «Propuestas abiertas»).
+
 ---
 
 ## 31. Con relojes desfasados, el outbox puede publicar `OrderCancelled` antes que `OrderPlaced`
