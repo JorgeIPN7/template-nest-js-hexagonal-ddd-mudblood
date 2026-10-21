@@ -53,8 +53,11 @@ describe('CredentialMapper', () => {
       // Arrange
       const row = buildRow({ passwordHash: 'hunter2-en-claro' });
 
-      // Act + Assert
-      expect(() => CredentialMapper.toDomain(row)).toThrow(InvalidPasswordHashError);
+      // Act
+      const act = () => CredentialMapper.toDomain(row);
+
+      // Assert
+      expect(act).toThrow(InvalidPasswordHashError);
     });
 
     // Sin `failClosed`: el error de dominio llega tal cual al filtro de auth, que responde el 500

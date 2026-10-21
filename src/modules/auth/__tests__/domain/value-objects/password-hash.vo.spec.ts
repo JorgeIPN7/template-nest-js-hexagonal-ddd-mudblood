@@ -6,20 +6,27 @@ const VALID_PHC =
 
 describe('PasswordHash', () => {
   it('debería aceptar un hash argon2id válido', () => {
-    // Arrange + Act
+    // Arrange
+    // Act
     const hash = PasswordHash.from(VALID_PHC);
     // Assert
     expect(hash.value).toBe(VALID_PHC);
   });
 
   it('debería rechazar una cadena sin formato argon2id', () => {
-    // Act + Assert
-    expect(() => PasswordHash.from('hunter2-en-claro')).toThrow(InvalidPasswordHashError);
+    // Arrange
+    // Act
+    const act = () => PasswordHash.from('hunter2-en-claro');
+    // Assert
+    expect(act).toThrow(InvalidPasswordHashError);
   });
 
   it('debería rechazar una cadena vacía', () => {
-    // Act + Assert
-    expect(() => PasswordHash.from('')).toThrow(InvalidPasswordHashError);
+    // Arrange
+    // Act
+    const act = () => PasswordHash.from('');
+    // Assert
+    expect(act).toThrow(InvalidPasswordHashError);
   });
 
   it('debería excluir el valor rechazado del mensaje del error', () => {

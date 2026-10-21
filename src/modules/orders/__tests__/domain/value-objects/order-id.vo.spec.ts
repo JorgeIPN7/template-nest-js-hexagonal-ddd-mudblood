@@ -7,8 +7,13 @@ const VALID_UUID_V4 = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 describe('OrderId', () => {
   describe('from()', () => {
     it('debería rechazar un id que no sea uuid v4', () => {
-      // Act + Assert
-      expect(() => OrderId.from('nope')).toThrow(InvalidOrderIdError);
+      // Arrange
+
+      // Act
+      const act = () => OrderId.from('nope');
+
+      // Assert
+      expect(act).toThrow(InvalidOrderIdError);
     });
 
     it('debería rechazar un uuid v4 válido con texto delante', () => {

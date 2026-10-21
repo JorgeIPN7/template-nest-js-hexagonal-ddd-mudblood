@@ -183,7 +183,7 @@ Why: [docs/testing.md](docs/testing.md).
 - **Path aliases** (`@/`, `@common/`, `@test/`…) stay in sync in `tsconfig.json`, `.swcrc`, `jest.config.mjs` and `scripts/mutation-targets.mjs`; inside a module, import relatively.
 - **Tests mirror the module in its `__tests__/`, one spec per source file;** logic-free ports are exempt, errors and events are not (Stryker mutates them).
 - **`describe` in code, `it` in Spanish starting with `debería…`;** file-local helpers last, under `// Helpers`.
-- **AAA: `// Arrange`, `// Act` and `// Assert` in every `it`, each on its own line, even if empty;** a throw is captured in `// Act` (`const act = () => …`), never `// Act + Assert` (backlog #30).
+- **AAA: `// Arrange`, `// Act` and `// Assert` in every `it`, each on its own line, even if empty;** a throw is captured in `// Act` (`const act = () => …`), never `// Act + Assert` (`aaa-convention.spec.ts`; backlog #30).
 - **Mocking by layer:** no mocks in `domain/`; hand-written port fakes in `application/`, never `jest.mock`; repositories against real PostgreSQL in E2E. No suite measures `src/database/migrations/**` (backlog #17).
 - **Shared fixtures:** module-wide in `<module>/__tests__/helpers/`, cross-cutting in `test/helpers/` (via `@test/`); never copy a builder into several specs.
 - **`fast-check`** for VOs, pure functions and mapping round-trips, with **constructed** arbitraries, never `.filter()`-ed.

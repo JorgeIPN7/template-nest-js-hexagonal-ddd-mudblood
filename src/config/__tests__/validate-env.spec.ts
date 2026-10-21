@@ -19,9 +19,12 @@ describe('validateEnv', () => {
     // Arrange
     const raw = { PORT: 'not-a-number' };
 
-    // Act + Assert
-    expect(() => validateEnv(raw)).toThrow(/Invalid environment variables/);
-    expect(() => validateEnv(raw)).toThrow(/PORT/);
+    // Act
+    const act = () => validateEnv(raw);
+
+    // Assert
+    expect(act).toThrow(/Invalid environment variables/);
+    expect(act).toThrow(/PORT/);
   });
 
   it('debería incluir una línea por cada variable inválida', () => {

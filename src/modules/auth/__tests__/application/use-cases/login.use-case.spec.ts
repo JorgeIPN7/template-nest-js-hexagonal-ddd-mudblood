@@ -63,10 +63,11 @@ describe('LoginUseCase', () => {
     // Arrange
     const { useCase } = build();
 
-    // Act + Assert
-    await expect(
-      useCase.execute({ email: 'nadie@example.com', password: 'lo-que-sea-123' }),
-    ).rejects.toThrow(InvalidCredentialsError);
+    // Act
+    const act = useCase.execute({ email: 'nadie@example.com', password: 'lo-que-sea-123' });
+
+    // Assert
+    await expect(act).rejects.toThrow(InvalidCredentialsError);
   });
 
   // Caso NUEVO del ciclo 4: perfil y credencial son de dueños distintos, así que un perfil
@@ -76,20 +77,25 @@ describe('LoginUseCase', () => {
     const user = buildDirectoryUser({ email: 'sin.credencial@example.com' });
     const { useCase } = build({ users: [user] });
 
-    // Act + Assert
-    await expect(
-      useCase.execute({ email: 'sin.credencial@example.com', password: 'lo-que-sea-123' }),
-    ).rejects.toThrow(InvalidCredentialsError);
+    // Act
+    const act = useCase.execute({
+      email: 'sin.credencial@example.com',
+      password: 'lo-que-sea-123',
+    });
+
+    // Assert
+    await expect(act).rejects.toThrow(InvalidCredentialsError);
   });
 
   it('debería lanzar InvalidCredentialsError si el password no coincide', async () => {
     // Arrange
     const { useCase } = buildWithAccount('maria@example.com', 'Password-Correcta-1');
 
-    // Act + Assert
-    await expect(
-      useCase.execute({ email: 'maria@example.com', password: 'password-mala-9' }),
-    ).rejects.toThrow(InvalidCredentialsError);
+    // Act
+    const act = useCase.execute({ email: 'maria@example.com', password: 'password-mala-9' });
+
+    // Assert
+    await expect(act).rejects.toThrow(InvalidCredentialsError);
   });
 
   it('debería lanzar InvalidCredentialsError si el usuario está inactivo', async () => {
@@ -98,10 +104,11 @@ describe('LoginUseCase', () => {
       active: false,
     });
 
-    // Act + Assert
-    await expect(
-      useCase.execute({ email: 'baja@example.com', password: 'Password-Correcta-1' }),
-    ).rejects.toThrow(InvalidCredentialsError);
+    // Act
+    const act = useCase.execute({ email: 'baja@example.com', password: 'Password-Correcta-1' });
+
+    // Assert
+    await expect(act).rejects.toThrow(InvalidCredentialsError);
   });
 
   it('debería verificar contra el hash dummy cuando el email no existe', async () => {

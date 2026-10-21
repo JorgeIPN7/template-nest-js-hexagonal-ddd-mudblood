@@ -714,7 +714,8 @@ Las reglas de decisión se fijaron (y se sellaron con un hash) antes de ejecutar
 
 ### Propuestas abiertas (decisión del usuario)
 
-- **Guarda automática de convenciones de test** (`docs/backlog.md` #30): hoy nada verifica por
-  script el «debería», los tres marcadores AAA ni el 1:1.
+- **Guarda automática de convenciones de test** (`docs/backlog.md` #30): los tres marcadores AAA
+  los verifica `src/__tests__/aaa-convention.spec.ts` desde el 2026-10-20; el «debería» y el 1:1
+  siguen sin script.
 - **Evals de regresión de `/feature` y `adversarial-review`** con `claude plugin eval`. ⚠️ Esa herramienta publica el
   informe en claude.ai por defecto; hay que usar `--no-publish`.

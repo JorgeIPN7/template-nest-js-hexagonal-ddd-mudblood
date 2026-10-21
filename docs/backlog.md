@@ -1441,6 +1441,46 @@ un `it` que fija su mensaje, sin supervivientes en el censo de mutación. (La co
 2026-09-30: la spec de `order.errors.ts` ya existe, y el porcentaje de `orders` sube por el código
 nuevo de la cancelación, no por la deuda pagada.)
 
+**Cerrado el 2026-10-20.** El conteo llega a 0. El script del método se reconstruyó y reproduce
+los 207 de `bc66bce` y los 194 en 45 specs de `a6b0afc`, con su mismo desglose (99 sin
+`// Arrange` en 20 specs y 95 combinados en 33). Solo difiere en el total: cuenta 1013 tests
+donde arriba dice 1010. En `2169523`, el `main` de partida, eran los mismos 194 de 1029 tests.
+
+- **176 los resolvió un codemod sobre el AST**, con tres formas: un `// Arrange` al principio del
+  cuerpo, vacío si lo primero ya era un marcador; cada `// Arrange + Act` partido en sus dos
+  marcadores; y cada `// Act + Assert` de una sola sentencia partido en `const act = () => …`, si
+  se esperaba un throw, o en `const act = <promesa>`, si se esperaba `rejects`, que es la forma
+  de `cancel-order.use-case.spec.ts`.
+- **Los 18 restantes se hicieron a mano.** Cuando hay varias aserciones sobre la misma acción,
+  comparten el `act`. Dos acciones llevan dos constantes. En la propiedad con rama de
+  `user.entity.spec.ts`, la rama que no lanza llama a `act()`. En las constantes fijadas
+  (`ARGON2_PARAMS`, `USER_ROLES`), `// Arrange` y `// Act` quedan vacíos, porque no hay acción
+  que nombrar. En los tests de `fast-check`, `// Arrange` va dentro de la propiedad, como ya
+  hacía `pino-options.spec.ts`.
+- **No cambió ningún comportamiento.** Quedan las mismas 103 suites y 1060 tests unitarios, y las
+  mismas 12 suites y 173 tests E2E, con los mismos nombres y en verde. En mutación son los mismos
+  360 mutantes válidos, todos detectados en las dos corridas, sin supervivientes ni mutantes sin
+  cobertura. Solo cambia el reparto entre muertos y timeouts, de 354/6 a 352/8: 14 mutantes
+  cambian, en los dos sentidos, y ninguno deja de detectarse. Ese reparto ya varía de una corrida
+  a otra (cabecera de `stryker.config.mjs`), y la segunda corrida compartió la máquina con otra
+  verificación. Las dos corridas se hicieron sobre `14181ba`, que además lleva el seguimiento M3
+  del PR #144; M3 solo añade tests a `nestjs-mapping.spec.ts`, que no ejecutan `domain/` ni
+  `application/`.
+
+**La guarda llegó con el cierre.** `src/__tests__/aaa-convention.spec.ts` pasa el escáner de
+`helpers/aaa-scanner.ts` por cada spec de `src/` y `test/`, y se pone rojo con cualquier test al
+que le falte uno de los tres marcadores en su propia línea o que lleve uno combinado. No es el
+contador del cierre, por dos diferencias:
+
+- lee los comentarios del AST y no el texto, así que una plantilla con `// Arrange` dentro no
+  cuenta como marcador;
+- toma la función del segundo argumento, no del último, así que también ve el test de
+  `seed-admin.e2e-spec.ts` que lleva un timeout detrás. El contador lo saltaba.
+
+Ve 1043 tests y ninguno incumple. Cada protección del escáner tiene una fila que cae por aserción
+sin ella. No comprueba el orden de las fases, y el «debería» y el 1:1 siguen sin guarda
+(`docs/development-workflows.md`, «Propuestas abiertas»).
+
 ---
 
 ## 31. Con relojes desfasados, el outbox puede publicar `OrderCancelled` antes que `OrderPlaced`

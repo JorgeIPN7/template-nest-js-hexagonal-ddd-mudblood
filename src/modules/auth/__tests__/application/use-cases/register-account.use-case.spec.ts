@@ -114,14 +114,15 @@ describe('RegisterAccountUseCase', () => {
     const { useCase, directory, credentials } = build();
     directory.createProfileOutcome = { ok: false, reason: 'email-taken' };
 
-    // Act + Assert
-    await expect(
-      useCase.execute({
-        email: 'tomado@example.com',
-        name: 'Otro Usuario',
-        password: 'Password-Segura-1',
-      }),
-    ).rejects.toThrow(EmailAlreadyRegisteredError);
+    // Act
+    const act = useCase.execute({
+      email: 'tomado@example.com',
+      name: 'Otro Usuario',
+      password: 'Password-Segura-1',
+    });
+
+    // Assert
+    await expect(act).rejects.toThrow(EmailAlreadyRegisteredError);
     expect(credentials.size()).toBe(0);
   });
 

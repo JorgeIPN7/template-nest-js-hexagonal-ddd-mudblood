@@ -36,14 +36,15 @@ describe('PlaceOrderUseCase', () => {
       // Arrange: el directorio no conoce a nadie.
       const { useCase, repository } = buildUseCase([]);
 
-      // Act + Assert
-      await expect(
-        useCase.execute({
-          customerId: CUSTOMER_ID,
-          concept: 'Suscripción anual',
-          amountCents: 149_900,
-        }),
-      ).rejects.toThrow(CustomerGoneError);
+      // Act
+      const act = useCase.execute({
+        customerId: CUSTOMER_ID,
+        concept: 'Suscripción anual',
+        amountCents: 149_900,
+      });
+
+      // Assert
+      await expect(act).rejects.toThrow(CustomerGoneError);
       expect(repository.saveCalls).toHaveLength(0);
     });
 

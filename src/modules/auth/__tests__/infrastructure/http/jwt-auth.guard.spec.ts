@@ -77,8 +77,11 @@ describe('JwtAuthGuard', () => {
     const { guard } = build();
     const context = buildContext(ProtectedCarrier, { headers: {} });
 
-    // Act + Assert
-    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+    // Act
+    const act = guard.canActivate(context);
+
+    // Assert
+    await expect(act).rejects.toThrow(UnauthorizedException);
   });
 
   it('debería pasar con un token válido y adjuntar los claims a request.user', async () => {
@@ -170,8 +173,11 @@ describe('JwtAuthGuard', () => {
       headers: { authorization: `Bearer ${token}` },
     });
 
-    // Act + Assert
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    // Act
+    const act = guard.canActivate(context);
+
+    // Assert
+    await expect(act).rejects.toThrow(ForbiddenException);
   });
 
   it('debería pasar cuando el rol del token coincide con @Auth(admin)', async () => {

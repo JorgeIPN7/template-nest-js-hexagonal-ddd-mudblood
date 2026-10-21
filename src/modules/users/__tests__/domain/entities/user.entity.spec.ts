@@ -12,6 +12,8 @@ const LATER = new Date('2026-07-27T11:00:00.000Z');
 describe('User', () => {
   describe('create()', () => {
     it('debería nacer activo con las marcas de tiempo iguales', () => {
+      // Arrange
+
       // Act
       const user = buildUser();
 
@@ -22,6 +24,8 @@ describe('User', () => {
     });
 
     it('debería recortar los espacios del nombre', () => {
+      // Arrange
+
       // Act
       const user = buildUser({ name: '  María González  ' });
 
@@ -34,18 +38,30 @@ describe('User', () => {
       ['solo espacios', '   '],
       ['vacío', ''],
     ])('debería rechazar un nombre %s', (_caso, name) => {
-      // Act + Assert
-      expect(() => buildUser({ name })).toThrow(InvalidUserNameError);
+      // Arrange
+
+      // Act
+      const act = () => buildUser({ name });
+
+      // Assert
+      expect(act).toThrow(InvalidUserNameError);
     });
 
     it('debería rechazar un nombre de más de 120 caracteres', () => {
-      // Act + Assert
-      expect(() => buildUser({ name: 'a'.repeat(121) })).toThrow(InvalidUserNameError);
+      // Arrange
+
+      // Act
+      const act = () => buildUser({ name: 'a'.repeat(121) });
+
+      // Assert
+      expect(act).toThrow(InvalidUserNameError);
     });
 
     // Los límites exactos: la suite probaba 1 y 121, nunca 2 ni 120. Un `<`/`<=` invertido
     // en `assertName` pasaba inadvertido, y 120 es además el ancho de `varchar(120)`.
     it.each([2, 120])('debería aceptar un nombre de exactamente %i caracteres', (length) => {
+      // Arrange
+
       // Act
       const user = buildUser({ name: 'a'.repeat(length) });
 
@@ -68,7 +84,9 @@ describe('User', () => {
     });
 
     it('debería crear usuarios siempre con rol user', () => {
-      // Arrange + Act
+      // Arrange
+
+      // Act
       const user = buildUser();
 
       // Assert
@@ -76,7 +94,9 @@ describe('User', () => {
     });
 
     it('debería no llevar credencial: el perfil no conoce el password', () => {
-      // Arrange + Act
+      // Arrange
+
+      // Act
       const user = buildUser();
 
       // Assert
@@ -102,8 +122,11 @@ describe('User', () => {
       // Arrange
       const user = buildUser({ name: 'Nombre Original' });
 
-      // Act + Assert
-      expect(() => user.rename('x', LATER)).toThrow(InvalidUserNameError);
+      // Act
+      const act = () => user.rename('x', LATER);
+
+      // Assert
+      expect(act).toThrow(InvalidUserNameError);
       expect(user.name).toBe('Nombre Original');
       expect(user.updatedAt).toEqual(NOW);
     });
@@ -253,7 +276,9 @@ describe('User', () => {
      * negativa que el ciclo introduce.
      */
     it('debería incluir el rol y ningún rastro de credencial en el snapshot', () => {
-      // Arrange + Act
+      // Arrange
+
+      // Act
       const snapshot = buildUser().toSnapshot();
 
       // Assert
@@ -350,11 +375,14 @@ describe('User', () => {
           const trimmed = raw.trim();
           const fits = trimmed.length >= 2 && trimmed.length <= 120;
 
-          // Act + Assert
+          // Act
+          const act = () => buildUser({ name: raw });
+
+          // Assert
           if (fits) {
-            expect(buildUser({ name: raw }).name).toBe(trimmed);
+            expect(act().name).toBe(trimmed);
           } else {
-            expect(() => buildUser({ name: raw })).toThrow(InvalidUserNameError);
+            expect(act).toThrow(InvalidUserNameError);
           }
         }),
       );
@@ -383,8 +411,13 @@ describe('User', () => {
     });
 
     it('debería rechazar un nombre de un solo grafema que ocupa una sola unidad', () => {
-      // Act + Assert
-      expect(() => buildUser({ name: 'á' })).toThrow(InvalidUserNameError);
+      // Arrange
+
+      // Act
+      const act = () => buildUser({ name: 'á' });
+
+      // Assert
+      expect(act).toThrow(InvalidUserNameError);
     });
   });
 
@@ -394,7 +427,9 @@ describe('User', () => {
     fcTest.prop([userArbitrary()])(
       'debería conservar el rol en el round-trip snapshot→rehydrate',
       (user) => {
-        // Arrange + Act
+        // Arrange
+
+        // Act
         const revived = User.rehydrate({
           ...user.toSnapshot(),
           id: UserId.from(user.id.value),

@@ -106,9 +106,19 @@ seguirá [Semantic Versioning](https://semver.org/lang/es/).
 - **Gobernanza del repositorio** (2026-08-08). `LICENSE` (MIT), `SECURITY.md`, `CHANGELOG.md`,
   `.github/CODEOWNERS` y plantillas de issue en formato de formulario, de cara a la creación del
   primer remoto.
+- **Guarda de la convención AAA** (2026-10-20, backlog #30). `src/__tests__/aaa-convention.spec.ts`
+  se pone rojo con cualquier test de `src/` o `test/` al que le falte `// Arrange`, `// Act` o
+  `// Assert` en su propia línea, o que lleve un marcador combinado. Lee los comentarios del AST,
+  así que el texto de una plantilla no cuenta como marcador.
 
 ### Changed
 
+- **Los tests heredados cumplen ya AAA estricto** (2026-10-20, backlog #30). Los 194 tests de 45
+  specs que no llevaban los tres marcadores en líneas propias ya los llevan: un `// Arrange` vacío
+  donde faltaba, cada `// Arrange + Act` partido en sus dos marcadores, y cada `// Act + Assert`
+  partido en `const act = …` bajo `// Act` y la aserción bajo `// Assert`. Solo cambia la forma:
+  quedan las mismas suites y los mismos tests, con los mismos nombres, y los mismos mutantes
+  detectados.
 - **Contrato base de módulo: un kernel compartido y un test que verifica la forma de cada
   contexto** (2026-10-19). `users`, `orders` y `auth` heredan de las mismas bases, para que un
   módulo nuevo sea fácil de crear y uno existente, fácil de reemplazar.

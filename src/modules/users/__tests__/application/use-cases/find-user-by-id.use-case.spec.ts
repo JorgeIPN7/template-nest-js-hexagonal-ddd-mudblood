@@ -26,8 +26,11 @@ describe('FindUserByIdUseCase', () => {
       const useCase = buildUseCase();
       const unknownId = UserId.generate().value;
 
-      // Act + Assert
-      await expect(useCase.execute({ userId: unknownId })).rejects.toThrow(UserNotFoundError);
+      // Act
+      const act = useCase.execute({ userId: unknownId });
+
+      // Assert
+      await expect(act).rejects.toThrow(UserNotFoundError);
     });
 
     // `UserId` guarda el valor en minúsculas: si el error citara el id normalizado, el 404 no
@@ -51,8 +54,11 @@ describe('FindUserByIdUseCase', () => {
       // Arrange
       const useCase = buildUseCase();
 
-      // Act + Assert
-      await expect(useCase.execute({ userId: 'not-a-uuid' })).rejects.toThrow(InvalidUserIdError);
+      // Act
+      const act = useCase.execute({ userId: 'not-a-uuid' });
+
+      // Assert
+      await expect(act).rejects.toThrow(InvalidUserIdError);
     });
   });
 });

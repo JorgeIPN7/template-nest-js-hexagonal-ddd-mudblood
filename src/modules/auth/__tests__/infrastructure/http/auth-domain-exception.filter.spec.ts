@@ -25,18 +25,22 @@ describe('AuthDomainExceptionFilter', () => {
       // Arrange
       const filter = new AuthDomainExceptionFilter();
 
-      // Act + Assert
-      expect(() => filter.catch(new InvalidCredentialsError())).toThrow(UnauthorizedException);
+      // Act
+      const act = () => filter.catch(new InvalidCredentialsError());
+
+      // Assert
+      expect(act).toThrow(UnauthorizedException);
     });
 
     it('debería traducir EmailAlreadyRegisteredError a 409', () => {
       // Arrange
       const filter = new AuthDomainExceptionFilter();
 
-      // Act + Assert
-      expect(() => filter.catch(new EmailAlreadyRegisteredError('taken@example.com'))).toThrow(
-        ConflictException,
-      );
+      // Act
+      const act = () => filter.catch(new EmailAlreadyRegisteredError('taken@example.com'));
+
+      // Assert
+      expect(act).toThrow(ConflictException);
     });
 
     // `InvalidPasswordHashError` SALIÓ de esta tabla en la revisión adversarial: no es entrada
@@ -65,10 +69,11 @@ describe('AuthDomainExceptionFilter', () => {
       // Arrange
       const filter = new AuthDomainExceptionFilter();
 
-      // Act + Assert
-      expect(() => filter.catch(new InvalidPasswordHashError())).toThrow(
-        InternalServerErrorException,
-      );
+      // Act
+      const act = () => filter.catch(new InvalidPasswordHashError());
+
+      // Assert
+      expect(act).toThrow(InternalServerErrorException);
     });
 
     /**
@@ -126,8 +131,11 @@ describe('AuthDomainExceptionFilter', () => {
       // Arrange
       const filter = new AuthDomainExceptionFilter();
 
-      // Act + Assert
-      expect(() => filter.catch(new UnmappedDomainError())).toThrow(BadRequestException);
+      // Act
+      const act = () => filter.catch(new UnmappedDomainError());
+
+      // Assert
+      expect(act).toThrow(BadRequestException);
     });
 
     /**

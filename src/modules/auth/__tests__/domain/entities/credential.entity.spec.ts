@@ -16,6 +16,8 @@ const HASH_VALUE =
 describe('Credential', () => {
   describe('create()', () => {
     it('debería nacer con las marcas de tiempo iguales', () => {
+      // Arrange
+
       // Act
       const credential = Credential.create({ userId: USER_ID, passwordHash: hash(), now: NOW });
 

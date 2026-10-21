@@ -28,6 +28,8 @@ describe('HealthModule', () => {
   // ni declarar `TypeOrmHealthIndicator`, que llegan de `TerminusModule` y del contenedor
   // global. El contenido de la config lo verifica `config/__tests__/`, no este archivo.
   it('debería resolver el HealthController con sus indicadores', () => {
+    // Arrange
+
     // Act
     const controller = moduleRef.get(HealthController);
 

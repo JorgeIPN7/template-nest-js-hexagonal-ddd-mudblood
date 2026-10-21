@@ -232,7 +232,9 @@ describe('NEST_APP_OPTIONS', () => {
     // el 503 JSON `shutting_down` que publica el contrato de health deja de ser alcanzable: el
     // motivo completo está en el comentario de `NEST_APP_OPTIONS`.
     it('debería seguir atendiendo una petición nueva mientras el apagado espera a los hooks', async () => {
-      // Arrange + Act
+      // Arrange
+
+      // Act
       const { late } = await runShutdownScenario();
 
       // Assert
@@ -241,7 +243,9 @@ describe('NEST_APP_OPTIONS', () => {
     });
 
     it('debería dejar terminar la petición que ya estaba en vuelo cuando empezó el apagado', async () => {
-      // Arrange + Act
+      // Arrange
+
+      // Act
       const { inFlight } = await runShutdownScenario();
 
       // Assert

@@ -122,7 +122,9 @@ describe('language convention gate', () => {
       ['nombreMinimo', ['nombre', 'minimo']],
       ['breaking-change', ['breaking', 'change']],
     ])('debería segmentar %s sin romper acrónimos ni SCREAMING_CASE', (name, expected) => {
-      // Arrange & Act
+      // Arrange
+
+      // Act
       const segments = segmentsOf(name);
 
       // Assert
@@ -143,7 +145,9 @@ describe('language convention gate', () => {
 
   describe('el árbol', () => {
     it('debería declarar en inglés y en ASCII todos los identificadores de src/ y test/', () => {
-      // Arrange & Act
+      // Arrange
+
+      // Act
       const violations = scanTree(ROOT, SCANNED_DIRS);
 
       // Assert

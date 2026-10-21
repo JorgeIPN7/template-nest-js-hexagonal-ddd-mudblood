@@ -88,6 +88,8 @@ describe('Users (e2e)', () => {
     });
 
     it('debería responder 404 cuando el usuario no existe', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .get(`${prefix}/users/3f2504e0-4f89-41d3-9a0c-0305e82c3301`)
@@ -98,6 +100,8 @@ describe('Users (e2e)', () => {
     });
 
     it('debería responder 400 cuando el id no es un UUID', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .get(`${prefix}/users/no-es-uuid`)
@@ -177,6 +181,8 @@ describe('Users (e2e)', () => {
     });
 
     it('debería devolver una lista vacía cuando no hay usuarios', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .get(`${prefix}/users`)
@@ -195,6 +201,8 @@ describe('Users (e2e)', () => {
       ['limit en cero', 'page=1&limit=0'],
       ['page no numérica', 'page=abc'],
     ])('debería responder 400 con %s', async (_caso, query) => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .get(`${prefix}/users?${query}`)
@@ -245,6 +253,8 @@ describe('Users (e2e)', () => {
     });
 
     it('debería responder 404 al desactivar un usuario inexistente', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .delete(`${prefix}/users/3f2504e0-4f89-41d3-9a0c-0305e82c3301`)
@@ -288,6 +298,8 @@ describe('Users (e2e)', () => {
 
   describe('autenticación y autorización', () => {
     it('debería responder 401 en GET /users sin token', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer()).get(`${prefix}/users`);
 
@@ -296,6 +308,8 @@ describe('Users (e2e)', () => {
     });
 
     it('debería responder 401 en GET /users con un token inválido', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .get(`${prefix}/users`)
@@ -317,6 +331,8 @@ describe('Users (e2e)', () => {
     });
 
     it('debería responder 403 en GET /users con un token de rol user', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .get(`${prefix}/users`)
@@ -327,6 +343,7 @@ describe('Users (e2e)', () => {
     });
 
     it('debería responder 403 en DELETE /users/:id con un token de rol user', async () => {
+      // Arrange
       // El guard corre antes que pipes y handler: el id ni siquiera necesita existir.
       // Act
       const response = await request(app.getHttpServer())
@@ -340,6 +357,8 @@ describe('Users (e2e)', () => {
     // El token de admin sale del flujo promote+relogin del beforeAll: el claim `role` se
     // acuña al firmar, así que solo un login POSTERIOR a la promoción porta 'admin'.
     it('debería responder 200 en GET /users con el token de admin', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .get(`${prefix}/users`)
@@ -350,6 +369,8 @@ describe('Users (e2e)', () => {
     });
 
     it('debería mantener el health público, sin token', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer()).get(`${prefix}/health`);
 
@@ -362,6 +383,8 @@ describe('Users (e2e)', () => {
     // detectaría que se hubiera perdido en la mudanza: sin guard, `POST /users` ya no
     // existe pero `GET /users` respondería 200 sin token, no 401.
     it('debería mantener público el registro, que ahora vive en /auth/register', async () => {
+      // Arrange
+
       // Act
       const response = await postRegister({
         email: 'registro.publico@example.com',
@@ -377,6 +400,8 @@ describe('Users (e2e)', () => {
     // ya no está registrada, en vez de estar protegida: si volviera a existir en silencio,
     // habría dos altas con reglas distintas.
     it('debería no exponer ya POST /users', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .post(`${prefix}/users`)

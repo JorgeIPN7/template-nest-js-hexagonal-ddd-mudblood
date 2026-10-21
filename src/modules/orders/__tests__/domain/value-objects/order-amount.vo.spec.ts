@@ -7,19 +7,35 @@ import { orderAmountCentsArb } from '../../helpers/arbitraries';
 describe('OrderAmount', () => {
   describe('from()', () => {
     it('debería rechazar un importe no entero', () => {
-      // Act + Assert
-      expect(() => OrderAmount.from(10.5)).toThrow(InvalidOrderAmountError);
+      // Arrange
+
+      // Act
+      const act = () => OrderAmount.from(10.5);
+
+      // Assert
+      expect(act).toThrow(InvalidOrderAmountError);
     });
 
     it('debería rechazar un importe de cero o negativo', () => {
-      // Act + Assert
-      expect(() => OrderAmount.from(0)).toThrow(InvalidOrderAmountError);
-      expect(() => OrderAmount.from(-1)).toThrow(InvalidOrderAmountError);
+      // Arrange
+
+      // Act
+      const actZero = () => OrderAmount.from(0);
+      const actNegative = () => OrderAmount.from(-1);
+
+      // Assert
+      expect(actZero).toThrow(InvalidOrderAmountError);
+      expect(actNegative).toThrow(InvalidOrderAmountError);
     });
 
     it('debería rechazar un importe mayor al tope', () => {
-      // Act + Assert
-      expect(() => OrderAmount.from(10_000_001)).toThrow(InvalidOrderAmountError);
+      // Arrange
+
+      // Act
+      const act = () => OrderAmount.from(10_000_001);
+
+      // Assert
+      expect(act).toThrow(InvalidOrderAmountError);
     });
 
     // El tope exacto, por el mismo motivo que el límite de 140 del concepto: sin él, ninguna fila
@@ -42,6 +58,8 @@ describe('OrderAmount', () => {
     fcTest.prop([orderAmountCentsArb])(
       'debería aceptar cualquier importe entero del rango (propiedad)',
       (cents) => {
+        // Arrange
+
         // Act
         const amount = OrderAmount.from(cents);
 

@@ -7,6 +7,8 @@ import { buildTypeOrmOptions, ENTITIES_GLOB, MIGRATIONS_GLOB } from '../typeorm-
 
 describe('buildTypeOrmOptions', () => {
   it('debería configurar el driver de postgres', () => {
+    // Arrange
+
     // Act
     const options = buildTypeOrmOptions(buildConfig());
 
@@ -49,6 +51,8 @@ describe('buildTypeOrmOptions', () => {
   });
 
   it('debería dejar el TLS desactivado cuando la config lo indica', () => {
+    // Arrange
+
     // Act
     const options = buildTypeOrmOptions(buildConfig({ ssl: false })) as Record<string, unknown>;
 
@@ -57,6 +61,8 @@ describe('buildTypeOrmOptions', () => {
   });
 
   it('debería descubrir entidades y migraciones por glob', () => {
+    // Arrange
+
     // Act
     const options = buildTypeOrmOptions(buildConfig());
 
@@ -100,6 +106,8 @@ describe('buildTypeOrmOptions', () => {
   });
 
   it('debería nombrar la tabla de migraciones de forma explícita', () => {
+    // Arrange
+
     // Act
     const options = buildTypeOrmOptions(buildConfig()) as Record<string, unknown>;
 

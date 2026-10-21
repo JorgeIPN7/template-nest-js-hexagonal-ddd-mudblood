@@ -52,10 +52,11 @@ describe('UserTypeOrmRepository (e2e)', () => {
       const email = 'colision@example.com';
       await repository.save(buildUser(email));
 
-      // Act + Assert
-      await expect(repository.save(buildUser(email))).rejects.toBeInstanceOf(
-        EmailAlreadyTakenError,
-      );
+      // Act
+      const act = repository.save(buildUser(email));
+
+      // Assert
+      await expect(act).rejects.toBeInstanceOf(EmailAlreadyTakenError);
     });
 
     it('debería dejar una sola fila tras el intento fallido', async () => {
@@ -85,8 +86,11 @@ describe('UserTypeOrmRepository (e2e)', () => {
         updatedAt: new Date(),
       });
 
-      // Act + Assert
-      await expect(repository.save(user)).rejects.not.toBeInstanceOf(EmailAlreadyTakenError);
+      // Act
+      const act = repository.save(user);
+
+      // Assert
+      await expect(act).rejects.not.toBeInstanceOf(EmailAlreadyTakenError);
     });
 
     it('debería sobrescribir el usuario existente cuando se guarda con el mismo id', async () => {
@@ -166,6 +170,8 @@ describe('UserTypeOrmRepository (e2e)', () => {
     });
 
     it('debería devolver null cuando no existe', async () => {
+      // Arrange
+
       // Act
       const found = await repository.findByEmail(Email.from('inexistente@example.com'));
 

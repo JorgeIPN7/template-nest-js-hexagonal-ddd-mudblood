@@ -10,6 +10,8 @@ describe('UserId', () => {
     // así que si aceptara un v1 el test seguiría en verde. La versión vive en el dígito 15
     // y la variante en el 17, según RFC 4122.
     it('debería producir un UUID de versión 4 y variante RFC 4122', () => {
+      // Arrange
+
       // Act
       const value = UserId.generate().value;
 
@@ -20,6 +22,8 @@ describe('UserId', () => {
     });
 
     it('debería producir un identificador distinto en cada llamada', () => {
+      // Arrange
+
       // Act
       const first = UserId.generate();
       const second = UserId.generate();
@@ -47,8 +51,13 @@ describe('UserId', () => {
       ['UUID truncado', '3f2504e0-4f89-41d3-9a0c'],
       ['UUID v1', '3f2504e0-4f89-11d3-9a0c-0305e82c3301'],
     ])('debería rechazar %s', (_caso, value) => {
-      // Act + Assert
-      expect(() => UserId.from(value)).toThrow(InvalidUserIdError);
+      // Arrange
+
+      // Act
+      const act = () => UserId.from(value);
+
+      // Assert
+      expect(act).toThrow(InvalidUserIdError);
     });
   });
 
@@ -65,6 +74,8 @@ describe('UserId', () => {
     });
 
     it('debería distinguir ids generados por separado', () => {
+      // Arrange
+
       // Act
       const result = UserId.generate().equals(UserId.generate());
 
@@ -79,6 +90,8 @@ describe('UserId', () => {
     it('debería aceptar cualquier UUID v4 bien formado', () => {
       fc.assert(
         fc.property(fc.uuid({ version: 4 }), (value) => {
+          // Arrange
+
           // Act
           const id = UserId.from(value);
 

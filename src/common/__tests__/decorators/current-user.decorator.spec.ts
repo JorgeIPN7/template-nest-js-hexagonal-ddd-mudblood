@@ -33,8 +33,11 @@ describe('CurrentUser', () => {
     const factory = extractFactory();
     const context = contextWithUser(undefined);
 
-    // Act + Assert
-    expect(() => factory(undefined, context)).toThrow(/JwtAuthGuard|@Public/);
+    // Act
+    const act = () => factory(undefined, context);
+
+    // Assert
+    expect(act).toThrow(/JwtAuthGuard|@Public/);
   });
 });
 

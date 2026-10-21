@@ -33,10 +33,11 @@ describe('TimeoutInterceptor', () => {
       const { interceptor } = buildInterceptor(20);
       const slowHandler = { handle: () => timer(100).pipe(map(() => 'late')) };
 
-      // Act + Assert
-      await expect(
-        firstValueFrom(interceptor.intercept(buildHttpContext(), slowHandler)),
-      ).rejects.toBeInstanceOf(RequestTimeoutException);
+      // Act
+      const act = firstValueFrom(interceptor.intercept(buildHttpContext(), slowHandler));
+
+      // Assert
+      await expect(act).rejects.toBeInstanceOf(RequestTimeoutException);
     });
 
     // El ejemplo del 408 de `@ApiStandardErrors()` publica esa misma constante: si el interceptor
@@ -61,10 +62,11 @@ describe('TimeoutInterceptor', () => {
       const original = new Error('boom');
       const failingHandler = { handle: () => throwError(() => original) };
 
-      // Act + Assert
-      await expect(
-        firstValueFrom(interceptor.intercept(buildHttpContext(), failingHandler)),
-      ).rejects.toBe(original);
+      // Act
+      const act = firstValueFrom(interceptor.intercept(buildHttpContext(), failingHandler));
+
+      // Assert
+      await expect(act).rejects.toBe(original);
     });
 
     it('debería omitir los contextos que no son http', async () => {
@@ -119,10 +121,11 @@ describe('TimeoutInterceptor', () => {
       const context = buildContextForHandler(Probe.prototype.handler, Probe);
       const slowHandler = { handle: () => timer(200).pipe(map(() => 'late')) };
 
-      // Act + Assert
-      await expect(
-        firstValueFrom(interceptor.intercept(context, slowHandler)),
-      ).rejects.toBeInstanceOf(RequestTimeoutException);
+      // Act
+      const act = firstValueFrom(interceptor.intercept(context, slowHandler));
+
+      // Assert
+      await expect(act).rejects.toBeInstanceOf(RequestTimeoutException);
     });
 
     // Un stream SSE es deliberadamente largo: aplicarle el timeout de una petición normal
