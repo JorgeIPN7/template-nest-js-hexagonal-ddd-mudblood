@@ -331,8 +331,11 @@ describe('AllExceptionsFilter', () => {
         switchToHttp: () => ({ getRequest: () => ({}), getResponse: () => ({}) }),
       } as unknown as ArgumentsHost;
 
-      // Act + Assert
-      expect(() => filter.catch(new Error('rpc'), host)).toThrow('rpc');
+      // Act
+      const act = () => filter.catch(new Error('rpc'), host);
+
+      // Assert
+      expect(act).toThrow('rpc');
     });
 
     it('debería ignorar en silencio lo que no sea un Error fuera de contexto http', () => {

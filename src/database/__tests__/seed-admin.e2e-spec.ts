@@ -315,8 +315,11 @@ describe('seedAdmin (e2e)', () => {
     delete process.env.ADMIN_EMAIL;
     delete process.env.ADMIN_PASSWORD;
 
-    // Act + Assert
-    await expect(seedAdmin(dataSource)).rejects.toThrow(
+    // Act
+    const act = seedAdmin(dataSource);
+
+    // Assert
+    await expect(act).rejects.toThrow(
       'seed:admin necesita ADMIN_EMAIL y ADMIN_PASSWORD en el entorno (ambas).',
     );
     const rows = await dataSource.query<{ count: number }[]>(

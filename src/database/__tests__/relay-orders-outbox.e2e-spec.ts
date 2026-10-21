@@ -63,6 +63,8 @@ describe('relayOrdersOutbox (e2e)', () => {
   });
 
   it('debería devolver 0 con el outbox vacío', async () => {
+    // Arrange
+
     // Act
     const relayed = await relayOrdersOutbox(dataSource);
 

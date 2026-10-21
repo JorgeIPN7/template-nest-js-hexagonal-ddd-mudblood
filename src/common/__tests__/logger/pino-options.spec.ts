@@ -22,6 +22,8 @@ import {
 
 describe('isHealthPath', () => {
   it('debería devolver false cuando la url es undefined', () => {
+    // Arrange
+
     // Act
     const result = isHealthPath(undefined, 'api');
 
@@ -32,6 +34,8 @@ describe('isHealthPath', () => {
   it.each(['/health', '/healthz', '/livez', '/readyz'])(
     'debería reconocer "%s" como ruta de salud sin prefijo',
     (url) => {
+      // Arrange
+
       // Act
       const result = isHealthPath(url, '');
 
@@ -41,6 +45,8 @@ describe('isHealthPath', () => {
   );
 
   it('debería reconocer la ruta de salud detrás del prefijo global', () => {
+    // Arrange
+
     // Act
     const result = isHealthPath('/api/health/liveness', 'api');
 
@@ -54,6 +60,8 @@ describe('isHealthPath', () => {
   it.each(['/api/v1/health', '/api/v1/health/liveness', '/api/v1/health/readiness'])(
     'debería reconocer "%s", que es la ruta versionada real',
     (url) => {
+      // Arrange
+
       // Act
       const result = isHealthPath(url, 'api');
 
@@ -63,6 +71,8 @@ describe('isHealthPath', () => {
   );
 
   it('debería reconocer un subrecurso de la ruta de salud', () => {
+    // Arrange
+
     // Act
     const result = isHealthPath('/health/readiness', '');
 
@@ -71,6 +81,8 @@ describe('isHealthPath', () => {
   });
 
   it('debería ignorar el query string al clasificar la ruta', () => {
+    // Arrange
+
     // Act
     const result = isHealthPath('/api/v1/health?probe=liveness', 'api');
 
@@ -79,6 +91,8 @@ describe('isHealthPath', () => {
   });
 
   it('debería devolver false para una ruta de negocio', () => {
+    // Arrange
+
     // Act
     const result = isHealthPath('/api/v1/invoices', 'api');
 
@@ -92,6 +106,8 @@ describe('isHealthPath', () => {
   it.each(['/api/healthcare', '/api/v1/healthcare', '/healthz-internal'])(
     'debería devolver false para "%s", que solo contiene el prefijo como substring',
     (url) => {
+      // Arrange
+
       // Act
       const result = isHealthPath(url, 'api');
 
@@ -101,6 +117,8 @@ describe('isHealthPath', () => {
   );
 
   it('debería devolver false para una ruta que empieza por "livez" sin ser esa ruta', () => {
+    // Arrange
+
     // Act
     const result = isHealthPath('/livezone', '');
 
@@ -109,6 +127,8 @@ describe('isHealthPath', () => {
   });
 
   it('debería no confundir un prefijo parcial con el prefijo global', () => {
+    // Arrange
+
     // Act
     const result = isHealthPath('/apifoo/health', 'api');
 
@@ -132,9 +152,13 @@ describe('isHealthPath (property-based)', () => {
         // Arrange
         fc.pre(!HEALTH_PATH_SUFFIXES.includes(`/health${suffix}`));
 
-        // Act + Assert
-        expect(isHealthPath(`/api/health${suffix}`, 'api')).toBe(false);
-        expect(isHealthPath(`/api/v1/health${suffix}`, 'api')).toBe(false);
+        // Act
+        const unversioned = isHealthPath(`/api/health${suffix}`, 'api');
+        const versioned = isHealthPath(`/api/v1/health${suffix}`, 'api');
+
+        // Assert
+        expect(unversioned).toBe(false);
+        expect(versioned).toBe(false);
       }),
     );
   });
@@ -142,8 +166,13 @@ describe('isHealthPath (property-based)', () => {
   it('debería reconocer todas las rutas de salud conocidas bajo prefijo y versión', () => {
     fc.assert(
       fc.property(fc.constantFrom(...HEALTH_PATH_SUFFIXES), (suffix) => {
-        // Act + Assert
-        expect(isHealthPath(`/api/v1${suffix}`, 'api')).toBe(true);
+        // Arrange
+
+        // Act
+        const result = isHealthPath(`/api/v1${suffix}`, 'api');
+
+        // Assert
+        expect(result).toBe(true);
       }),
     );
   });
@@ -152,8 +181,13 @@ describe('isHealthPath (property-based)', () => {
   it('debería devolver true para cualquier subrecurso de la ruta de salud', () => {
     fc.assert(
       fc.property(fc.stringMatching(/^[a-z0-9-]{1,12}$/), (child) => {
-        // Act + Assert
-        expect(isHealthPath(`/api/v1/health/${child}`, 'api')).toBe(true);
+        // Arrange
+
+        // Act
+        const result = isHealthPath(`/api/v1/health/${child}`, 'api');
+
+        // Assert
+        expect(result).toBe(true);
       }),
     );
   });
@@ -164,8 +198,14 @@ describe('isHealthPath (property-based)', () => {
         fc.constantFrom('/api/v1/health', '/api/v1/invoices', '/api/healthcare'),
         fc.stringMatching(/^[a-z]{1,8}=[a-z0-9]{1,8}$/),
         (path, query) => {
-          // Act + Assert
-          expect(isHealthPath(`${path}?${query}`, 'api')).toBe(isHealthPath(path, 'api'));
+          // Arrange
+
+          // Act
+          const withQuery = isHealthPath(`${path}?${query}`, 'api');
+          const withoutQuery = isHealthPath(path, 'api');
+
+          // Assert
+          expect(withQuery).toBe(withoutQuery);
         },
       ),
     );
@@ -175,8 +215,13 @@ describe('isHealthPath (property-based)', () => {
   it('debería reconocer la ruta de salud sea cual sea el número de versión', () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 99 }), (version) => {
-        // Act + Assert
-        expect(isHealthPath(`/api/v${version}/health`, 'api')).toBe(true);
+        // Arrange
+
+        // Act
+        const result = isHealthPath(`/api/v${version}/health`, 'api');
+
+        // Assert
+        expect(result).toBe(true);
       }),
     );
   });
@@ -286,6 +331,8 @@ describe('serializeResponse', () => {
 
 describe('buildRedactPaths', () => {
   it('debería añadir los campos extra a los que vienen por defecto', () => {
+    // Arrange
+
     // Act
     const paths = buildRedactPaths(['custom.secret']);
 
@@ -295,6 +342,8 @@ describe('buildRedactPaths', () => {
   });
 
   it('debería deduplicar los campos repetidos', () => {
+    // Arrange
+
     // Act
     const paths = buildRedactPaths(['*.password', '*.password']);
 
@@ -303,6 +352,8 @@ describe('buildRedactPaths', () => {
   });
 
   it('debería devolver solo los por defecto cuando no hay extras', () => {
+    // Arrange
+
     // Act
     const paths = buildRedactPaths([]);
 
@@ -389,6 +440,8 @@ describe('DEFAULT_REDACT_PATHS (contra un pino real)', () => {
 
 describe('buildPrettyTransport', () => {
   it('debería devolver undefined cuando pretty está deshabilitado', () => {
+    // Arrange
+
     // Act
     const transport = buildPrettyTransport(false);
 
@@ -397,6 +450,8 @@ describe('buildPrettyTransport', () => {
   });
 
   it('debería apuntar a pino-pretty cuando está habilitado', () => {
+    // Arrange
+
     // Act
     const transport = buildPrettyTransport(true);
 

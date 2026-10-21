@@ -10,6 +10,8 @@ describe('resolveSynchronize', () => {
   // Esta es la guarda que impide que un `.env` mal copiado deje a TypeORM alterar el
   // esquema de producción. Si estos tests se caen, hay riesgo de pérdida de datos.
   it('debería permitir synchronize en development cuando la variable está activa', () => {
+    // Arrange
+
     // Act
     const result = resolveSynchronize({ NODE_ENV: 'development', DB_SYNCHRONIZE: true });
 
@@ -18,6 +20,8 @@ describe('resolveSynchronize', () => {
   });
 
   it('debería respetar la variable apagada aun estando en development', () => {
+    // Arrange
+
     // Act
     const result = resolveSynchronize({ NODE_ENV: 'development', DB_SYNCHRONIZE: false });
 
@@ -28,6 +32,8 @@ describe('resolveSynchronize', () => {
   it.each(['production', 'staging', 'test'] as const)(
     'debería forzar synchronize a false en %s aunque la variable esté activa',
     (nodeEnv) => {
+      // Arrange
+
       // Act
       const result = resolveSynchronize({ NODE_ENV: nodeEnv, DB_SYNCHRONIZE: true });
 
@@ -41,6 +47,8 @@ describe('resolveMigrationsRun', () => {
   it.each(['production', 'staging', 'test'] as const)(
     'debería ejecutar migraciones al arrancar en %s cuando está activo',
     (nodeEnv) => {
+      // Arrange
+
       // Act
       const result = resolveMigrationsRun({ NODE_ENV: nodeEnv, DB_MIGRATIONS_RUN: true });
 
@@ -50,6 +58,8 @@ describe('resolveMigrationsRun', () => {
   );
 
   it('debería no ejecutar migraciones automáticamente en development', () => {
+    // Arrange
+
     // Act
     const result = resolveMigrationsRun({ NODE_ENV: 'development', DB_MIGRATIONS_RUN: true });
 
@@ -58,6 +68,8 @@ describe('resolveMigrationsRun', () => {
   });
 
   it('debería respetar la variable apagada en producción', () => {
+    // Arrange
+
     // Act
     const result = resolveMigrationsRun({ NODE_ENV: 'production', DB_MIGRATIONS_RUN: false });
 
@@ -68,6 +80,8 @@ describe('resolveMigrationsRun', () => {
 
 describe('resolveSsl', () => {
   it('debería devolver false cuando DB_SSL está apagado', () => {
+    // Arrange
+
     // Act
     const result = resolveSsl({
       DB_SSL: false,
@@ -80,6 +94,8 @@ describe('resolveSsl', () => {
   });
 
   it('debería activar TLS verificando el certificado por defecto', () => {
+    // Arrange
+
     // Act
     const result = resolveSsl({
       DB_SSL: true,
@@ -92,6 +108,8 @@ describe('resolveSsl', () => {
   });
 
   it('debería permitir desactivar la verificación del certificado', () => {
+    // Arrange
+
     // Act
     const result = resolveSsl({
       DB_SSL: true,

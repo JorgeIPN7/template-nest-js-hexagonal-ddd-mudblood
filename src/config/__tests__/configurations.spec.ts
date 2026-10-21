@@ -87,8 +87,11 @@ describe('corsConfig', () => {
     // Arrange
     withEnv({ CORS_ORIGINS: '*', CORS_CREDENTIALS: 'true' });
 
-    // Act + Assert
-    expect(() => corsConfig()).toThrow(/CORS misconfiguration/);
+    // Act
+    const act = () => corsConfig();
+
+    // Assert
+    expect(act).toThrow(/CORS misconfiguration/);
   });
 
   it('debería exponer la cabecera x-request-id al cliente', () => {

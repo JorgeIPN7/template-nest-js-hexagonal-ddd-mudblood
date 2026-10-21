@@ -42,6 +42,8 @@ describe('HealthController', () => {
     // Liveness contesta "¿hay que reiniciar el proceso?". Consultar la base aquí haría
     // que una caída de Postgres provocara reinicios en cadena que no arreglan nada.
     it('debería invocar check() sin indicadores, sin tocar la base', async () => {
+      // Arrange
+
       // Act
       const result = await controller.liveness();
 
@@ -59,6 +61,8 @@ describe('HealthController', () => {
     ['check', (c: HealthController) => c.check()],
   ])('%s()', (_name, invoke) => {
     it('debería comprobar memoria y base con los límites configurados', async () => {
+      // Arrange
+
       // Act
       await invoke(controller);
 
@@ -80,8 +84,11 @@ describe('HealthController', () => {
         return { status: 'ok' };
       });
 
-      // Act + Assert
-      await expect(invoke(controller)).rejects.toThrow('ECONNREFUSED');
+      // Act
+      const act = invoke(controller);
+
+      // Assert
+      await expect(act).rejects.toThrow('ECONNREFUSED');
     });
 
     it('debería propagar el rechazo cuando el indicador de memoria falla', async () => {
@@ -92,8 +99,11 @@ describe('HealthController', () => {
         return { status: 'ok' };
       });
 
-      // Act + Assert
-      await expect(invoke(controller)).rejects.toThrow('OOM');
+      // Act
+      const act = invoke(controller);
+
+      // Assert
+      await expect(act).rejects.toThrow('OOM');
     });
 
     // Terminus 12 añade `message: err.message` cuando la query falla, y `AllExceptionsFilter`
