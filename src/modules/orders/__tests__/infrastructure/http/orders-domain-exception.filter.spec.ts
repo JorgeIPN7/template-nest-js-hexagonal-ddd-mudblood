@@ -25,10 +25,11 @@ describe('OrdersDomainExceptionFilter', () => {
       // Arrange
       const filter = new OrdersDomainExceptionFilter();
 
-      // Act + Assert
-      expect(() =>
-        filter.catch(new CustomerGoneError('9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012')),
-      ).toThrow(ForbiddenException);
+      // Act
+      const act = () => filter.catch(new CustomerGoneError('9d2a1c7e-1f6b-4a2e-9c3d-77a1b0e5f012'));
+
+      // Assert
+      expect(act).toThrow(ForbiddenException);
     });
 
     it('debería publicar el mensaje canónico Forbidden, no el del dominio', () => {

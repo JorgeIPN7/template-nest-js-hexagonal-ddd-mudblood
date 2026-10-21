@@ -50,6 +50,8 @@ describe('Auth (e2e)', () => {
 
   describe('POST /auth/register', () => {
     it('debería registrar la cuenta y devolver 201 con su id', async () => {
+      // Arrange
+
       // Act
       const response = await postRegister({
         email: 'maria@example.com',
@@ -67,6 +69,8 @@ describe('Auth (e2e)', () => {
     // El cuerpo real es el que declara `ApiEnvelope`, no el DTO desnudo: un SDK generado
     // desde `/api/docs-json` debe poder deserializarlo tal cual.
     it('debería envolver la respuesta en el envelope de éxito', async () => {
+      // Arrange
+
       // Act
       const response = await postRegister({
         email: 'envelope@example.com',
@@ -87,6 +91,8 @@ describe('Auth (e2e)', () => {
     // El corazón del ciclo: DOS tablas, DOS dueños. Se leen crudas porque comprobarlo por
     // los mappers que las escriben no distinguiría un alta correcta de una a medias.
     it('debería escribir el perfil en users y la credencial en auth_credentials', async () => {
+      // Arrange
+
       // Act
       const response = await postRegister({
         email: 'dostablas@example.com',
@@ -110,6 +116,8 @@ describe('Auth (e2e)', () => {
     });
 
     it('debería normalizar el email a minúsculas al guardarlo', async () => {
+      // Arrange
+
       // Act
       await postRegister({
         email: 'MAYUSCULAS@Example.COM',
@@ -146,6 +154,8 @@ describe('Auth (e2e)', () => {
     });
 
     it('debería responder 400 cuando el email no es válido', async () => {
+      // Arrange
+
       // Act
       const response = await postRegister({
         email: 'sin-arroba',
@@ -158,6 +168,8 @@ describe('Auth (e2e)', () => {
     });
 
     it('debería responder 400 cuando faltan campos obligatorios', async () => {
+      // Arrange
+
       // Act
       const response = await postRegister({});
 
@@ -170,6 +182,8 @@ describe('Auth (e2e)', () => {
      * cobertura que tiene `applyGlobals()`, excluido del umbral de la suite unitaria.
      */
     it('debería responder 400 cuando el cuerpo trae un campo no declarado', async () => {
+      // Arrange
+
       // Act
       const response = await postRegister({
         email: 'extra@example.com',
@@ -198,6 +212,8 @@ describe('Auth (e2e)', () => {
       ['un booleano', true],
       ['un array', ['a', 'b']],
     ])('debería responder 400 cuando el nombre es %s y no una cadena', async (_caso, name) => {
+      // Arrange
+
       // Act
       const response = await postRegister({
         email: 'tipos@example.com',
@@ -334,6 +350,8 @@ describe('Auth (e2e)', () => {
     });
 
     it('debería no dejar perfil huérfano cuando la credencial no puede escribirse', async () => {
+      // Arrange
+
       // Act
       const response = await postRegister({
         email: 'compensado@example.com',

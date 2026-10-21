@@ -81,8 +81,11 @@ describe('CredentialTypeOrmRepository (e2e)', () => {
       const first = buildCredential();
       await repository.save(first);
 
-      // Act + Assert
-      await expect(repository.save(buildCredential({ userId: first.userId }))).rejects.toThrow();
+      // Act
+      const act = repository.save(buildCredential({ userId: first.userId }));
+
+      // Assert
+      await expect(act).rejects.toThrow();
     });
   });
 
@@ -102,6 +105,8 @@ describe('CredentialTypeOrmRepository (e2e)', () => {
     });
 
     it('debería devolver null cuando el usuario no tiene credencial', async () => {
+      // Arrange
+
       // Act
       const found = await repository.findByUserId(randomUUID());
 
@@ -137,8 +142,13 @@ describe('CredentialTypeOrmRepository (e2e)', () => {
     // El caso NORMAL de la compensación: el INSERT falló de verdad y no hay nada que borrar.
     // Si esto lanzara, la compensación sustituiría el error original por uno inventado.
     it('debería no lanzar cuando el usuario no tiene credencial', async () => {
-      // Act + Assert
-      await expect(repository.deleteByUserId(randomUUID())).resolves.toBeUndefined();
+      // Arrange
+
+      // Act
+      const act = repository.deleteByUserId(randomUUID());
+
+      // Assert
+      await expect(act).resolves.toBeUndefined();
     });
   });
 });

@@ -48,6 +48,8 @@ describe('Orders (e2e)', () => {
 
   describe('POST /orders', () => {
     it('debería colocar la orden y devolver 201 con el envelope completo', async () => {
+      // Arrange
+
       // Act
       const response = await postOrder(userToken, {
         concept: 'Suscripción anual plan Pro',
@@ -69,6 +71,8 @@ describe('Orders (e2e)', () => {
     });
 
     it('debería persistir la orden y su evento OrderPlaced en el outbox', async () => {
+      // Arrange
+
       // Act
       const response = await postOrder(userToken, {
         concept: 'Suscripción anual plan Pro',
@@ -95,6 +99,8 @@ describe('Orders (e2e)', () => {
     });
 
     it('debería responder 401 sin token', async () => {
+      // Arrange
+
       // Act
       const response = await request(app.getHttpServer())
         .post(`${prefix}/orders`)
@@ -113,6 +119,8 @@ describe('Orders (e2e)', () => {
       ['importe sobre el tope', { concept: 'Orden', amountCents: 10_000_001 }],
       ['concepto con un byte NUL', { concept: 'Orden con \u0000 dentro', amountCents: 100 }],
     ])('debería responder 400 con %s', async (_caso, body) => {
+      // Arrange
+
       // Act
       const response = await postOrder(userToken, body);
 
@@ -126,6 +134,8 @@ describe('Orders (e2e)', () => {
 
     // Anti-spoof medible: el DTO no declara customerId y forbidNonWhitelisted lo rechaza.
     it('debería responder 400 cuando el body intenta traer un customerId', async () => {
+      // Arrange
+
       // Act
       const response = await postOrder(userToken, {
         concept: 'Orden ajena',

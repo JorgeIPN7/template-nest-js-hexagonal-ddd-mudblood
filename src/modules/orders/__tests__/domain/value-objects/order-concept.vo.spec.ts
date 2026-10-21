@@ -7,16 +7,24 @@ import { orderConceptArb } from '../../helpers/arbitraries';
 describe('OrderConcept', () => {
   describe('from()', () => {
     it('debería rechazar un concepto vacío tras trim', () => {
-      // Act + Assert
-      expect(() => OrderConcept.from('   ')).toThrow(InvalidOrderConceptError);
+      // Arrange
+
+      // Act
+      const act = () => OrderConcept.from('   ');
+
+      // Assert
+      expect(act).toThrow(InvalidOrderConceptError);
     });
 
     it('debería rechazar un concepto de más de 140 caracteres', () => {
       // Arrange
       const tooLong = 'a'.repeat(141);
 
-      // Act + Assert
-      expect(() => OrderConcept.from(tooLong)).toThrow(InvalidOrderConceptError);
+      // Act
+      const act = () => OrderConcept.from(tooLong);
+
+      // Assert
+      expect(act).toThrow(InvalidOrderConceptError);
     });
 
     // El límite exacto: con solo el caso de 141, un `>=` en vez de `>` pasaría desapercibido. Se
@@ -39,6 +47,8 @@ describe('OrderConcept', () => {
     fcTest.prop([orderConceptArb])(
       'debería aceptar cualquier concepto válido (propiedad)',
       (raw) => {
+        // Arrange
+
         // Act
         const concept = OrderConcept.from(raw);
 
