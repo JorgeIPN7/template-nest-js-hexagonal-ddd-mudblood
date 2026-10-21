@@ -160,9 +160,11 @@ describe('toolchain pins', () => {
 
     it('debería declarar la misma versión en .nvmrc y en .node-version', () => {
       // Arrange
+
+      // Act
       const nodeVersion = read('.node-version').trim();
 
-      // Act & Assert
+      // Assert
       expect(nodeVersion).toBe(nvmrc);
     });
 
@@ -204,7 +206,9 @@ describe('toolchain pins', () => {
     const pinned = packageJson.packageManager.replace(/^pnpm@/, '');
 
     it('debería fijar la versión en packageManager con el prefijo del gestor', () => {
-      // Arrange & Act
+      // Arrange
+
+      // Act
       const declared = packageJson.packageManager;
 
       // Assert

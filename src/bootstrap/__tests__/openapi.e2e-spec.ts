@@ -167,7 +167,9 @@ describe('OpenAPI docs (e2e)', () => {
     });
 
     it('debería avisar al montar de que TRUST_PROXY=0 agrupa a todos los clientes', () => {
-      // Arrange + Act
+      // Arrange
+
+      // Act
       // (el aviso se emite al montar la documentación, en el `beforeAll`)
 
       // Assert

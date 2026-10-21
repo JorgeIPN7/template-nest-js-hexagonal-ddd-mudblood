@@ -35,6 +35,8 @@ describe('AppModule', () => {
   });
 
   it('debería registrar ConfigService de forma global', () => {
+    // Arrange
+
     // Act
     const configService = moduleRef.get(ConfigService, { strict: false });
 
@@ -50,6 +52,8 @@ describe('AppModule', () => {
   // Este test lo adelanta. (El texto del `it` conserva la palabra «Symbol» del ciclo 1:
   // renombrarlo queda fuera del alcance del refactor, que no toca textos de test.)
   it('debería resolver el puerto del repositorio por su token Symbol', () => {
+    // Arrange
+
     // Act
     const repository = moduleRef.get(UserRepository, { strict: false });
 
@@ -58,6 +62,8 @@ describe('AppModule', () => {
   });
 
   it('debería tener una conexión a la base establecida', () => {
+    // Arrange
+
     // Act
     const dataSource = moduleRef.get(DataSource, { strict: false });
 
@@ -78,6 +84,8 @@ describe('AppModule', () => {
   });
 
   it('debería resolver el HealthController del módulo de features', () => {
+    // Arrange
+
     // Act
     const controller = moduleRef.get(HealthController, { strict: false });
 
