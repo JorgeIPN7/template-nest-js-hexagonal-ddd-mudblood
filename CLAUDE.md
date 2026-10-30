@@ -4,7 +4,7 @@ Production-ready NestJS 12 base template, hexagonal/DDD. History, measurements a
 
 ## Stack
 
-NestJS 12 · TypeScript 6.0 · Node 24.22.0+ · pnpm 12 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.72
+NestJS 12 · TypeScript 6.0 · Node 24.22.2+ · pnpm 12 · SWC · Jest 30 · Supertest · Pino 10 · Zod 4 · class-validator 0.15 · TypeORM 1 · PostgreSQL 18 · Scalar 1.72
 
 Why: [docs/toolchain.md](docs/toolchain.md).
 
