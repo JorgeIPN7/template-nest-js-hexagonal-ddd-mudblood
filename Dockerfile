@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------------------
 # Base: fija la versión de Node del repo (.nvmrc) y habilita el pnpm de `packageManager`.
 # ------------------------------------------------------------------------------------
-FROM node:24.22.0-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS base
+FROM node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
